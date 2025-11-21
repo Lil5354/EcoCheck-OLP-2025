@@ -1,0 +1,113 @@
+# MIT License
+# Copyright (c) 2025 Lil5354
+# EcoCheck-OLP-2025 Docker Compose Configuration
+# FIWARE-based Environmental Monitoring System
+
+version: '3.8'
+
+services:
+  # FIWARE Orion Context Broker (Required for competition)
+  orion:
+    image: fiware/orion:3.10.1
+    hostname: orion
+    container_name: ecocheck-orion
+    depends_on:
+      - mongo-db
+    ports:
+      - "1026:1026"
+    command: -dbhost mongo-db -logLevel DEBUG
+    healthcheck:
+      test: curl --fail -s http://orion:1026/version || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ecocheck-network
+
+  # MongoDB for Orion Context Broker
+  mongo-db:
+    image: mongo:6.0
+    hostname: mongo-db
+    container_name: ecocheck-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-db-data:/data/db
+      - mongo-db-config:/data/configdb
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ecocheck-network
+
+  # PostgreSQL for application data
+  postgres:
+    image: postgres:15-alpine
+    container_name: ecocheck-postgres
+    environment:
+      POSTGRES_DB: ecocheck
+      POSTGRES_USER: ecocheck_user
+      POSTGRES_PASSWORD: ecocheck_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ecocheck_user -d ecocheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ecocheck-network
+
+  # EcoCheck Backend (Node.js)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ecocheck-backend
+    depends_on:
+      - orion
+      - postgres
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - ORION_URL=http://orion:1026
+      - DATABASE_URL=postgresql://ecocheck_user:ecocheck_pass@postgres:5432/ecocheck
+    volumes:
+      - ./backend/src:/app/src:ro
+    healthcheck:
+      test: curl --fail -s http://localhost:3000/health || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ecocheck-network
+
+  # Frontend Web Manager (React)
+  frontend-web:
+    build:
+      context: ./frontend-web-manager
+      dockerfile: Dockerfile
+    container_name: ecocheck-frontend-web
+    depends_on:
+      - backend
+    ports:
+      - "3001:80"
+    environment:
+      - REACT_APP_API_URL=http://localhost:3000/api
+    networks:
+      - ecocheck-network
+
+volumes:
+  mongo-db-data:
+  mongo-db-config:
+  postgres-data:
+
+networks:
+  ecocheck-network:
+    driver: bridge

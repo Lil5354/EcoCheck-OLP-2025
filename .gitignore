@@ -205,3 +205,29 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Node.js / React / Mobile
+node_modules
+/dist
+/build
+.env
+# iOS
+/ios/Pods/
+/ios/build/
+# Android
+/android/build/
+
+# --- Node.js Dependencies (Backend & Frontend Web) ---
+node_modules
+# Node.js Build Artifacts
+/dist
+/build
+/out
+
+# --- Flutter / Dart (Frontend Mobile) ---
+.dart_tool/
+.packages
+build/
+# Các thư mục nền tảng được tạo ra bởi Flutter
+android/app/build/
+ios/.symlinks/
