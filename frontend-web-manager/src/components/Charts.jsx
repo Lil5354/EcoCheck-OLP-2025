@@ -25,6 +25,9 @@ export function AreaChart({ width=520, height=140, data=[] , color='#06b6d4', gr
       )}
       {gradient && <path d={area} fill={`url(#${id})`} />}
       <path d={path} fill="none" stroke={color} strokeWidth={stroke} strokeLinejoin="round" strokeLinecap="round"/>
+      {nx.map((x, i) => (
+        <circle key={i} cx={x} cy={ny[i]} r={stroke + 1} fill={color} stroke="#fff" strokeWidth="1" />
+      ))}
     </svg>
   )
 }
@@ -55,11 +58,11 @@ export function DonutChart({ size=140, segments={}, colors=['#22c55e','#06b6d4',
 
 export function Legend({ items }){
   return (
-    <div style={{display:'flex', gap:12, flexWrap:'wrap'}}>
+    <div className="legend">
       {items.map((it,i)=> (
-        <div key={i} style={{display:'flex', alignItems:'center', gap:8}}>
-          <span style={{width:10,height:10,borderRadius:2,background:it.color,display:'inline-block'}} />
-          <span className="muted">{it.label}</span>
+        <div key={i} className="legend-item">
+          <span className="legend-color" style={{background:it.color}} />
+          <span className="legend-label">{it.label}</span>
         </div>
       ))}
     </div>

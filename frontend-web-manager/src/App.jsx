@@ -7,6 +7,7 @@
  */
 
 import { useState, useEffect } from 'react'
+import { MdSearch, MdOutlineNotifications } from 'react-icons/md'
 import './App.css'
 import logo from './assets/ecocheck-logo.svg'
 import Sidebar from './components/Sidebar.jsx'
@@ -75,18 +76,25 @@ function App() {
       <div className="content">
         <header className="header">
           <div className="container header-row">
-            <div className="brand">
-              <img src={logo} alt="EcoCheck" width="28" height="28" />
-              <h1 className="title">EcoCheck Dashboard</h1>
+            <div className="header-left">
+                <div className="brand">
+                    <img src={logo} alt="EcoCheck" width="28" height="28" />
+                    <h1 className="title">EcoCheck</h1>
+                </div>
             </div>
-            <div className="toolbar">
-              <div className="status">
-                <span className={`badge ${isBackendOnline ? 'online' : 'offline'}`}>Backend</span>
-                <span className={`badge ${isFiwareOnline ? 'online' : 'offline'}`}>Orion-LD</span>
-              </div>
-              <button className="btn" onClick={refresh} disabled={loading}>
-                {loading && <span className="spin" />} Refresh
-              </button>
+            <div className="header-right">
+                <div className="toolbar">
+                    <div className="search-bar">
+                        <span className="icon"><MdSearch /></span>
+                        <input type="text" placeholder="Search..." />
+                    </div>
+                    <div className="header-item">
+                        <span className="icon"><MdOutlineNotifications /></span>
+                    </div>
+                    <div className="header-item user-profile">
+                        <img src="https://via.placeholder.com/32" alt="User" className="user-avatar" />
+                    </div>
+                </div>
             </div>
           </div>
         </header>
@@ -94,31 +102,55 @@ function App() {
         <main className="main">
           <div className="container">
             <div className="grid">
-              <section className="card col-4 fade-up">
-                <h2>Active Routes</h2>
-                <div className="stat-number">{kpis.routesActive || <span className="skeleton" style={{width:50}}/>}</div>
-              </section>
-              <section className="card col-4 fade-up delay-1">
-                <h2>Collection Rate</h2>
-                <div className="stat-number">{kpis.collectionRate ? `${Math.round(kpis.collectionRate*100)}%` : <span className="skeleton" style={{width:60}}/>}</div>
-              </section>
-              <section className="card col-4 fade-up delay-2">
-                <h2>Collected Today</h2>
-                <div className="stat-number">{kpis.todayTons || <span className="skeleton" style={{width:50}}/>}t</div>
-              </section>
+              <div className="col-4 fade-up">
+                <div className="card stat-card border-blue">
+                    <div className="stat-body">
+                        <h5 className="stat-title">Active Routes</h5>
+                        <h2 className="stat-value">{kpis.routesActive || <span className="skeleton" style={{width:50}}/>}</h2>
+                        <p className="stat-trend text-success">+2.5%</p>
+                    </div>
+                    <div className="stat-icon">
+                        {/* Placeholder for mini chart */}
+                    </div>
+                </div>
+              </div>
+              <div className="col-4 fade-up delay-1">
+                <div className="card stat-card border-green">
+                    <div className="stat-body">
+                        <h5 className="stat-title">Collection Rate</h5>
+                        <h2 className="stat-value">{kpis.collectionRate ? `${Math.round(kpis.collectionRate*100)}%` : <span className="skeleton" style={{width:60}}/>}</h2>
+                        <p className="stat-trend text-danger">-1.3%</p>
+                    </div>
+                    <div className="stat-icon">
+                        {/* Placeholder for mini chart */}
+                    </div>
+                </div>
+              </div>
+              <div className="col-4 fade-up delay-2">
+                <div className="card stat-card border-yellow">
+                    <div className="stat-body">
+                        <h5 className="stat-title">Collected Today</h5>
+                        <h2 className="stat-value">{kpis.todayTons || <span className="skeleton" style={{width:50}}/>}t</h2>
+                        <p className="stat-trend text-success">+5.2%</p>
+                    </div>
+                    <div className="stat-icon">
+                        {/* Placeholder for mini chart */}
+                    </div>
+                </div>
+              </div>
 
               <section className="card col-8 fade-up delay-1">
                 <h2>Collection Volume (last 12 hours)</h2>
-                <AreaChart data={timeseries} color="var(--primary)" />
+                <AreaChart data={timeseries} color="var(--primary)" stroke={3} />
               </section>
 
               <section className="card col-4 fade-up delay-2">
                 <h2>Waste by Type</h2>
-                <DonutChart segments={byType} colors={['#22c55e','#06b6d4','#ef4444']} />
+                <DonutChart segments={byType} colors={['var(--success)','var(--accent)','var(--danger)']} />
                 <Legend items={[
-                  { label: 'Household', color: '#22c55e' },
-                  { label: 'Recyclable', color: '#06b6d4' },
-                  { label: 'Bulky', color: '#ef4444' },
+                  { label: 'Household', color: 'var(--success)' },
+                  { label: 'Recyclable', color: 'var(--accent)' },
+                  { label: 'Bulky', color: 'var(--danger)' },
                 ]} />
               </section>
 

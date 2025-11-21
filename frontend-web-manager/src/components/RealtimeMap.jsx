@@ -13,7 +13,7 @@ export default function RealtimeMap() {
     if (mapObj.current) return
     mapObj.current = new maplibregl.Map({
       container: mapRef.current,
-      style: 'https://demotiles.maplibre.org/style.json',
+      style: 'https://openmaptiles.github.io/dark-matter-gl-style/style-cdn.json',
       center: [106.700, 10.780],
       zoom: 11.2,
       attributionControl: false
