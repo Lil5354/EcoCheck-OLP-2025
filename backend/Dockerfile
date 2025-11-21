@@ -6,14 +6,18 @@ FROM node:18-alpine
 
 WORKDIR /app
 
+# Install needed tools
+RUN apk add --no-cache curl wget
+
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install dependencies (use npm install to avoid lockfile requirement)
+RUN npm install --omit=dev
 
-# Copy source code
+# Copy source code and public assets
 COPY src/ ./src/
+COPY public/ ./public/
 COPY entrypoint.sh ./
 
 # Make entrypoint executable

@@ -1,0 +1,77 @@
+{
+  "info": {
+    "name": "EcoCheck Orion-LD CN14",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "variable": [
+    {"key": "baseUrl", "value": "http://localhost:1026"},
+    {"key": "service", "value": "ecocheck"},
+    {"key": "servicePath", "value": "/hcm"}
+  ],
+  "item": [
+    {
+      "name": "Create Depot",
+      "request": {
+        "method": "POST",
+        "header": [
+          {"key": "Content-Type", "value": "application/ld+json"},
+          {"key": "Accept", "value": "application/ld+json"},
+          {"key": "FIWARE-Service", "value": "{{service}}"},
+          {"key": "FIWARE-ServicePath", "value": "{{servicePath}}"}
+        ],
+        "url": {"raw": "{{baseUrl}}/ngsi-ld/v1/entities", "host": ["{{baseUrl}}"], "path": ["ngsi-ld","v1","entities"]},
+        "body": {"mode": "file", "file": {"src": "seeds/ngsi-ld/cn14/depot-001.jsonld"}}
+      }
+    },
+    {
+      "name": "Query Vehicles",
+      "request": {
+        "method": "GET",
+        "header": [
+          {"key": "Accept", "value": "application/ld+json"},
+          {"key": "FIWARE-Service", "value": "{{service}}"},
+          {"key": "FIWARE-ServicePath", "value": "{{servicePath}}"}
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/ngsi-ld/v1/entities?type=Vehicle",
+          "host": ["{{baseUrl}}"],
+          "path": ["ngsi-ld","v1","entities"],
+          "query": [{"key": "type", "value": "Vehicle"}]
+        }
+      }
+    },
+    {
+      "name": "Patch Vehicle status",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {"key": "Content-Type", "value": "application/ld+json"},
+          {"key": "FIWARE-Service", "value": "{{service}}"},
+          {"key": "FIWARE-ServicePath", "value": "{{servicePath}}"}
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/ngsi-ld/v1/entities/urn:ngsi-ld:Vehicle:veh-001/attrs",
+          "host": ["{{baseUrl}}"],
+          "path": ["ngsi-ld","v1","entities","urn:ngsi-ld:Vehicle:veh-001","attrs"]
+        },
+        "body": {"mode": "raw", "raw": "{\n  \"status\": {\n    \"type\": \"Property\",\n    \"value\": \"assigned\"\n  }\n}"}
+      }
+    },
+    {
+      "name": "Create subscription (Vehicle)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {"key": "Content-Type", "value": "application/ld+json"},
+          {"key": "Accept", "value": "application/ld+json"},
+          {"key": "FIWARE-Service", "value": "{{service}}"},
+          {"key": "FIWARE-ServicePath", "value": "{{servicePath}}"}
+        ],
+        "url": {"raw": "{{baseUrl}}/ngsi-ld/v1/subscriptions", "host": ["{{baseUrl}}"], "path": ["ngsi-ld","v1","subscriptions"]},
+        "body": {"mode": "raw", "raw": "{\n  \"type\": \"Subscription\",\n  \"entities\": [{ \"type\": \"Vehicle\" }],\n  \"watchedAttributes\": [\"status\", \"location\"],\n  \"notification\": {\n    \"endpoint\": { \"uri\": \"http://backend:3000/fiware/notify\", \"accept\": \"application/ld+json\" }\n  }\n}"}
+      }
+    }
+  ]
+}
+

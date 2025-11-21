@@ -1,0 +1,16 @@
+{
+  "@context": [
+    "https://uri.etsi.org/ngsi-ld/v1/ngsi-ld-core-context.jsonld",
+    "http://localhost:3000/contexts/ecocheck.jsonld"
+  ],
+  "id": "urn:ngsi-ld:Vehicle:veh-003",
+  "type": "Vehicle",
+  "licensePlate": { "type": "Property", "value": "59C-789.01" },
+  "vehicleType": { "type": "Property", "value": "compactor" },
+  "capacityKg": { "type": "Property", "value": 5000 },
+  "wasteTypes": { "type": "Property", "value": ["household", "bulky"] },
+  "status": { "type": "Property", "value": "maintenance" },
+  "location": { "type": "GeoProperty", "value": { "type": "Point", "coordinates": [106.705, 10.770] } },
+  "homeDepot": { "type": "Relationship", "object": "urn:ngsi-ld:Depot:depot-002" }
+}
+

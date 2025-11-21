@@ -1,7 +1,7 @@
 /*
  * MIT License
  * Copyright (c) 2025 Lil5354
- * 
+ *
  * EcoCheck Backend - FIWARE-based Environmental Monitoring System
  * Main application entry point
  */
@@ -21,6 +21,21 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Static serve for NGSI-LD contexts
+const path = require('path');
+app.use('/contexts', express.static(path.join(__dirname, '..', 'public', 'contexts')));
+
+// FIWARE notification endpoint (Orion-LD Subscriptions)
+app.post('/fiware/notify', (req, res) => {
+  try {
+    console.log('[FIWARE][Notify]', JSON.stringify(req.body));
+  } catch (e) {
+    console.log('[FIWARE][Notify] Received notification');
+  }
+  return res.status(204).send();
+});
+
 
 // Health check endpoint
 app.get('/health', (req, res) => {

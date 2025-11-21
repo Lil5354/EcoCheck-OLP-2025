@@ -1,0 +1,15 @@
+{
+  "@context": [
+    "https://uri.etsi.org/ngsi-ld/v1/ngsi-ld-core-context.jsonld",
+    "http://localhost:3000/contexts/ecocheck.jsonld"
+  ],
+  "id": "urn:ngsi-ld:Depot:depot-001",
+  "type": "Depot",
+  "name": { "type": "Property", "value": "Depot District 1" },
+  "capacityVehicles": { "type": "Property", "value": 20 },
+  "location": {
+    "type": "GeoProperty",
+    "value": { "type": "Point", "coordinates": [106.70098, 10.77653] }
+  }
+}
+

@@ -1,0 +1,15 @@
+{
+  "@context": [
+    "https://uri.etsi.org/ngsi-ld/v1/ngsi-ld-core-context.jsonld",
+    "http://localhost:3000/contexts/ecocheck.jsonld"
+  ],
+  "id": "urn:ngsi-ld:Dump:dump-001",
+  "type": "Dump",
+  "name": { "type": "Property", "value": "Da Phuoc Landfill" },
+  "acceptedWasteTypes": { "type": "Property", "value": ["household", "bulky", "recyclable"] },
+  "location": {
+    "type": "GeoProperty",
+    "value": { "type": "Point", "coordinates": [106.678, 10.610] }
+  }
+}
+

@@ -1,0 +1,14 @@
+{
+  "@context": [
+    "https://uri.etsi.org/ngsi-ld/v1/ngsi-ld-core-context.jsonld",
+    "http://localhost:3000/contexts/ecocheck.jsonld"
+  ],
+  "id": "urn:ngsi-ld:Worker:wrk-001",
+  "type": "Worker",
+  "name": { "type": "Property", "value": "Nguyen Van A" },
+  "role": { "type": "Property", "value": "driver" },
+  "phone": { "type": "Property", "value": "+84901234567" },
+  "status": { "type": "Property", "value": "active" },
+  "homeDepot": { "type": "Relationship", "object": "urn:ngsi-ld:Depot:depot-001" }
+}
+

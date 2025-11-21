@@ -1,0 +1,19 @@
+{
+  "@context": [
+    "https://uri.etsi.org/ngsi-ld/v1/ngsi-ld-core-context.jsonld",
+    "http://localhost:3000/contexts/ecocheck.jsonld"
+  ],
+  "id": "urn:ngsi-ld:Vehicle:veh-001",
+  "type": "Vehicle",
+  "licensePlate": { "type": "Property", "value": "59A-123.45" },
+  "vehicleType": { "type": "Property", "value": "garbage_truck_small" },
+  "capacityKg": { "type": "Property", "value": 1500 },
+  "wasteTypes": { "type": "Property", "value": ["household", "recyclable"] },
+  "status": { "type": "Property", "value": "available" },
+  "location": {
+    "type": "GeoProperty",
+    "value": { "type": "Point", "coordinates": [106.7015, 10.7769] }
+  },
+  "homeDepot": { "type": "Relationship", "object": "urn:ngsi-ld:Depot:depot-001" }
+}
+

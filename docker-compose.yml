@@ -6,18 +6,18 @@
 version: '3.8'
 
 services:
-  # FIWARE Orion Context Broker (Required for competition)
-  orion:
-    image: fiware/orion:3.10.1
-    hostname: orion
-    container_name: ecocheck-orion
+  # FIWARE Orion-LD Context Broker (NGSI-LD)
+  orion-ld:
+    image: fiware/orion-ld:latest
+    hostname: orion-ld
+    container_name: ecocheck-orion-ld
     depends_on:
       - mongo-db
     ports:
       - "1026:1026"
-    command: -dbhost mongo-db -logLevel DEBUG
+    command: -dbURI mongodb://mongo-db:27017/orion -logLevel DEBUG
     healthcheck:
-      test: curl --fail -s http://orion:1026/version || exit 1
+      test: ["CMD-SHELL", "wget -qO- http://localhost:1026/version || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -69,17 +69,20 @@ services:
       dockerfile: Dockerfile
     container_name: ecocheck-backend
     depends_on:
-      - orion
+      - orion-ld
       - postgres
     ports:
       - "3000:3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - ORION_URL=http://orion:1026
+      - ORION_LD_URL=http://orion-ld:1026
+      - FIWARE_SERVICE=ecocheck
+      - FIWARE_SERVICE_PATH=/hcm
       - DATABASE_URL=postgresql://ecocheck_user:ecocheck_pass@postgres:5432/ecocheck
     volumes:
       - ./backend/src:/app/src:ro
+      - ./backend/public:/app/public:ro
     healthcheck:
       test: curl --fail -s http://localhost:3000/health || exit 1
       interval: 30s

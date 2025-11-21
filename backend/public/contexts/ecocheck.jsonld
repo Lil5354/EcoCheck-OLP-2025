@@ -1,0 +1,33 @@
+{
+  "@context": {
+    "id": "@id",
+    "type": "@type",
+
+    "Vehicle": "https://example.org/ecocheck#Vehicle",
+    "Worker": "https://example.org/ecocheck#Worker",
+    "Depot": "https://example.org/ecocheck#Depot",
+    "Dump": "https://example.org/ecocheck#Dump",
+
+    "name": {"@id": "https://schema.org/name", "@type": "https://www.w3.org/2001/XMLSchema#string"},
+    "licensePlate": {"@id": "https://example.org/ecocheck#licensePlate", "@type": "https://www.w3.org/2001/XMLSchema#string"},
+    "vehicleType": {"@id": "https://example.org/ecocheck#vehicleType", "@type": "https://www.w3.org/2001/XMLSchema#string"},
+    "capacityKg": {"@id": "https://example.org/ecocheck#capacityKg", "@type": "https://www.w3.org/2001/XMLSchema#double"},
+    "wasteTypes": {"@id": "https://example.org/ecocheck#wasteTypes", "@container": "@set"},
+    "status": {"@id": "https://example.org/ecocheck#status", "@type": "https://www.w3.org/2001/XMLSchema#string"},
+    "loadKg": {"@id": "https://example.org/ecocheck#loadKg", "@type": "https://www.w3.org/2001/XMLSchema#double"},
+    "fuelType": {"@id": "https://example.org/ecocheck#fuelType", "@type": "https://www.w3.org/2001/XMLSchema#string"},
+    "role": {"@id": "https://example.org/ecocheck#role", "@type": "https://www.w3.org/2001/XMLSchema#string"},
+    "phone": {"@id": "https://schema.org/telephone", "@type": "https://www.w3.org/2001/XMLSchema#string"},
+    "certifications": {"@id": "https://example.org/ecocheck#certifications", "@container": "@set"},
+    "capacityVehicles": {"@id": "https://example.org/ecocheck#capacityVehicles", "@type": "https://www.w3.org/2001/XMLSchema#integer"},
+    "openingHours": {"@id": "https://schema.org/openingHours", "@type": "https://www.w3.org/2001/XMLSchema#string"},
+    "acceptedWasteTypes": {"@id": "https://example.org/ecocheck#acceptedWasteTypes", "@container": "@set"},
+
+    "homeDepot": {"@id": "https://example.org/ecocheck#homeDepot", "@type": "@id"},
+    "assignedVehicle": {"@id": "https://example.org/ecocheck#assignedVehicle", "@type": "@id"},
+    "assignedRoute": {"@id": "https://example.org/ecocheck#assignedRoute", "@type": "@id"},
+
+    "location": {"@id": "http://uri.etsi.org/ngsi-ld/location", "@type": "https://uri.etsi.org/ngsi-ld/GeoProperty"}
+  }
+}
+

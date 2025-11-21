@@ -1,0 +1,14 @@
+{
+  "@context": [
+    "https://uri.etsi.org/ngsi-ld/v1/ngsi-ld-core-context.jsonld",
+    "http://localhost:3000/contexts/ecocheck.jsonld"
+  ],
+  "id": "urn:ngsi-ld:Worker:wrk-002",
+  "type": "Worker",
+  "name": { "type": "Property", "value": "Tran Thi B" },
+  "role": { "type": "Property", "value": "collector" },
+  "phone": { "type": "Property", "value": "+84907654321" },
+  "status": { "type": "Property", "value": "active" },
+  "homeDepot": { "type": "Relationship", "object": "urn:ngsi-ld:Depot:depot-001" }
+}
+
