@@ -1,42 +1,9 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
-}
-
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
-}
-
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
-}
-
-.card {
-  padding: 2em;
-}
-
-.read-the-docs {
-  color: #888;
-}
+/* App-specific utilities (global theme sits in index.css) */
+.header-cta { display:flex; align-items:center; gap:8px; }
+.map-placeholder { height: 280px; border-radius: 12px; background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)); border:1px dashed rgba(148,163,184,.2); display:flex; align-items:center; justify-content:center; color:#94a3b8; }
+.list { display:flex; flex-direction:column; gap:10px; margin-top:8px; }
+.list-item { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-radius:10px; background: rgba(255,255,255,.02); border:1px solid rgba(148,163,184,.12); }
+.list-item .left { display:flex; align-items:center; gap:10px; }
+.dot { margin:0 8px; opacity:.5; }
+.last-updated { color:#94a3b8; }
+.refresh-btn { margin-left: 10px; }

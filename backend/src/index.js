@@ -57,6 +57,17 @@ app.get('/api/status', (req, res) => {
 });
 
 // FIWARE Context Broker integration endpoints
+// Proxy Orion-LD version for frontend (avoids CORS and cross-network issues)
+app.get('/api/fiware/version', async (req, res) => {
+  try {
+    const orionUrl = process.env.ORION_LD_URL || 'http://localhost:1026';
+    const response = await require('axios').get(`${orionUrl}/version`, { timeout: 4000 });
+    res.json({ ok: true, data: response.data });
+  } catch (e) {
+    res.status(503).json({ ok: false, error: e.message });
+  }
+});
+
 app.get('/api/entities', async (req, res) => {
   // TODO: Implement FIWARE Orion Context Broker integration
   res.json({
@@ -89,6 +100,41 @@ app.post('/api/optimize-routes', (req, res) => {
     message: 'Route optimization endpoint - To be implemented',
     optimized_routes: []
   });
+});
+
+// Realtime mock endpoints for demo UI
+const randomInRange = (min, max) => Math.random() * (max - min) + min;
+const TYPES = ['household', 'recyclable', 'bulky'];
+const LEVELS = ['low', 'medium', 'high'];
+
+app.get('/api/rt/checkins', (req, res) => {
+  // Generate a handful of random check-ins around HCMC
+  const center = { lat: 10.78, lon: 106.70 };
+  const n = Number(req.query.n || 30);
+  const points = Array.from({ length: n }).map(() => {
+    const type = TYPES[Math.floor(Math.random() * TYPES.length)];
+    const level = LEVELS[Math.floor(Math.random() * LEVELS.length)];
+    const lat = center.lat + randomInRange(-0.08, 0.08);
+    const lon = center.lon + randomInRange(-0.08, 0.08);
+    return { id: `${Date.now()}-${Math.random().toString(36).slice(2,6)}`, type, level, lat, lon, ts: Date.now() };
+  });
+  res.json({ ok: true, data: points });
+});
+
+app.get('/api/analytics/timeseries', (req, res) => {
+  // Hourly series for 18:00-06:00
+  const hours = [18,19,20,21,22,23,0,1,2,3,4,5,6];
+  const series = hours.map(h => ({ hour: h, value: Math.round(40 + 30 * Math.sin((h/24)*Math.PI*2) + Math.random()*15) }));
+  const byType = {
+    household: Math.round(60 + Math.random()*20),
+    recyclable: Math.round(25 + Math.random()*15),
+    bulky: Math.round(8 + Math.random()*8)
+  };
+  res.json({ ok: true, hours, series, byType });
+});
+
+app.get('/api/analytics/summary', (req, res) => {
+  res.json({ ok: true, routesActive: 12, collectionRate: 0.85, todayTons: 3.2 });
 });
 
 // Scheduled tasks for data collection

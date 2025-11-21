@@ -20,8 +20,9 @@ COPY src/ ./src/
 COPY public/ ./public/
 COPY entrypoint.sh ./
 
-# Make entrypoint executable
-RUN chmod +x entrypoint.sh
+# Make entrypoint executable and convert line endings
+RUN chmod +x entrypoint.sh && \
+    dos2unix entrypoint.sh || sed -i 's/\r$//' entrypoint.sh
 
 # Expose port
 EXPOSE 3000
@@ -31,4 +32,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:3000/health || exit 1
 
 # Start application
-ENTRYPOINT ["./entrypoint.sh"]
+CMD ["node", "src/index.js"]

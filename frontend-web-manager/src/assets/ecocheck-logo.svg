@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="EcoCheck">
+  <defs>
+    <linearGradient id="g" x1="0" x2="1">
+      <stop offset="0" stop-color="#22c55e"/>
+      <stop offset="1" stop-color="#06b6d4"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="62" fill="#0f1729"/>
+  <path d="M64 16c18 0 32 14 32 32 0 24-32 52-32 52S32 72 32 48c0-18 14-32 32-32z" fill="url(#g)"/>
+  <g fill="#0b2a48">
+    <rect x="36" y="54" width="56" height="22" rx="6"/>
+    <circle cx="50" cy="80" r="8" fill="#0b2a48"/>
+    <circle cx="86" cy="80" r="8" fill="#0b2a48"/>
+    <circle cx="50" cy="80" r="4" fill="#e5e7eb"/>
+    <circle cx="86" cy="80" r="4" fill="#e5e7eb"/>
+    <rect x="44" y="60" width="10" height="4" rx="2" fill="#e5e7eb"/>
+    <rect x="58" y="60" width="10" height="4" rx="2" fill="#e5e7eb"/>
+    <rect x="72" y="60" width="10" height="4" rx="2" fill="#e5e7eb"/>
+  </g>
+</svg>
+

@@ -3,7 +3,7 @@
 # EcoCheck Frontend Web Manager Dockerfile
 
 # Build stage
-FROM node:18-alpine as build
+FROM node:22-alpine AS build
 
 WORKDIR /app
 
@@ -11,7 +11,8 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies (include devDeps for build tools like Vite)
-RUN npm ci
+# Using npm install to refresh lock inside container since we modify deps dynamically
+RUN npm install --no-audit --fund=false
 
 # Copy source code
 COPY . .

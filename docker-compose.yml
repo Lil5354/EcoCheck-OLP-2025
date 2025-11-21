@@ -3,8 +3,6 @@
 # EcoCheck-OLP-2025 Docker Compose Configuration
 # FIWARE-based Environmental Monitoring System
 
-version: '3.8'
-
 services:
   # FIWARE Orion-LD Context Broker (NGSI-LD)
   orion-ld:
@@ -12,35 +10,46 @@ services:
     hostname: orion-ld
     container_name: ecocheck-orion-ld
     depends_on:
-      - mongo-db
+      mongo-db:
+        condition: service_healthy
     ports:
       - "1026:1026"
-    command: -dbURI mongodb://mongo-db:27017/orion -logLevel DEBUG
+    environment:
+      - ORIONLD_MONGO_HOST=mongo-db:27017
+    command: -dbURI mongodb://ecocheck-mongodb:27017/orion -logLevel DEBUG -dbTimeout 30000
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:1026/version || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:1026/version || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 30s
+    restart: on-failure
+    links:
+      - mongo-db:ecocheck-mongodb
     networks:
       - ecocheck-network
 
   # MongoDB for Orion Context Broker
   mongo-db:
-    image: mongo:6.0
+    image: mongo:4.4
     hostname: mongo-db
     container_name: ecocheck-mongodb
+    command: --bind_ip_all
     ports:
       - "27017:27017"
     volumes:
       - mongo-db-data:/data/db
       - mongo-db-config:/data/configdb
     healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      test: echo 'db.runCommand("ping").ok' | mongo localhost:27017/test --quiet
       interval: 30s
       timeout: 10s
       retries: 3
     networks:
-      - ecocheck-network
+      ecocheck-network:
+        aliases:
+          - mongo-db
+          - mongodb
 
   # PostgreSQL for application data
   postgres:
@@ -69,8 +78,10 @@ services:
       dockerfile: Dockerfile
     container_name: ecocheck-backend
     depends_on:
-      - orion-ld
-      - postgres
+      orion-ld:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     ports:
       - "3000:3000"
     environment:
@@ -88,6 +99,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 10s
     networks:
       - ecocheck-network
 
@@ -98,7 +110,8 @@ services:
       dockerfile: Dockerfile
     container_name: ecocheck-frontend-web
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     ports:
       - "3001:80"
     environment:
