@@ -11,15 +11,55 @@ export default function RealtimeMap() {
 
   useEffect(() => {
     if (mapObj.current) return
-    mapObj.current = new maplibregl.Map({
-      container: mapRef.current,
-      style: 'https://openmaptiles.github.io/dark-matter-gl-style/style-cdn.json',
-      center: [106.700, 10.780],
-      zoom: 11.2,
-      attributionControl: false
-    })
 
-    mapObj.current.addControl(new maplibregl.NavigationControl({ showCompass:false }), 'top-right')
+    const init = () => {
+      if (!mapRef.current) return
+      const w = mapRef.current.clientWidth
+      const h = mapRef.current.clientHeight
+      if (w === 0 || h === 0) {
+        // container not sized yet, retry shortly
+        return setTimeout(init, 150)
+      }
+      console.log('[RealtimeMap] init with size', w, 'x', h)
+
+      console.log('[RealtimeMap] creating map...')
+      mapObj.current = new maplibregl.Map({
+        container: mapRef.current,
+        style: {
+          version: 8,
+          sources: {
+            osm: {
+              type: 'raster',
+              tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+              tileSize: 256,
+              attribution: '&copy; OpenStreetMap contributors',
+              maxzoom: 19
+            }
+          },
+          layers: [
+            { id: 'background', type: 'background', paint: { 'background-color': '#eef2f7' } },
+            { id: 'osm', type: 'raster', source: 'osm', minzoom: 0, maxzoom: 22 }
+          ]
+        },
+        center: [106.700, 10.780],
+        zoom: 11.2,
+        attributionControl: false
+      })
+
+      mapObj.current.on('error', (e) => {
+        console.error('[RealtimeMap] map error:', e?.error || e)
+      })
+
+      mapObj.current.addControl(new maplibregl.NavigationControl({ showCompass:false }), 'top-right')
+
+      // Ensure proper sizing when first loaded
+      mapObj.current.on('load', () => {
+        try { mapObj.current?.resize() } catch (err) { void err }
+      })
+
+      load() // first data load after map is ready
+      timerRef.current = setInterval(load, 10000)
+    }
 
     const load = async () => {
       try {
@@ -47,8 +87,8 @@ export default function RealtimeMap() {
       }
     }
 
-    load()
-    timerRef.current = setInterval(load, 10000)
+    // kick off map initialization
+    init()
 
     return () => {
       clearInterval(timerRef.current)
@@ -57,6 +97,6 @@ export default function RealtimeMap() {
     }
   }, [])
 
-  return <div className="map-root" ref={mapRef} />
+  return <div className="map-root" ref={mapRef} style={{ width: '100%', height: 420 }} />
 }
 
