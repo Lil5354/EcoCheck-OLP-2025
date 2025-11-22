@@ -14,7 +14,7 @@ export function AreaChart({ width=520, height=140, data=[] , color='#06b6d4', gr
   const path = nx.map((x,i)=>`${i?'L':'M'}${x},${ny[i]}`).join(' ')
   const area = `M${pad},${h-pad} `+nx.map((x,i)=>`L${x},${ny[i]}`).join(' ')+` L${w-pad},${h-pad} Z`
   return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
+    <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
       {gradient && (
         <defs>
           <linearGradient id={id} x1="0" x2="0" y1="0" y2="1">
@@ -23,10 +23,10 @@ export function AreaChart({ width=520, height=140, data=[] , color='#06b6d4', gr
           </linearGradient>
         </defs>
       )}
-      {gradient && <path d={area} fill={`url(#${id})`} />}
-      <path d={path} fill="none" stroke={color} strokeWidth={stroke} strokeLinejoin="round" strokeLinecap="round"/>
+      {gradient && <path d={area} fill={`url(#${id})`} vectorEffect="non-scaling-stroke" />}
+      <path d={path} fill="none" stroke={color} strokeWidth={stroke} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>
       {nx.map((x, i) => (
-        <circle key={i} cx={x} cy={ny[i]} r={stroke + 1} fill={color} stroke="#fff" strokeWidth="1" />
+        <circle key={i} cx={x} cy={ny[i]} r={stroke + 1} fill={color} stroke="#fff" strokeWidth="1" vectorEffect="non-scaling-stroke" />
       ))}
     </svg>
   )
