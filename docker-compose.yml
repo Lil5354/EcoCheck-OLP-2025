@@ -53,12 +53,13 @@ services:
 
   # PostgreSQL for application data
   postgres:
-    image: postgres:15-alpine
+    image: timescale/timescaledb:2.15.3-pg15
     container_name: ecocheck-postgres
     environment:
       POSTGRES_DB: ecocheck
       POSTGRES_USER: ecocheck_user
       POSTGRES_PASSWORD: ecocheck_pass
+      TIMESCALEDB_TELEMETRY: "off"
     ports:
       - "5432:5432"
     volumes:
@@ -68,6 +69,14 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    networks:
+      - ecocheck-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: ecocheck-redis
+    ports:
+      - "6379:6379"
     networks:
       - ecocheck-network
 
