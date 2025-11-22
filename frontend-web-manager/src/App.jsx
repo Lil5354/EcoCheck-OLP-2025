@@ -7,10 +7,10 @@
  */
 
 import { useState, useEffect } from 'react'
-import { MdSearch, MdOutlineNotifications, MdPersonOutline } from 'react-icons/md'
+import { MdSearch, MdOutlineNotifications } from 'react-icons/md'
 import './App.css'
 import logo from './assets/ecocheck-logo.svg'
-import SidebarPro from './navigation/SidebarPro.jsx'
+import Sidebar from './components/Sidebar.jsx'
 import RealtimeMap from './components/RealtimeMap.jsx'
 import { AreaChart, DonutChart, Legend } from './components/Charts.jsx'
 
@@ -18,11 +18,14 @@ function App() {
   const [systemStatus, setSystemStatus] = useState('Checking...')
   const [fiwareInfo, setFiwareInfo] = useState({ status: 'Checking...', version: '', uptime: '' })
   const [lastUpdated, setLastUpdated] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [active, setActive] = useState('overview')
   const [timeseries, setTimeseries] = useState([])
   const [byType, setByType] = useState({})
   const [kpis, setKpis] = useState({ routesActive: 0, collectionRate: 0, todayTons: 0 })
 
   const refresh = async () => {
+    setLoading(true)
     try {
       const [statusRes, fiwareRes, tsRes, sumRes] = await Promise.all([
         fetch('/api/status'),
@@ -49,11 +52,12 @@ function App() {
 
       const sm = await sumRes.json()
       if (sm.ok) setKpis(sm)
-    } catch {
+    } catch (e) {
       setSystemStatus('Backend Offline')
       setFiwareInfo({ status: 'Offline', version: '', uptime: '' })
     } finally {
       setLastUpdated(new Date().toLocaleTimeString())
+      setLoading(false)
     }
   }
 
@@ -63,9 +67,12 @@ function App() {
     return () => clearInterval(id)
   }, [])
 
+  const isBackendOnline = !systemStatus.toLowerCase().includes('offline')
+  const isFiwareOnline = fiwareInfo.status === 'Connected'
+
   return (
     <div className="app layout">
-      <SidebarPro />
+      <Sidebar active={active} onNavigate={setActive} />
       <div className="content">
         <header className="header">
           <div className="container header-row">
@@ -85,7 +92,7 @@ function App() {
                         <span className="icon"><MdOutlineNotifications /></span>
                     </div>
                     <div className="header-item user-profile">
-                        <span className="icon"><MdPersonOutline /></span>
+                        <img src="https://via.placeholder.com/32" alt="User" className="user-avatar" />
                     </div>
                 </div>
             </div>

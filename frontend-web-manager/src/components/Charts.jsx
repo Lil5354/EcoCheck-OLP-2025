@@ -1,8 +1,7 @@
 /* Lightweight SVG charts for Dashboard */
-import React, { useId } from 'react'
+import React from 'react'
 
 export function AreaChart({ width=520, height=140, data=[] , color='#06b6d4', gradient=true, stroke=2 }){
-  const id = useId()
   if (!data || data.length === 0) return <div className="skeleton" style={{height}}/>
   const w = width, h = height, pad=16
   const xs = data.map((d,i)=>i)
@@ -13,6 +12,7 @@ export function AreaChart({ width=520, height=140, data=[] , color='#06b6d4', gr
   const ny = ys.map(y => h - pad - ( (y-min)/(max-min || 1) ) * (h-2*pad))
   const path = nx.map((x,i)=>`${i?'L':'M'}${x},${ny[i]}`).join(' ')
   const area = `M${pad},${h-pad} `+nx.map((x,i)=>`L${x},${ny[i]}`).join(' ')+` L${w-pad},${h-pad} Z`
+  const id = 'g'+Math.random().toString(36).slice(2,7)
   return (
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
       {gradient && (
