@@ -1,6 +1,6 @@
 import React from 'react'
 
-export default function FormModal({ open, title, children, onClose, onSubmit, submitLabel = 'Save', cancelLabel = 'Cancel' }) {
+export default function FormModal({ open, title, children, onClose, onSubmit, submitLabel = 'Lưu', cancelLabel = 'Hủy' }) {
   if (!open) return null
   return (
     <div

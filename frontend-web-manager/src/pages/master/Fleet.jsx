@@ -33,21 +33,21 @@ export default function Fleet() {
   function handleSave() {
     // mock save
     setModalOpen(false)
-    setToast({ message: 'Vehicle saved', type: 'success' })
+    setToast({ message: 'Đã lưu phương tiện', type: 'success' })
     loadFleet()
   }
 
   const columns = [
-    { key: 'plate', label: 'Plate' },
-    { key: 'type', label: 'Type' },
-    { key: 'capacity', label: 'Capacity (kg)' },
-    { key: 'status', label: 'Status' },
+    { key: 'plate', label: 'Biển số' },
+    { key: 'type', label: 'Loại' },
+    { key: 'capacity', label: 'Sức chứa (kg)' },
+    { key: 'status', label: 'Trạng thái' },
     {
       key: 'action',
-      label: 'Action',
+      label: 'Hành động',
       render: (r) => (
         <button className="btn btn-sm" onClick={() => handleEdit(r)}>
-          Edit
+          Sửa
         </button>
       )
     }
@@ -60,21 +60,21 @@ export default function Fleet() {
         <main className="main">
           <div className="container">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <h1 style={{ fontSize: 24, fontWeight: 600 }}>Fleet Management (CN14)</h1>
+              <h1 style={{ fontSize: 24, fontWeight: 600 }}>Quản lý đội xe (CN14)</h1>
               <button className="btn btn-primary" onClick={handleAdd}>
-                Add Vehicle
+                Thêm phương tiện
               </button>
             </div>
             <div className="card">
-              <Table columns={columns} data={fleet} emptyText="No vehicles" />
+              <Table columns={columns} data={fleet} emptyText="Không có phương tiện" />
             </div>
           </div>
         </main>
       </div>
-      <FormModal open={modalOpen} title="Vehicle" onClose={() => setModalOpen(false)} onSubmit={handleSave}>
+      <FormModal open={modalOpen} title="Phương tiện" onClose={() => setModalOpen(false)} onSubmit={handleSave}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div>
-            <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 500 }}>Plate</label>
+            <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 500 }}>Biển số</label>
             <input
               type="text"
               value={editItem?.plate || ''}
@@ -83,19 +83,19 @@ export default function Fleet() {
             />
           </div>
           <div>
-            <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 500 }}>Type</label>
+            <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 500 }}>Loại</label>
             <select
               value={editItem?.type || 'compactor'}
               onChange={(e) => setEditItem({ ...editItem, type: e.target.value })}
               style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 6 }}
             >
-              <option value="compactor">Compactor</option>
-              <option value="mini-truck">Mini Truck</option>
-              <option value="electric-trike">Electric Trike</option>
+              <option value="compactor">Xe ép rác</option>
+              <option value="mini-truck">Xe tải nhỏ</option>
+              <option value="electric-trike">Xe ba bánh điện</option>
             </select>
           </div>
           <div>
-            <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 500 }}>Capacity (kg)</label>
+            <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 500 }}>Sức chứa (kg)</label>
             <input
               type="number"
               value={editItem?.capacity || 0}

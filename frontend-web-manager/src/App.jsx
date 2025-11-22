@@ -15,8 +15,8 @@ import RealtimeMap from './components/RealtimeMap.jsx'
 import { AreaChart, DonutChart, Legend } from './components/Charts.jsx'
 
 function App() {
-  const [systemStatus, setSystemStatus] = useState('Checking...')
-  const [fiwareInfo, setFiwareInfo] = useState({ status: 'Checking...', version: '', uptime: '' })
+  const [systemStatus, setSystemStatus] = useState('Đang kiểm tra...')
+  const [fiwareInfo, setFiwareInfo] = useState({ status: 'Đang kiểm tra...', version: '', uptime: '' })
   const [lastUpdated, setLastUpdated] = useState('')
   const [timeseries, setTimeseries] = useState([])
   const [byType, setByType] = useState({})
@@ -36,9 +36,9 @@ function App() {
 
       const fw = await fiwareRes.json()
       if (fw.ok) {
-        setFiwareInfo({ status: 'Connected', version: fw.data['orionld version'], uptime: fw.data.uptime })
+        setFiwareInfo({ status: 'Đã kết nối', version: fw.data['orionld version'], uptime: fw.data.uptime })
       } else {
-        setFiwareInfo({ status: 'Offline', version: '', uptime: '' })
+        setFiwareInfo({ status: 'Ngoại tuyến', version: '', uptime: '' })
       }
 
       const ts = await tsRes.json()
@@ -50,8 +50,8 @@ function App() {
       const sm = await sumRes.json()
       if (sm.ok) setKpis(sm)
     } catch {
-      setSystemStatus('Backend Offline')
-      setFiwareInfo({ status: 'Offline', version: '', uptime: '' })
+      setSystemStatus('Backend ngoại tuyến')
+      setFiwareInfo({ status: 'Ngoại tuyến', version: '', uptime: '' })
     } finally {
       setLastUpdated(new Date().toLocaleTimeString())
     }
@@ -79,7 +79,7 @@ function App() {
                 <div className="toolbar">
                     <div className="search-bar">
                         <span className="icon"><MdSearch /></span>
-                        <input type="text" placeholder="Search..." />
+                        <input type="text" placeholder="Tìm kiếm..." />
                     </div>
                     <div className="header-item">
                         <span className="icon"><MdOutlineNotifications /></span>
@@ -98,7 +98,7 @@ function App() {
               <div className="col-4 fade-up">
                 <div className="card stat-card border-blue">
                     <div className="stat-body">
-                        <h5 className="stat-title">Active Routes</h5>
+                        <h5 className="stat-title">Tuyến đang hoạt động</h5>
                         <h2 className="stat-value">{kpis.routesActive || <span className="skeleton" style={{width:50}}/>}</h2>
                         <p className="stat-trend text-success">+2.5%</p>
                     </div>
@@ -110,7 +110,7 @@ function App() {
               <div className="col-4 fade-up delay-1">
                 <div className="card stat-card border-green">
                     <div className="stat-body">
-                        <h5 className="stat-title">Collection Rate</h5>
+                        <h5 className="stat-title">Tỷ lệ thu gom</h5>
                         <h2 className="stat-value">{kpis.collectionRate ? `${Math.round(kpis.collectionRate*100)}%` : <span className="skeleton" style={{width:60}}/>}</h2>
                         <p className="stat-trend text-danger">-1.3%</p>
                     </div>
@@ -122,7 +122,7 @@ function App() {
               <div className="col-4 fade-up delay-2">
                 <div className="card stat-card border-yellow">
                     <div className="stat-body">
-                        <h5 className="stat-title">Collected Today</h5>
+                        <h5 className="stat-title">Thu gom hôm nay</h5>
                         <h2 className="stat-value">{kpis.todayTons || <span className="skeleton" style={{width:50}}/>}t</h2>
                         <p className="stat-trend text-success">+5.2%</p>
                     </div>
@@ -133,26 +133,26 @@ function App() {
               </div>
 
               <section className="card col-8 fade-up delay-1">
-                <h2>Collection Volume (last 12 hours)</h2>
+                <h2>Khối lượng thu gom (12 giờ qua)</h2>
                 <AreaChart data={timeseries} color="var(--primary)" stroke={3} />
               </section>
 
               <section className="card col-4 fade-up delay-2">
-                <h2>Waste by Type</h2>
+                <h2>Rác theo loại</h2>
                 <DonutChart segments={byType} colors={['var(--success)','var(--accent)','var(--danger)']} />
                 <Legend items={[
-                  { label: 'Household', color: 'var(--success)' },
-                  { label: 'Recyclable', color: 'var(--accent)' },
-                  { label: 'Bulky', color: 'var(--danger)' },
+                  { label: 'Sinh hoạt', color: 'var(--success)' },
+                  { label: 'Tái chế', color: 'var(--accent)' },
+                  { label: 'Cồng kềnh', color: 'var(--danger)' },
                 ]} />
               </section>
 
               <section className="card col-12 fade-up delay-3">
-                <h2>Realtime Operation Map</h2>
+                <h2>Bản đồ vận hành thời gian thực</h2>
                 <RealtimeMap />
               </section>
             </div>
-            <div className="footer">Last updated: {lastUpdated || '—'}</div>
+            <div className="footer">Cập nhật lần cuối: {lastUpdated || '—'}</div>
           </div>
         </main>
       </div>

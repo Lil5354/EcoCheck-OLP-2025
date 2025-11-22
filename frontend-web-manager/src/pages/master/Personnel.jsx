@@ -26,19 +26,19 @@ export default function Personnel() {
 
   function handleSave() {
     setModalOpen(false)
-    setToast({ message: 'Personnel saved', type: 'success' })
+    setToast({ message: 'Đã lưu nhân sự', type: 'success' })
   }
 
   const columns = [
-    { key: 'name', label: 'Name' },
-    { key: 'role', label: 'Role' },
-    { key: 'status', label: 'Status' },
+    { key: 'name', label: 'Họ tên' },
+    { key: 'role', label: 'Vai trò' },
+    { key: 'status', label: 'Trạng thái' },
     {
       key: 'action',
-      label: 'Action',
+      label: 'Hành động',
       render: (r) => (
         <button className="btn btn-sm" onClick={() => handleEdit(r)}>
-          Edit
+          Sửa
         </button>
       )
     }
@@ -51,21 +51,21 @@ export default function Personnel() {
         <main className="main">
           <div className="container">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <h1 style={{ fontSize: 24, fontWeight: 600 }}>Personnel (CN14)</h1>
+              <h1 style={{ fontSize: 24, fontWeight: 600 }}>Nhân sự (CN14)</h1>
               <button className="btn btn-primary" onClick={handleAdd}>
-                Add Personnel
+                Thêm nhân sự
               </button>
             </div>
             <div className="card">
-              <Table columns={columns} data={personnel} emptyText="No personnel" />
+              <Table columns={columns} data={personnel} emptyText="Không có nhân sự" />
             </div>
           </div>
         </main>
       </div>
-      <FormModal open={modalOpen} title="Personnel" onClose={() => setModalOpen(false)} onSubmit={handleSave}>
+      <FormModal open={modalOpen} title="Nhân sự" onClose={() => setModalOpen(false)} onSubmit={handleSave}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div>
-            <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 500 }}>Name</label>
+            <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 500 }}>Họ tên</label>
             <input
               type="text"
               value={editItem?.name || ''}
@@ -74,16 +74,16 @@ export default function Personnel() {
             />
           </div>
           <div>
-            <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 500 }}>Role</label>
+            <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 500 }}>Vai trò</label>
             <select
               value={editItem?.role || 'driver'}
               onChange={(e) => setEditItem({ ...editItem, role: e.target.value })}
               style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 6 }}
             >
-              <option value="driver">Driver</option>
-              <option value="collector">Collector</option>
-              <option value="manager">Manager</option>
-              <option value="dispatcher">Dispatcher</option>
+              <option value="driver">Tài xế</option>
+              <option value="collector">Nhân viên thu gom</option>
+              <option value="manager">Quản lý</option>
+              <option value="dispatcher">Điều phối viên</option>
             </select>
           </div>
         </div>

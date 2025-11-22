@@ -55,7 +55,7 @@ export default function RouteOptimization() {
 
   async function handleOptimize() {
     if (selectedVehicles.length === 0) {
-      setToast({ message: 'Please select at least one vehicle', type: 'error' })
+      setToast({ message: 'Vui lòng chọn ít nhất một phương tiện', type: 'error' })
       return
     }
     setLoading(true)
@@ -71,9 +71,9 @@ export default function RouteOptimization() {
     setLoading(false)
     if (res.ok) {
       setRoutes(res.data.routes || [])
-      setToast({ message: 'Routes optimized successfully', type: 'success' })
+      setToast({ message: 'Tối ưu tuyến đường thành công', type: 'success' })
     } else {
-      setToast({ message: 'Optimization failed', type: 'error' })
+      setToast({ message: 'Tối ưu thất bại', type: 'error' })
     }
   }
 
@@ -87,9 +87,9 @@ export default function RouteOptimization() {
     const res = await api.sendRoutes({ routes })
     setLoading(false)
     if (res.ok) {
-      setToast({ message: 'Routes dispatched to drivers', type: 'success' })
+      setToast({ message: 'Đã gửi tuyến đường cho tài xế', type: 'success' })
     } else {
-      setToast({ message: 'Dispatch failed', type: 'error' })
+      setToast({ message: 'Gửi thất bại', type: 'error' })
     }
   }
 
@@ -99,24 +99,24 @@ export default function RouteOptimization() {
       <div className="content">
         <main className="main">
           <div className="container">
-            <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>Route Optimization (CN6)</h1>
+            <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>Tối ưu tuyến đường (CN6)</h1>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 24 }}>
               <div className="card">
-                <h2>Map & Points</h2>
+                <h2>Bản đồ & Điểm thu gom</h2>
                 <div ref={mapRef} style={{ width: '100%', height: 500, borderRadius: 8, overflow: 'hidden', border: '1px solid #e0e0e0' }} />
                 <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
                   <button className="btn btn-primary" onClick={handleOptimize} disabled={loading}>
-                    {loading ? 'Optimizing...' : 'Optimize Routes'}
+                    {loading ? 'Đang tối ưu...' : 'Tối ưu tuyến đường'}
                   </button>
                   {routes.length > 0 && (
                     <button className="btn btn-primary" onClick={handleSend}>
-                      Send Routes
+                      Gửi tuyến đường
                     </button>
                   )}
                 </div>
               </div>
               <div className="card">
-                <h2>Fleet</h2>
+                <h2>Đội xe</h2>
                 <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {fleet.map(v => (
                     <label key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 8, border: '1px solid #e0e0e0', borderRadius: 6, cursor: 'pointer' }}>
@@ -141,13 +141,13 @@ export default function RouteOptimization() {
             </div>
             {routes.length > 0 && (
               <div className="card" style={{ marginTop: 24 }}>
-                <h2>Optimized Routes</h2>
+                <h2>Tuyến đường đã tối ưu</h2>
                 <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
                   {routes.map((r, i) => (
                     <div key={i} style={{ padding: 12, border: '1px solid #e0e0e0', borderRadius: 6 }}>
-                      <div style={{ fontWeight: 600 }}>Vehicle: {r.vehicleId}</div>
+                      <div style={{ fontWeight: 600 }}>Phương tiện: {r.vehicleId}</div>
                       <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
-                        Distance: {r.distance}m · ETA: {r.eta} · Stops: {r.stops.length}
+                        Khoảng cách: {r.distance}m · Thời gian dự kiến: {r.eta} · Điểm dừng: {r.stops.length}
                       </div>
                     </div>
                   ))}
@@ -159,8 +159,8 @@ export default function RouteOptimization() {
       </div>
       <ConfirmDialog
         open={confirmOpen}
-        title="Confirm Dispatch"
-        message="Send optimized routes to drivers?"
+        title="Xác nhận điều phối"
+        message="Gửi tuyến đường đã tối ưu cho tài xế?"
         onConfirm={confirmSend}
         onCancel={() => setConfirmOpen(false)}
       />

@@ -25,26 +25,26 @@ export default function DynamicDispatch() {
     const res = await api.reroute({ alertId: alert.id, vehicleId: alert.vehicle })
     setLoading(false)
     if (res.ok) {
-      setToast({ message: `Re-route created: ${res.data.routeId}`, type: 'success' })
+      setToast({ message: `Đã tạo tuyến mới: ${res.data.routeId}`, type: 'success' })
       loadAlerts()
     } else {
-      setToast({ message: 'Re-route failed', type: 'error' })
+      setToast({ message: 'Tạo tuyến mới thất bại', type: 'error' })
     }
   }
 
   const columns = [
-    { key: 'time', label: 'Time' },
-    { key: 'point', label: 'Point' },
-    { key: 'vehicle', label: 'Vehicle' },
-    { key: 'level', label: 'Level', render: (r) => <span style={{ color: r.level === 'critical' ? '#ef4444' : '#f59e0b' }}>{r.level}</span> },
-    { key: 'status', label: 'Status' },
+    { key: 'time', label: 'Thời gian' },
+    { key: 'point', label: 'Điểm' },
+    { key: 'vehicle', label: 'Phương tiện' },
+    { key: 'level', label: 'Mức độ', render: (r) => <span style={{ color: r.level === 'critical' ? '#ef4444' : '#f59e0b' }}>{r.level === 'critical' ? 'Nghiêm trọng' : 'Cảnh báo'}</span> },
+    { key: 'status', label: 'Trạng thái' },
     {
       key: 'action',
-      label: 'Action',
+      label: 'Hành động',
       render: (r) =>
         r.status === 'open' ? (
           <button className="btn btn-sm btn-primary" onClick={() => handleReroute(r)} disabled={loading}>
-            Re-route
+            Tạo tuyến mới
           </button>
         ) : null
     }
@@ -56,10 +56,10 @@ export default function DynamicDispatch() {
       <div className="content">
         <main className="main">
           <div className="container">
-            <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>Dynamic Dispatch (CN7)</h1>
+            <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>Điều phối động (CN7)</h1>
             <div className="card">
-              <h2>Real-time Alerts</h2>
-              <Table columns={columns} data={alerts} emptyText="No alerts" />
+              <h2>Cảnh báo thời gian thực</h2>
+              <Table columns={columns} data={alerts} emptyText="Không có cảnh báo" />
             </div>
           </div>
         </main>

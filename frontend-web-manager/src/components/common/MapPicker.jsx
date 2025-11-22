@@ -59,7 +59,7 @@ export default function MapPicker({ center = [106.7, 10.78], zoom = 12, onPick }
     <div>
       <div ref={mapRef} style={{ width: '100%', height: 300, borderRadius: 8, overflow: 'hidden', border: '1px solid #e0e0e0' }} />
       <div style={{ marginTop: 8, fontSize: 12, color: '#888' }}>
-        Selected: {coords[1].toFixed(5)}, {coords[0].toFixed(5)}
+        Đã chọn: {coords[1].toFixed(5)}, {coords[0].toFixed(5)}
       </div>
     </div>
   )

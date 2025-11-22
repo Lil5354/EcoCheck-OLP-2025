@@ -1,6 +1,6 @@
 import React from 'react'
 
-export default function Table({ columns, data, onRowClick, emptyText = 'No data' }) {
+export default function Table({ columns, data, onRowClick, emptyText = 'Không có dữ liệu' }) {
   if (!data || data.length === 0) {
     return <div style={{ textAlign: 'center', padding: '40px 0', color: '#888' }}>{emptyText}</div>
   }

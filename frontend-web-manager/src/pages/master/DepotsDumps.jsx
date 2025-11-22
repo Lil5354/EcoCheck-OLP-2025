@@ -31,19 +31,19 @@ export default function DepotsDumps() {
 
   function handleSave() {
     setModalOpen(false)
-    setToast({ message: `${editType === 'depot' ? 'Depot' : 'Dump'} saved`, type: 'success' })
+    setToast({ message: `Đã lưu ${editType === 'depot' ? 'trạm' : 'bãi rác'}`, type: 'success' })
   }
 
   const columns = [
-    { key: 'name', label: 'Name' },
-    { key: 'lon', label: 'Longitude', render: (r) => r.lon.toFixed(5) },
-    { key: 'lat', label: 'Latitude', render: (r) => r.lat.toFixed(5) },
+    { key: 'name', label: 'Tên' },
+    { key: 'lon', label: 'Kinh độ', render: (r) => r.lon.toFixed(5) },
+    { key: 'lat', label: 'Vĩ độ', render: (r) => r.lat.toFixed(5) },
     {
       key: 'action',
-      label: 'Action',
+      label: 'Hành động',
       render: (r) => (
         <button className="btn btn-sm" onClick={() => handleEdit(r)}>
-          Edit
+          Sửa
         </button>
       )
     }
@@ -55,34 +55,34 @@ export default function DepotsDumps() {
       <div className="content">
         <main className="main">
           <div className="container">
-            <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>Depots & Dumps (CN14)</h1>
+            <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>Trạm & Bãi rác (CN14)</h1>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
               <div className="card">
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                  <h2>Depots</h2>
+                  <h2>Trạm</h2>
                   <button className="btn btn-sm btn-primary" onClick={() => handleAdd('depot')}>
-                    Add Depot
+                    Thêm trạm
                   </button>
                 </div>
-                <Table columns={columns} data={depots} emptyText="No depots" />
+                <Table columns={columns} data={depots} emptyText="Không có trạm" />
               </div>
               <div className="card">
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                  <h2>Dumps / Transfer Stations</h2>
+                  <h2>Bãi rác / Trạm trung chuyển</h2>
                   <button className="btn btn-sm btn-primary" onClick={() => handleAdd('dump')}>
-                    Add Dump
+                    Thêm bãi rác
                   </button>
                 </div>
-                <Table columns={columns} data={dumps} emptyText="No dumps" />
+                <Table columns={columns} data={dumps} emptyText="Không có bãi rác" />
               </div>
             </div>
           </div>
         </main>
       </div>
-      <FormModal open={modalOpen} title={editType === 'depot' ? 'Depot' : 'Dump'} onClose={() => setModalOpen(false)} onSubmit={handleSave}>
+      <FormModal open={modalOpen} title={editType === 'depot' ? 'Trạm' : 'Bãi rác'} onClose={() => setModalOpen(false)} onSubmit={handleSave}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div>
-            <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 500 }}>Name</label>
+            <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 500 }}>Tên</label>
             <input
               type="text"
               value={editItem?.name || ''}
@@ -91,7 +91,7 @@ export default function DepotsDumps() {
             />
           </div>
           <div>
-            <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 500 }}>Location</label>
+            <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 500 }}>Vị trí</label>
             <MapPicker
               center={[editItem?.lon || 106.7, editItem?.lat || 10.78]}
               onPick={(coords) => setEditItem({ ...editItem, lon: coords[0], lat: coords[1] })}

@@ -5,36 +5,36 @@ import { MdOutlineDashboard, MdOutlineMap, MdOutlineAnalytics, MdOutlineRoute, M
 
 const groups = [
   {
-    title: 'NAVIGATION',
+    title: 'ĐIỀU HƯỚNG',
     items: [
-      { to: '/', label: 'Dashboard', icon: <MdOutlineDashboard /> },
+      { to: '/', label: 'Bảng điều khiển', icon: <MdOutlineDashboard /> },
     ]
   },
   {
-    title: 'OPERATIONS',
+    title: 'VẬN HÀNH',
     items: [
-      { to: '/operations/route-optimization', label: 'Route Optimization', icon: <MdOutlineRoute /> },
-      { to: '/operations/dynamic-dispatch', label: 'Dynamic Dispatch', icon: <MdOutlineMap /> },
+      { to: '/operations/route-optimization', label: 'Tối ưu tuyến đường', icon: <MdOutlineRoute /> },
+      { to: '/operations/dynamic-dispatch', label: 'Điều phối động', icon: <MdOutlineMap /> },
     ]
   },
   {
-    title: 'ANALYTICS',
+    title: 'PHÂN TÍCH',
     items: [
-      { to: '/analytics', label: 'Analytics & Prediction', icon: <MdOutlineAnalytics /> },
+      { to: '/analytics', label: 'Phân tích & Dự đoán', icon: <MdOutlineAnalytics /> },
     ]
   },
   {
-    title: 'MASTER DATA',
+    title: 'DỮ LIỆU CHỦ',
     items: [
-      { to: '/master/fleet', label: 'Fleet', icon: <MdLocalShipping /> },
-      { to: '/master/personnel', label: 'Personnel', icon: <MdPeopleAlt /> },
-      { to: '/master/depots-dumps', label: 'Depots & Dumps', icon: <MdWarehouse /> },
+      { to: '/master/fleet', label: 'Đội xe', icon: <MdLocalShipping /> },
+      { to: '/master/personnel', label: 'Nhân sự', icon: <MdPeopleAlt /> },
+      { to: '/master/depots-dumps', label: 'Trạm & Bãi rác', icon: <MdWarehouse /> },
     ]
   },
   {
-    title: 'EXCEPTIONS',
+    title: 'NGOẠI LỆ',
     items: [
-      { to: '/exceptions', label: 'Exception Handling', icon: <MdWarningAmber /> },
+      { to: '/exceptions', label: 'Xử lý ngoại lệ', icon: <MdWarningAmber /> },
     ]
   }
 ]

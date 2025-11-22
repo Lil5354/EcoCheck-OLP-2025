@@ -33,29 +33,29 @@ export default function Exceptions() {
     setModalOpen(false)
     const res = action === 'approve' ? await api.approveException(selected.id, { plan: reason }) : await api.rejectException(selected.id, { reason })
     if (res.ok) {
-      setToast({ message: `Exception ${action}d`, type: 'success' })
+      setToast({ message: `Đã ${action === 'approve' ? 'phê duyệt' : 'từ chối'} ngoại lệ`, type: 'success' })
       loadExceptions()
     } else {
-      setToast({ message: 'Action failed', type: 'error' })
+      setToast({ message: 'Hành động thất bại', type: 'error' })
     }
   }
 
   const columns = [
-    { key: 'time', label: 'Time' },
-    { key: 'location', label: 'Location' },
-    { key: 'type', label: 'Type' },
-    { key: 'status', label: 'Status' },
+    { key: 'time', label: 'Thời gian' },
+    { key: 'location', label: 'Vị trí' },
+    { key: 'type', label: 'Loại' },
+    { key: 'status', label: 'Trạng thái' },
     {
       key: 'action',
-      label: 'Action',
+      label: 'Hành động',
       render: (r) =>
         r.status === 'pending' ? (
           <div style={{ display: 'flex', gap: 4 }}>
             <button className="btn btn-sm btn-primary" onClick={() => handleAction(r, 'approve')}>
-              Approve
+              Phê duyệt
             </button>
             <button className="btn btn-sm" onClick={() => handleAction(r, 'reject')}>
-              Reject
+              Từ chối
             </button>
           </div>
         ) : null
@@ -68,23 +68,23 @@ export default function Exceptions() {
       <div className="content">
         <main className="main">
           <div className="container">
-            <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>Exception Handling (CN15)</h1>
+            <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>Xử lý ngoại lệ (CN15)</h1>
             <div className="card">
-              <h2>Exception Reports</h2>
-              <Table columns={columns} data={exceptions} emptyText="No exceptions" />
+              <h2>Báo cáo ngoại lệ</h2>
+              <Table columns={columns} data={exceptions} emptyText="Không có ngoại lệ" />
             </div>
           </div>
         </main>
       </div>
       <FormModal
         open={modalOpen}
-        title={action === 'approve' ? 'Approve Exception' : 'Reject Exception'}
+        title={action === 'approve' ? 'Phê duyệt ngoại lệ' : 'Từ chối ngoại lệ'}
         onClose={() => setModalOpen(false)}
         onSubmit={handleSubmit}
       >
         <div>
           <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 500 }}>
-            {action === 'approve' ? 'Plan / Solution' : 'Reason'}
+            {action === 'approve' ? 'Kế hoạch / Giải pháp' : 'Lý do'}
           </label>
           <textarea
             value={reason}
