@@ -17,7 +17,7 @@ export default function Fleet() {
 
   async function loadFleet() {
     const res = await api.getFleet()
-    if (res.ok) setFleet(res.data)
+    if (res.ok && Array.isArray(res.data)) setFleet(res.data)
   }
 
   function handleAdd() {

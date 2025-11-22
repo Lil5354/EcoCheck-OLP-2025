@@ -6,6 +6,8 @@
  * Main application component
  */
 
+import React from 'react'
+
 import { useState, useEffect } from 'react'
 import { MdSearch, MdOutlineNotifications, MdPersonOutline } from 'react-icons/md'
 import './App.css'

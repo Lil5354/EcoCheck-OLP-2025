@@ -24,8 +24,8 @@ export default function RouteOptimization() {
 
   async function loadData() {
     const [f, p] = await Promise.all([api.getFleet(), api.getPoints()])
-    if (f.ok) setFleet(f.data)
-    if (p.ok) setPoints(p.data.filter(pt => pt.status !== 'grey'))
+    if (f.ok && Array.isArray(f.data)) setFleet(f.data)
+    if (p.ok && Array.isArray(p.data)) setPoints(p.data.filter(pt => pt.status !== 'grey'))
   }
 
   function initMap() {

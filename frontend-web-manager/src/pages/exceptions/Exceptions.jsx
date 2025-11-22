@@ -19,7 +19,7 @@ export default function Exceptions() {
 
   async function loadExceptions() {
     const res = await api.getExceptions()
-    if (res.ok) setExceptions(res.data)
+    if (res.ok && Array.isArray(res.data)) setExceptions(res.data)
   }
 
   function handleAction(item, act) {

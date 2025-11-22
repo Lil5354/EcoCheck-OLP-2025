@@ -17,7 +17,7 @@ export default function DynamicDispatch() {
 
   async function loadAlerts() {
     const res = await api.getAlerts()
-    if (res.ok) setAlerts(res.data)
+    if (res.ok && Array.isArray(res.data)) setAlerts(res.data)
   }
 
   async function handleReroute(alert) {

@@ -18,7 +18,7 @@ export default function AnalyticsPage() {
     const [s, ts] = await Promise.all([api.getSummary(), api.getTimeseries()])
     setLoading(false)
     if (s.ok) setSummary(s.data)
-    if (ts.ok) setTimeseries(ts.data)
+    if (ts.ok && Array.isArray(ts.data)) setTimeseries(ts.data)
   }
 
   async function handlePredict() {
