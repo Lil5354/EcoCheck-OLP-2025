@@ -8,14 +8,24 @@
 
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const dotenv = require('dotenv');
 const cron = require('node-cron');
+const http = require('http');
 
 // Load environment variables
 dotenv.config();
 
 const app = express();
+const server = http.createServer(app);
+const io = require('socket.io')(server, { cors: { origin: '*'} })
 const PORT = process.env.PORT || 3000;
+// Performance middleware
+app.use(compression());
+
+// Realtime store (mock for dev)
+const { store } = require('./realtime');
+
 
 // Middleware
 app.use(cors());
@@ -128,6 +138,27 @@ app.get('/api/analytics/timeseries', (req, res) => {
   const byType = {
     household: Math.round(60 + Math.random()*20),
     recyclable: Math.round(25 + Math.random()*15),
+// Realtime endpoints (viewport + delta)
+app.get('/api/rt/points', (req, res) => {
+  const bbox = (req.query.bbox||'').split(',').map(parseFloat)
+  const since = req.query.since ? Number(req.query.since) : undefined
+  const data = store.getPoints({ bbox: bbox.length===4?bbox:undefined, since })
+  res.set('Cache-Control','no-store').json({ ok:true, ...data })
+})
+
+app.get('/api/rt/vehicles', (req, res) => {
+  res.set('Cache-Control','no-store').json({ ok:true, data: store.getVehicles(), serverTime: Date.now() })
+})
+
+// Socket.IO for fleet broadcast
+io.on('connection', (socket) => {
+  socket.emit('fleet:init', store.getVehicles())
+})
+setInterval(()=>{
+  store.tickVehicles()
+  io.emit('fleet', store.getVehicles())
+}, 1000)
+
     bulky: Math.round(8 + Math.random()*8)
   };
   res.json({ ok: true, hours, series, byType });
@@ -160,8 +191,8 @@ app.use('*', (req, res) => {
   });
 });
 
-// Start server
-app.listen(PORT, () => {
+// Start server (HTTP + Socket.IO)
+server.listen(PORT, () => {
   console.log(`🚀 EcoCheck Backend started on port ${PORT}`);
   console.log(`📊 Health check: http://localhost:${PORT}/health`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
