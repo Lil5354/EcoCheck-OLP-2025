@@ -1,7 +1,13 @@
--- EcoCheck - Operational schema (PostgreSQL + PostGIS)
--- Run after database is created. Requires extension postgis.
+-- EcoCheck - Operational schema (PostgreSQL + PostGIS + TimescaleDB)
+-- Run after database is created. Requires extensions: postgis, timescaledb, uuid-ossp
+-- MIT License - Copyright (c) 2025 Lil5354
 
+-- ============================================================================
+-- EXTENSIONS
+-- ============================================================================
 CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS timescaledb;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Master Data
 CREATE TABLE IF NOT EXISTS depots (
