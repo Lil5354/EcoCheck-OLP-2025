@@ -9,10 +9,30 @@ echo "Starting EcoCheck Backend..."
 echo "Environment: ${NODE_ENV:-development}"
 echo "Port: ${PORT:-3000}"
 
-# Wait for database if needed
-if [ -n "$DATABASE_URL" ]; then
-    echo "Waiting for database connection..."
-    sleep 5
+# Wait for the database to be ready
+if [ -n "$DB_HOST" ]; then
+    echo "Waiting for database at $DB_HOST:$DB_PORT..."
+    # Use netcat to check for the port to be open
+    while ! nc -z "$DB_HOST" "$DB_PORT"; do
+        sleep 1
+    done
+    echo "Database is ready."
+fi
+
+# Run database migrations if the script exists
+# Note: This path assumes the db scripts are copied into the container
+if [ -f "/app/db/run_migrations.sh" ]; then
+    echo "Force-cleaning problematic migration entry before running..."
+    PGPASSWORD=$DB_PASSWORD psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "DELETE FROM schema_migrations WHERE version = '008_create_alerts_table.sql';" || echo "Clean-up failed, continuing anyway."
+
+    echo "Running database migrations..."
+    # Go to the db directory to run the script
+    cd /app/db
+    /bin/sh ./run_migrations.sh
+    cd /app # Return to app directory
+    echo "Migrations complete."
+else
+    echo "Migration script not found, skipping."
 fi
 
 # Start the application

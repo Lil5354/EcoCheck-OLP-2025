@@ -7,18 +7,19 @@ FROM node:18-alpine
 WORKDIR /app
 
 # Install needed tools
-RUN apk add --no-cache curl wget
+RUN apk add --no-cache curl wget netcat-openbsd postgresql-client
 
 # Copy package files
-COPY package*.json ./
+COPY backend/package*.json ./
 
 # Install dependencies (use npm install to avoid lockfile requirement)
 RUN npm install --omit=dev
 
-# Copy source code and public assets
-COPY src/ ./src/
-COPY public/ ./public/
-COPY entrypoint.sh ./
+# Copy all necessary directories from the correct context
+COPY backend/src/ ./src/
+COPY backend/public/ ./public/
+COPY db/ ./db/
+COPY backend/entrypoint.sh ./
 
 # Make entrypoint executable and convert line endings
 RUN chmod +x entrypoint.sh && \
@@ -31,5 +32,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:3000/health || exit 1
 
-# Start application
-CMD ["node", "src/index.js"]
+# Use entrypoint to run migrations and start app
+ENTRYPOINT ["/bin/sh", "./entrypoint.sh"]

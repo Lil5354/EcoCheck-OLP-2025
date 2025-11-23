@@ -27,6 +27,31 @@ app.use(compression());
 const { store } = require('./realtime');
 
 
+// Database Connection
+const { Pool } = require('pg');
+const db = new Pool({
+  connectionString: process.env.DATABASE_URL || 'postgresql://ecocheck_user:ecocheck_pass@localhost:5432/ecocheck',
+});
+db.on('connect', () => console.log('🐘 Connected to PostgreSQL database'));
+
+// --- Utility Functions ---
+function getHaversineDistance(coords1, coords2) {
+  const toRad = (x) => (x * Math.PI) / 180;
+  const R = 6371e3; // Earth radius in metres
+
+  const dLat = toRad(coords2.lat - coords1.lat);
+  const dLon = toRad(coords2.lon - coords1.lon);
+  const lat1 = toRad(coords1.lat);
+  const lat2 = toRad(coords2.lat);
+
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c; // in metres
+}
+
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -110,6 +135,95 @@ app.post('/api/optimize-routes', (req, res) => {
     message: 'Route optimization endpoint - To be implemented',
     optimized_routes: []
   });
+});
+
+// CN7: Check-in endpoint with late detection
+app.post('/api/rt/checkin', async (req, res) => {
+  const { route_id, point_id, vehicle_id } = req.body;
+
+  if (!route_id || !point_id || !vehicle_id) {
+    return res.status(400).json({ ok: false, error: 'Missing route_id, point_id, or vehicle_id' });
+  }
+
+  const result = store.recordCheckin(route_id, point_id);
+
+  // CN7: Check if this check-in resolves any open/acknowledged alerts for this point
+  try {
+    const { rows: openAlerts } = await db.query(
+      `SELECT alert_id, alert_type, status
+       FROM alerts
+       WHERE point_id = $1 AND status IN ('open', 'acknowledged')`,
+      [point_id]
+    );
+
+    if (openAlerts.length > 0) {
+      // Resolve all open/acknowledged alerts for this point
+      await db.query(
+        `UPDATE alerts
+         SET status = 'resolved',
+             details = jsonb_set(
+               COALESCE(details, '{}'::jsonb),
+               '{resolved_at}',
+               to_jsonb($1::text)
+             ) || jsonb_build_object(
+               'resolved_by_vehicle', $2,
+               'resolved_by_route', $3
+             )
+         WHERE point_id = $4 AND status IN ('open', 'acknowledged')`,
+        [new Date().toISOString(), vehicle_id, route_id, point_id]
+      );
+
+      // Update route_stops status to 'completed' for this point on this route
+      await db.query(
+        `UPDATE route_stops
+         SET status = 'completed',
+             actual_at = $1,
+             actual_arrival_at = $1
+         WHERE route_id = $2 AND point_id = $3 AND status = 'pending'`,
+        [new Date(), route_id, point_id]
+      );
+
+      console.log(`✅ Resolved ${openAlerts.length} alert(s) for point ${point_id}`);
+    }
+  } catch (err) {
+    console.error('Error resolving alerts on check-in:', err);
+    // Don't fail the check-in if alert resolution fails
+  }
+
+  if (result.status === 'late_checkin') {
+    try {
+      const { rows } = await db.query(
+        'SELECT 1 FROM alerts WHERE route_id = $1 AND point_id = $2 AND status = $3 AND alert_type = $4 LIMIT 1',
+        [route_id, point_id, 'open', 'late_checkin']
+      );
+
+      if (rows.length === 0) {
+        console.log(`🚨 LATE CHECK-IN DETECTED! Route: ${route_id}, Point: ${point_id}`);
+        // Use NULL for route_id if not a valid UUID to satisfy FK constraint
+        const routeIdForInsert = (typeof route_id === 'string' && /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(route_id)) ? route_id : null;
+        await db.query(
+          `INSERT INTO alerts (alert_type, point_id, vehicle_id, route_id, severity, status, details)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            'late_checkin',
+            point_id,
+            vehicle_id,
+            routeIdForInsert,
+            'warning', // Late check-ins are warnings
+            'open',
+            JSON.stringify({ detected_at: new Date().toISOString() })
+          ]
+        );
+      }
+      return res.status(200).json({ ok: true, status: 'late_checkin_recorded' });
+
+    } catch (err) {
+      console.error('Error creating late check-in alert:', err);
+      return res.status(500).json({ ok: false, error: 'Failed to record late check-in alert' });
+    }
+  }
+
+  res.json({ ok: true, ...result });
 });
 
 // Realtime mock endpoints for demo UI
@@ -233,19 +347,183 @@ app.post('/api/dispatch/reroute', (req, res) => {
   res.json({ ok: true, data: { message: 'Re-route created', routeId: `R${Math.floor(Math.random() * 1000)}` } });
 });
 
-// Alerts endpoint
-app.get('/api/rt/alerts', (req, res) => {
-  const now = Date.now();
-  const alerts = Array.from({ length: 8 }).map((_, i) => ({
-    id: `A${i + 1}`,
-    time: new Date(now - i * 600000).toLocaleTimeString(),
-    point: `P${20 + i}`,
-    vehicle: ['V01', 'V02', 'V03'][i % 3],
-    level: ['warning', 'critical'][i % 2],
-    status: ['open', 'ack'][i % 2]
-  }));
-  res.json({ ok: true, data: alerts });
+// --- CN7: Alerts API ---
+app.get('/api/alerts', async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT
+         a.alert_id, a.alert_type, a.severity, a.status, a.created_at,
+         a.point_id, NULL::text as point_name,
+         a.vehicle_id, v.plate as license_plate,
+         a.route_id
+       FROM alerts a
+       LEFT JOIN vehicles v ON a.vehicle_id = v.id
+       ORDER BY a.created_at DESC
+       LIMIT 50`
+    );
+    res.json({ ok: true, data: rows });
+  } catch (err) {
+    console.error('Error fetching alerts:', err);
+    res.status(500).json({ ok: false, error: 'Failed to fetch alerts' });
+  }
 });
+
+app.post('/api/alerts/:alertId/dispatch', async (req, res) => {
+  const { alertId } = req.params;
+
+  try {
+    // 1. Get the alert details to find the missed point's location
+    // Fixed: Use correct table name 'points' and extract lat/lon from geography type
+    const alertResult = await db.query(
+      `SELECT
+         a.alert_id,
+         a.point_id,
+         ST_Y(p.geom::geometry) as lat,
+         ST_X(p.geom::geometry) as lon
+       FROM alerts a
+       JOIN points p ON a.point_id = p.id
+       WHERE a.alert_id = $1`,
+      [alertId]
+    );
+
+    if (alertResult.rows.length === 0) {
+      return res.status(404).json({ ok: false, error: 'Alert or associated point not found' });
+    }
+    const alertData = alertResult.rows[0];
+
+    // 2. Get all currently active vehicles from the in-memory store
+    const activeVehicles = store.getVehicles();
+
+    if (activeVehicles.length === 0) {
+      return res.json({ ok: true, data: [], message: 'No active vehicles available' });
+    }
+
+    // 3. Calculate the distance to the missed point for each vehicle
+    const vehiclesWithDistance = activeVehicles.map(v => ({
+      ...v,
+      distance: getHaversineDistance(
+        { lat: alertData.lat, lon: alertData.lon },
+        { lat: v.lat, lon: v.lon }
+      )
+    }));
+
+    // 4. Sort by distance and take the top 3
+    const suggestedVehicles = vehiclesWithDistance
+      .sort((a, b) => a.distance - b.distance)
+      .slice(0, 3);
+
+    res.json({ ok: true, data: suggestedVehicles });
+
+  } catch (err) {
+    console.error(`Error processing dispatch for alert ${alertId}:`, err);
+    res.status(500).json({ ok: false, error: 'Failed to process dispatch request' });
+  }
+});
+
+// CN7: Assign vehicle to alert and create re-route
+app.post('/api/alerts/:alertId/assign', async (req, res) => {
+  const { alertId } = req.params;
+  const { vehicle_id } = req.body;
+
+  if (!vehicle_id) {
+    return res.status(400).json({ ok: false, error: 'Missing vehicle_id in request body' });
+  }
+
+  try {
+    // 1. Get alert and point details
+    const alertResult = await db.query(
+      `SELECT
+         a.alert_id,
+         a.alert_type,
+         a.point_id,
+         a.route_id as original_route_id,
+         ST_Y(p.geom::geometry) as lat,
+         ST_X(p.geom::geometry) as lon
+       FROM alerts a
+       JOIN points p ON a.point_id = p.id
+       WHERE a.alert_id = $1 AND a.status = 'open'`,
+      [alertId]
+    );
+
+    if (alertResult.rows.length === 0) {
+      return res.status(404).json({ ok: false, error: 'Alert not found or already processed' });
+    }
+
+    const alert = alertResult.rows[0];
+
+    // 2. Create a new route in the database for the re-routing
+    const { v4: uuidv4 } = require('uuid');
+    const newRouteId = uuidv4();
+    const now = new Date();
+
+    await db.query(
+      `INSERT INTO routes (id, vehicle_id, start_at, status, meta)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [
+        newRouteId,
+        vehicle_id,
+        now,
+        'in_progress',
+        JSON.stringify({
+          type: 'incident_response',
+          original_alert_id: alertId,
+          original_route_id: alert.original_route_id,
+          created_by: 'dynamic_dispatch'
+        })
+      ]
+    );
+
+    // 3. Add the incident point as a route stop
+    const stopId = uuidv4();
+    await db.query(
+      `INSERT INTO route_stops (id, route_id, point_id, seq, status, planned_eta)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [stopId, newRouteId, alert.point_id, 1, 'pending', now]
+    );
+
+    // 4. Update alert status to 'acknowledged'
+    await db.query(
+      `UPDATE alerts
+       SET status = 'acknowledged',
+           details = jsonb_set(
+             COALESCE(details, '{}'::jsonb),
+             '{assigned_vehicle_id}',
+             to_jsonb($1::text)
+           ) || jsonb_build_object(
+             'assigned_at', $2,
+             'new_route_id', $3
+           )
+       WHERE alert_id = $4`,
+      [vehicle_id, now.toISOString(), newRouteId, alertId]
+    );
+
+    // 5. Start the route in the in-memory store
+    store.startRoute(newRouteId, vehicle_id, [
+      {
+        point_id: alert.point_id,
+        lat: alert.lat,
+        lon: alert.lon
+      }
+    ]);
+
+    console.log(`✅ Alert ${alertId} assigned to vehicle ${vehicle_id}, new route ${newRouteId} created`);
+
+    res.json({
+      ok: true,
+      data: {
+        message: 'Vehicle assigned successfully',
+        route_id: newRouteId,
+        vehicle_id: vehicle_id,
+        alert_id: alertId
+      }
+    });
+
+  } catch (err) {
+    console.error(`Error assigning vehicle to alert ${alertId}:`, err);
+    res.status(500).json({ ok: false, error: 'Failed to assign vehicle' });
+  }
+});
+
 
 // Analytics endpoints
 app.get('/api/analytics/timeseries', (req, res) => {
@@ -280,6 +558,91 @@ app.get('/api/analytics/predict', (req, res) => {
 });
 
 // Exceptions endpoint
+
+// --- CN7: Dynamic Dispatch - Incident Detection ---
+const MISSED_POINT_DISTANCE_THRESHOLD = 500; // meters
+
+cron.schedule('*/15 * * * * *', async () => {
+  console.log('🛰️  Running Missed Point Detection...');
+  const activeRoutes = store.getActiveRoutes();
+
+  for (const route of activeRoutes) {
+    if (route.status !== 'inprogress') continue;
+
+    const vehicle = store.getVehicle(route.vehicle_id);
+    if (!vehicle) continue;
+
+    for (const point of route.points.values()) {
+      if (point.checked) continue;
+
+      const distance = getHaversineDistance(
+        { lat: vehicle.lat, lon: vehicle.lon },
+        { lat: point.lat, lon: point.lon }
+      );
+
+      // Basic check: if vehicle is far past the point, it's likely missed.
+      // A more advanced implementation would check if the point is 'behind' the vehicle's direction of travel.
+      if (distance > MISSED_POINT_DISTANCE_THRESHOLD) {
+        try {
+          // Check if an open alert for this point on this route already exists
+          const { rows } = await db.query(
+            'SELECT 1 FROM alerts WHERE route_id = $1 AND point_id = $2 AND status = $3 LIMIT 1',
+            [route.route_id, point.point_id, 'open']
+          );
+
+          if (rows.length === 0) {
+            console.log(`🚨 MISSED POINT DETECTED! Route: ${route.route_id}, Point: ${point.point_id}`);
+            // Create a new alert in the database
+            // Ensure FK safety: if route_id is not a UUID, store NULL; vehicle_id may not exist in DB (mock IDs), also store NULL
+            const routeIdForInsert = (typeof route.route_id === 'string' && /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(route.route_id)) ? route.route_id : null;
+            const vehicleIdForInsert = null;
+            await db.query(
+              `INSERT INTO alerts (alert_type, point_id, vehicle_id, route_id, severity, status, details)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+              [
+                'missed_point',
+                point.point_id,
+                vehicleIdForInsert,
+                routeIdForInsert,
+                'critical', // Missed points are considered critical
+                'open',
+                JSON.stringify({ detected_at: new Date().toISOString(), vehicle_location: { lat: vehicle.lat, lon: vehicle.lon } })
+              ]
+            );
+          }
+        } catch (err) {
+          console.error('Error creating missed point alert:', err);
+        }
+      }
+    }
+  }
+});
+
+// --- Testing Endpoints (CN7) ---
+// Start a mock route so the cron can detect missed points
+app.post('/api/test/start-route', async (req, res) => {
+  try {
+    const { route_id = 1, vehicle_id = 'V01' } = req.body || {};
+    // Take first 5 points from the in-memory store
+    const points = Array.from(store.points.values()).slice(0, 5).map(p => ({
+      point_id: p.id,
+      lat: p.lat,
+      lon: p.lon,
+    }));
+
+    if (points.length === 0) {
+      return res.status(500).json({ ok: false, error: 'No points available in store' });
+    }
+
+    store.startRoute(route_id, vehicle_id, points);
+    return res.json({ ok: true, message: `Test route ${route_id} started for vehicle ${vehicle_id}`, points: points.map(p=>p.point_id) });
+  } catch (err) {
+    console.error('Error starting test route:', err);
+    return res.status(500).json({ ok: false, error: 'Failed to start test route' });
+  }
+});
+
+
 app.get('/api/exceptions', (req, res) => {
   const exceptions = Array.from({ length: 12 }).map((_, i) => ({
     id: `E${i + 1}`,

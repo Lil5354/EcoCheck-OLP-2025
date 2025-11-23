@@ -85,6 +85,8 @@ Run-Migration -File "migrations/005_seed_addresses_points.sql" -Description "005
 Run-Migration -File "migrations/006_seed_checkins_operations.sql" -Description "006: Seed check-ins and operations"
 Run-Migration -File "migrations/007_seed_routes_billing.sql" -Description "007: Seed routes and billing data"
 
+Run-Migration -File "migrations/008_create_alerts_table.sql" -Description "008: Create alerts table for CN7"
+
 Write-Host "========================================" -ForegroundColor Green
 Write-Host "All migrations completed successfully!" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
@@ -93,7 +95,7 @@ Write-Host ""
 # Display summary
 Write-Host "Database Summary:" -ForegroundColor Yellow
 $summaryQuery = @"
-SELECT 
+SELECT
     schemaname,
     tablename,
     pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) AS size

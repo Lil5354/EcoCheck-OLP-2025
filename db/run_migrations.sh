@@ -25,17 +25,21 @@ echo -e "${GREEN}EcoCheck Database Migration${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
-# Check if PostgreSQL is accessible
+# Wait for PostgreSQL to be ready
 echo -e "${YELLOW}Checking database connection...${NC}"
-if psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" > /dev/null 2>&1; then
-    echo -e "${GREEN}✓ Database connection successful${NC}"
-else
-    echo -e "${RED}✗ Cannot connect to database${NC}"
-    echo "Please check your connection parameters:"
-    echo "  Host: $DB_HOST"
-    echo "  Port: $DB_PORT"
-    echo "  Database: $DB_NAME"
-    echo "  User: $DB_USER"
+retries=15
+while [ $retries -gt 0 ]; do
+    if psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1;" >/dev/null 2>&1; then
+        echo -e "${GREEN}✓ Database connection successful${NC}"
+        break
+    fi
+    retries=$((retries-1))
+    echo "Waiting for database... ($retries retries left)"
+    sleep 1
+done
+
+if [ $retries -eq 0 ]; then
+    echo -e "${RED}✗ Could not connect to database after several attempts.${NC}"
     exit 1
 fi
 
@@ -73,17 +77,30 @@ fi
 
 # Initialize extensions (if init directory exists)
 if [ -d "init" ] && [ -f "init/01_init_extensions.sql" ]; then
-    run_migration "init/01_init_extensions.sql" "Initialize database extensions"
+        run_migration "init/01_init_extensions.sql" "Initialize database extensions"
 fi
 
 # Run main migrations
-run_migration "migrations/001_init.sql" "001: Initialize base schema"
-run_migration "migrations/002_comprehensive_schema.sql" "002: Comprehensive schema enhancement"
-run_migration "migrations/003_seed_badges.sql" "003: Seed gamification badges"
-run_migration "migrations/004_enhanced_seed_data.sql" "004: Seed master data and users"
-run_migration "migrations/005_seed_addresses_points.sql" "005: Seed addresses and collection points"
-run_migration "migrations/006_seed_checkins_operations.sql" "006: Seed check-ins and operations"
-run_migration "migrations/007_seed_routes_billing.sql" "007: Seed routes and billing data"
+# The script now automatically runs all .sql files in the migrations directory.
+# A schema_migrations table is used to track which migrations have been applied.
+
+# Create migrations tracking table if it doesn't exist
+psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "CREATE TABLE IF NOT EXISTS schema_migrations (version VARCHAR(255) PRIMARY KEY);" > /dev/null
+
+for file in migrations/*.sql; do
+    version=$(basename "$file")
+
+    # Check if migration has already been run
+    if psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -t -c "SELECT version FROM schema_migrations WHERE version = '$version'" | grep -q "$version"; then
+        echo -e "${GREEN}✓ Skipping already applied migration: $version${NC}"
+    else
+        description=$(echo "$version" | sed -e 's/^[0-9]*_//' -e 's/\.sql$//' -e 's/_/ /g' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) substr($i,2)} 1;')
+        run_migration "$file" "$description"
+        # Record the migration
+        psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "INSERT INTO schema_migrations (version) VALUES ('$version');" > /dev/null
+    fi
+done
+
 
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}All migrations completed successfully!${NC}"

@@ -85,8 +85,8 @@ services:
   # EcoCheck Backend (Node.js)
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: ecocheck-backend
     depends_on:
       orion-ld:
@@ -102,6 +102,12 @@ services:
       - FIWARE_SERVICE=ecocheck
       - FIWARE_SERVICE_PATH=/hcm
       - DATABASE_URL=postgresql://ecocheck_user:ecocheck_pass@postgres:5432/ecocheck
+      # Variables for migration script
+      - DB_HOST=postgres
+      - DB_USER=ecocheck_user
+      - DB_PASSWORD=ecocheck_pass
+      - DB_NAME=ecocheck
+      - DB_PORT=5432
     volumes:
       - ./backend/src:/app/src:ro
       - ./backend/public:/app/public:ro

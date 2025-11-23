@@ -1,5 +1,5 @@
 /* Lightweight SVG charts for Dashboard */
-import React, { useId } from 'react'
+import React, { useId, useState, useEffect } from 'react'
 
 export function AreaChart({
   width=520,
@@ -16,7 +16,17 @@ export function AreaChart({
   }
 }){
   const id = useId()
+  // Hooks must be called unconditionally and before any early returns
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024)
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+  const shouldShowLabels = showLabels && windowWidth >= 480
+
   if (!data || data.length === 0) return <div className="skeleton" style={{height}}/>
+
   const w = width, h = height, pad=16
   const xs = data.map((d,i)=>i)
   const ys = data.map(d=>d.value ?? d)
@@ -26,15 +36,6 @@ export function AreaChart({
   const ny = ys.map(y => h - pad - ( (y-min)/(max-min || 1) ) * (h-2*pad))
   const path = nx.map((x,i)=>`${i?'L':'M'}${x},${ny[i]}`).join(' ')
   const area = `M${pad},${h-pad} `+nx.map((x,i)=>`L${x},${ny[i]}`).join(' ')+` L${w-pad},${h-pad} Z`
-
-  // Determine if we should show labels based on viewport width
-  const [windowWidth, setWindowWidth] = React.useState(typeof window !== 'undefined' ? window.innerWidth : 1024)
-  React.useEffect(() => {
-    const handleResize = () => setWindowWidth(window.innerWidth)
-    window.addEventListener('resize', handleResize)
-    return () => window.removeEventListener('resize', handleResize)
-  }, [])
-  const shouldShowLabels = showLabels && windowWidth >= 480
 
   return (
     <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
