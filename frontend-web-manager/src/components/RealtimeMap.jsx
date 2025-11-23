@@ -2,6 +2,7 @@
 import React, { useEffect, useRef } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import { Legend } from './Charts.jsx'
 
 export default function RealtimeMap() {
   const mapRef = useRef(null)
@@ -132,5 +133,17 @@ export default function RealtimeMap() {
     }
   }, [])
 
-  return <div className="map-root" ref={mapRef} style={{ width: '100%', height: 420 }} />
+  const mapLegendItems = [
+    { label: 'Không rác (Điểm ma)', color: '#9aa0a6' },
+    { label: 'Rác ít/vừa', color: 'var(--success)' },
+    { label: 'Rác nhiều', color: 'var(--warning)' },
+    { label: 'Rác cồng kềnh/Sự cố', color: 'var(--danger)' }
+  ]
+
+  return (
+    <div className="map-container">
+      <div className="map-root" ref={mapRef} style={{ width: '100%', height: 420 }} />
+      <Legend items={mapLegendItems} />
+    </div>
+  )
 }

@@ -123,8 +123,55 @@ a:hover { text-decoration: underline; }
 /* Legend */
 .legend { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; margin-top: 16px; }
 .legend-item { display: flex; align-items: center; gap: 8px; }
-.legend-color { width: 10px; height: 10px; border-radius: 3px; }
-.legend-label { color: var(--muted); font-size: 12px; }
+.legend-color {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.9);
+  box-shadow: 0 1px 3px rgba(0,0,0,.2);
+  flex-shrink: 0;
+}
+.legend-label {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Map container with legend */
+.map-container {
+  position: relative;
+}
+
+/* Chart labels */
+.chart-label {
+  user-select: none;
+  pointer-events: none;
+}
+
+/* Responsive legend for small screens */
+@media (max-width: 768px) {
+  .legend {
+    gap: 12px;
+    font-size: 11px;
+  }
+  .legend-color {
+    width: 10px;
+    height: 10px;
+  }
+  .legend-label {
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 480px) {
+  .legend {
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .legend-item {
+    gap: 6px;
+  }
+}
 
 .skeleton { position:relative; border-radius: 6px; overflow:hidden; background: #f0f0f0; height: 16px; }
 .skeleton::before { content:""; position:absolute; inset:0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, #e4e4e4, transparent); animation: shimmer 1.4s infinite; }
