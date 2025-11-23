@@ -247,11 +247,19 @@ app.get('/api/rt/alerts', (req, res) => {
 // Analytics endpoints
 app.get('/api/analytics/timeseries', (req, res) => {
   const now = Date.now();
-  const data = Array.from({ length: 24 }).map((_, i) => ({
+  const series = Array.from({ length: 24 }).map((_, i) => ({
     t: new Date(now - (23 - i) * 3600e3).toISOString(),
-    v: Math.round(60 + 30 * Math.sin(i / 4) + Math.random() * 10)
+    value: Math.round(60 + 30 * Math.sin(i / 4) + Math.random() * 10)
   }));
-  res.json({ ok: true, data });
+
+  // Mock data for waste by type (donut chart)
+  const byType = {
+    household: Math.round(40 + Math.random() * 20),
+    recyclable: Math.round(25 + Math.random() * 15),
+    bulky: Math.round(15 + Math.random() * 10)
+  };
+
+  res.json({ ok: true, series, byType, data: series }); // Keep 'data' for backward compatibility
 });
 
 app.get('/api/analytics/predict', (req, res) => {
