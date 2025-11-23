@@ -118,17 +118,20 @@ const TYPES = ['household', 'recyclable', 'bulky'];
 const LEVELS = ['low', 'medium', 'high'];
 
 app.get('/api/rt/checkins', (req, res) => {
-  // Generate a handful of random check-ins around HCMC
+  // Generate random check-ins around HCMC with CN5-compliant status mapping
   const center = { lat: 10.78, lon: 106.70 };
   const n = Number(req.query.n || 30);
   const points = Array.from({ length: n }).map(() => {
-    const type = TYPES[Math.floor(Math.random() * TYPES.length)];
-    const level = LEVELS[Math.floor(Math.random() * LEVELS.length)];
+    const isGhost = Math.random() < 0.12; // ~12% ghost (no trash)
+    const type = isGhost ? 'ghost' : TYPES[Math.floor(Math.random() * TYPES.length)];
+    const level = isGhost ? 'none' : LEVELS[Math.floor(Math.random() * LEVELS.length)];
     const lat = center.lat + randomInRange(-0.08, 0.08);
     const lon = center.lon + randomInRange(-0.08, 0.08);
-    return { id: `${Date.now()}-${Math.random().toString(36).slice(2,6)}`, type, level, lat, lon, ts: Date.now() };
+    // Occasionally mark as incident (bulky or issue)
+    const incident = !isGhost && Math.random() < 0.05;
+    return { id: `${Date.now()}-${Math.random().toString(36).slice(2,6)}`, type, level, incident, lat, lon, ts: Date.now() };
   });
-  res.json({ ok: true, data: points });
+  res.set('Cache-Control','no-store').json({ ok: true, data: points });
 });
 
 // Realtime endpoints (viewport + delta)

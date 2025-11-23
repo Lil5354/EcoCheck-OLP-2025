@@ -6,8 +6,10 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 export default function RealtimeMap() {
   const mapRef = useRef(null)
   const mapObj = useRef(null)
-  const markersRef = useRef([])
-  const timerRef = useRef(null)
+  const pointMarkersRef = useRef([])
+  const vehicleMarkersRef = useRef([])
+  const pointsTimerRef = useRef(null)
+  const vehiclesTimerRef = useRef(null)
 
   useEffect(() => {
     if (mapObj.current) return
@@ -20,9 +22,7 @@ export default function RealtimeMap() {
         // container not sized yet, retry shortly
         return setTimeout(init, 150)
       }
-      console.log('[RealtimeMap] init with size', w, 'x', h)
 
-      console.log('[RealtimeMap] creating map...')
       mapObj.current = new maplibregl.Map({
         container: mapRef.current,
         style: {
@@ -43,10 +43,11 @@ export default function RealtimeMap() {
         },
         center: [106.700, 10.780],
         zoom: 11.2,
-        attributionControl: false
+        attributionControl: true
       })
 
       mapObj.current.on('error', (e) => {
+        // swallow map errors for demo
         console.error('[RealtimeMap] map error:', e?.error || e)
       })
 
@@ -57,25 +58,38 @@ export default function RealtimeMap() {
         try { mapObj.current?.resize() } catch (err) { void err }
       })
 
-      load() // first data load after map is ready
-      timerRef.current = setInterval(load, 10000)
+      // first data load after map is ready
+      loadPoints()
+      loadVehicles()
+      pointsTimerRef.current = setInterval(loadPoints, 10000)
+      vehiclesTimerRef.current = setInterval(loadVehicles, 1000)
     }
 
-    const load = async () => {
+    // Classify check-in point into color-coded status
+    const classify = (p) => {
+      const level = p.level
+      if (p.type === 'bulky' || p.incident) return 'red'
+      if (level === 'high' || (typeof level === 'number' && level >= 0.8)) return 'yellow'
+      if (p.type === 'ghost' || level === 'none' || level === 0) return 'grey'
+      return 'green' // low/medium
+    }
+
+    const loadPoints = async () => {
       try {
-        const res = await fetch('/api/rt/checkins?n=45')
+        const res = await fetch('/api/rt/checkins?n=60')
         const json = await res.json()
         const pts = json.data || []
-        // cleanup old markers
-        markersRef.current.forEach(m => m.remove())
-        markersRef.current = []
+        // cleanup old point markers
+        pointMarkersRef.current.forEach(m => m.remove())
+        pointMarkersRef.current = []
 
         let minLng=999, minLat=999, maxLng=-999, maxLat=-999
         pts.forEach(p => {
           const el = document.createElement('div')
-          el.className = `marker ${p.type}`
+          const status = classify(p)
+          el.className = `marker ${status}`
           const m = new maplibregl.Marker({ element: el }).setLngLat([p.lon, p.lat]).addTo(mapObj.current)
-          markersRef.current.push(m)
+          pointMarkersRef.current.push(m)
           minLng = Math.min(minLng, p.lon); maxLng = Math.max(maxLng, p.lon)
           minLat = Math.min(minLat, p.lat); maxLat = Math.max(maxLat, p.lat)
         })
@@ -87,16 +101,36 @@ export default function RealtimeMap() {
       }
     }
 
+    const loadVehicles = async () => {
+      try {
+        const res = await fetch('/api/rt/vehicles')
+        const json = await res.json()
+        const vehicles = json.data || []
+        // cleanup old vehicle markers
+        vehicleMarkersRef.current.forEach(m => m.remove())
+        vehicleMarkersRef.current = []
+        vehicles.forEach(v => {
+          const el = document.createElement('div')
+          el.className = 'marker vehicle'
+          const m = new maplibregl.Marker({ element: el }).setLngLat([v.lon, v.lat]).addTo(mapObj.current)
+          vehicleMarkersRef.current.push(m)
+        })
+      } catch (e) {
+        // ignore for demo
+      }
+    }
+
     // kick off map initialization
     init()
 
     return () => {
-      clearInterval(timerRef.current)
-      markersRef.current.forEach(m => m.remove())
+      clearInterval(pointsTimerRef.current)
+      clearInterval(vehiclesTimerRef.current)
+      pointMarkersRef.current.forEach(m => m.remove())
+      vehicleMarkersRef.current.forEach(m => m.remove())
       mapObj.current?.remove()
     }
   }, [])
 
   return <div className="map-root" ref={mapRef} style={{ width: '100%', height: 420 }} />
 }
-
