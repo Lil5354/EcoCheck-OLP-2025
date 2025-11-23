@@ -19,28 +19,22 @@ Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
 
 # Check if psql is available
-try {
-    $null = Get-Command psql -ErrorAction Stop
-} catch {
+if (-not (Get-Command psql -ErrorAction SilentlyContinue)) {
     Write-Host "Error: psql command not found" -ForegroundColor Red
-    Write-Host "Please install PostgreSQL client tools and add them to PATH"
+    Write-Host "Please install PostgreSQL client tools and add them to PATH, or run migrations inside Docker."
     exit 1
 }
 
 # Check database connection
 Write-Host "Checking database connection..." -ForegroundColor Yellow
-try {
-    $testQuery = "SELECT 1;"
-    $null = & psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -c $testQuery 2>&1
-    Write-Host "✓ Database connection successful" -ForegroundColor Green
-} catch {
+$testQuery = "SELECT 1;"
+& psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -c $testQuery -v ON_ERROR_STOP=1 > $null
+if ($LASTEXITCODE -ne 0) {
     Write-Host "✗ Cannot connect to database" -ForegroundColor Red
-    Write-Host "Please check your connection parameters:"
-    Write-Host "  Host: $DB_HOST"
-    Write-Host "  Port: $DB_PORT"
-    Write-Host "  Database: $DB_NAME"
-    Write-Host "  User: $DB_USER"
+    Write-Host "Please check your connection parameters or if the DB is running."
     exit 1
+} else {
+    Write-Host "✓ Database connection successful" -ForegroundColor Green
 }
 
 Write-Host ""
@@ -51,22 +45,20 @@ function Run-Migration {
         [string]$File,
         [string]$Description
     )
-    
+
     Write-Host "Running: $Description" -ForegroundColor Yellow
     Write-Host "  File: $File"
-    
-    try {
-        $null = & psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -f $File 2>&1
-        Write-Host "✓ Success" -ForegroundColor Green
-    } catch {
-        Write-Host "✗ Failed" -ForegroundColor Red
-        Write-Host "Error running migration: $File"
-        Write-Host $_.Exception.Message
+
+    & psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -f $File -v ON_ERROR_STOP=1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "✗ Failed running migration: $File" -ForegroundColor Red
         exit 1
+    } else {
+        Write-Host "✓ Success" -ForegroundColor Green
     }
-    
+
     Write-Host ""
-}
+
 
 # Run migrations in order
 Write-Host "Starting migrations..." -ForegroundColor Green

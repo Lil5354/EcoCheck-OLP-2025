@@ -53,7 +53,7 @@ services:
 
   # PostgreSQL for application data
   postgres:
-    image: timescale/timescaledb:2.15.3-pg15
+    image: timescale/timescaledb-ha:pg15-all
     container_name: ecocheck-postgres
     environment:
       POSTGRES_DB: ecocheck
@@ -64,11 +64,13 @@ services:
       - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+      - ./db:/app/db
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ecocheck_user -d ecocheck"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
     networks:
       - ecocheck-network
 
@@ -108,7 +110,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 30s
     networks:
       - ecocheck-network
 
