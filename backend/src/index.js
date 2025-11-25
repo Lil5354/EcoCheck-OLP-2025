@@ -6,33 +6,34 @@
  * Main application entry point
  */
 
-const express = require('express');
-const cors = require('cors');
-const compression = require('compression');
-const dotenv = require('dotenv');
-const cron = require('node-cron');
-const http = require('http');
+const express = require("express");
+const cors = require("cors");
+const compression = require("compression");
+const dotenv = require("dotenv");
+const cron = require("node-cron");
+const http = require("http");
 
 // Load environment variables
 dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
-const io = require('socket.io')(server, { cors: { origin: '*'} })
+const io = require("socket.io")(server, { cors: { origin: "*" } });
 const PORT = process.env.PORT || 3000;
 // Performance middleware
 app.use(compression());
 
 // Realtime store (mock for dev)
-const { store } = require('./realtime');
-
+const { store } = require("./realtime");
 
 // Database Connection
-const { Pool } = require('pg');
+const { Pool } = require("pg");
 const db = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://ecocheck_user:ecocheck_pass@localhost:5432/ecocheck',
+  connectionString:
+    process.env.DATABASE_URL ||
+    "postgresql://ecocheck_user:ecocheck_pass@localhost:5432/ecocheck",
 });
-db.on('connect', () => console.log('🐘 Connected to PostgreSQL database'));
+db.on("connect", () => console.log("🐘 Connected to PostgreSQL database"));
 
 // --- Utility Functions ---
 function getHaversineDistance(coords1, coords2) {
@@ -44,13 +45,13 @@ function getHaversineDistance(coords1, coords2) {
   const lat1 = toRad(coords1.lat);
   const lat2 = toRad(coords2.lat);
 
-  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-          Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
   return R * c; // in metres
 }
-
 
 // Middleware
 app.use(cors());
@@ -58,91 +59,97 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Static serve for NGSI-LD contexts
-const path = require('path');
-app.use('/contexts', express.static(path.join(__dirname, '..', 'public', 'contexts')));
+const path = require("path");
+app.use(
+  "/contexts",
+  express.static(path.join(__dirname, "..", "public", "contexts"))
+);
 
 // FIWARE notification endpoint (Orion-LD Subscriptions)
-app.post('/fiware/notify', (req, res) => {
+app.post("/fiware/notify", (req, res) => {
   try {
-    console.log('[FIWARE][Notify]', JSON.stringify(req.body));
+    console.log("[FIWARE][Notify]", JSON.stringify(req.body));
   } catch (e) {
-    console.log('[FIWARE][Notify] Received notification');
+    console.log("[FIWARE][Notify] Received notification");
   }
   return res.status(204).send();
 });
 
-
 // Health check endpoint
-app.get('/health', (req, res) => {
+app.get("/health", (req, res) => {
   res.status(200).json({
-    status: 'OK',
+    status: "OK",
     timestamp: new Date().toISOString(),
-    service: 'EcoCheck Backend',
-    version: '1.0.0'
+    service: "EcoCheck Backend",
+    version: "1.0.0",
   });
 });
 
 // API Routes
-app.get('/api/status', (req, res) => {
+app.get("/api/status", (req, res) => {
   res.json({
-    message: 'EcoCheck Backend is running',
-    fiware_status: 'Connected', // TODO: Implement actual FIWARE connection check
-    timestamp: new Date().toISOString()
+    message: "EcoCheck Backend is running",
+    fiware_status: "Connected", // TODO: Implement actual FIWARE connection check
+    timestamp: new Date().toISOString(),
   });
 });
 
 // FIWARE Context Broker integration endpoints
 // Proxy Orion-LD version for frontend (avoids CORS and cross-network issues)
-app.get('/api/fiware/version', async (req, res) => {
+app.get("/api/fiware/version", async (req, res) => {
   try {
-    const orionUrl = process.env.ORION_LD_URL || 'http://localhost:1026';
-    const response = await require('axios').get(`${orionUrl}/version`, { timeout: 4000 });
+    const orionUrl = process.env.ORION_LD_URL || "http://localhost:1026";
+    const response = await require("axios").get(`${orionUrl}/version`, {
+      timeout: 4000,
+    });
     res.json({ ok: true, data: response.data });
   } catch (e) {
     res.status(503).json({ ok: false, error: e.message });
   }
 });
 
-app.get('/api/entities', async (req, res) => {
+app.get("/api/entities", async (req, res) => {
   // TODO: Implement FIWARE Orion Context Broker integration
   res.json({
-    message: 'FIWARE entities endpoint - To be implemented',
-    entities: []
+    message: "FIWARE entities endpoint - To be implemented",
+    entities: [],
   });
 });
 
-app.post('/api/entities', async (req, res) => {
+app.post("/api/entities", async (req, res) => {
   // TODO: Implement entity creation in FIWARE
   res.json({
-    message: 'Entity creation endpoint - To be implemented',
-    data: req.body
+    message: "Entity creation endpoint - To be implemented",
+    data: req.body,
   });
 });
 
 // Environmental data endpoints
-app.get('/api/environmental-data', (req, res) => {
+app.get("/api/environmental-data", (req, res) => {
   // TODO: Implement environmental data retrieval
   res.json({
-    message: 'Environmental data endpoint - To be implemented',
-    data: []
+    message: "Environmental data endpoint - To be implemented",
+    data: [],
   });
 });
 
 // Waste collection routes optimization
-app.post('/api/optimize-routes', (req, res) => {
+app.post("/api/optimize-routes", (req, res) => {
   // TODO: Implement routing optimization algorithm
   res.json({
-    message: 'Route optimization endpoint - To be implemented',
-    optimized_routes: []
+    message: "Route optimization endpoint - To be implemented",
+    optimized_routes: [],
   });
 });
 
 // CN7: Check-in endpoint with late detection
-app.post('/api/rt/checkin', async (req, res) => {
+app.post("/api/rt/checkin", async (req, res) => {
   const { route_id, point_id, vehicle_id } = req.body;
 
   if (!route_id || !point_id || !vehicle_id) {
-    return res.status(400).json({ ok: false, error: 'Missing route_id, point_id, or vehicle_id' });
+    return res
+      .status(400)
+      .json({ ok: false, error: "Missing route_id, point_id, or vehicle_id" });
   }
 
   const result = store.recordCheckin(route_id, point_id);
@@ -183,43 +190,56 @@ app.post('/api/rt/checkin', async (req, res) => {
         [new Date(), route_id, point_id]
       );
 
-      console.log(`✅ Resolved ${openAlerts.length} alert(s) for point ${point_id}`);
+      console.log(
+        `✅ Resolved ${openAlerts.length} alert(s) for point ${point_id}`
+      );
     }
   } catch (err) {
-    console.error('Error resolving alerts on check-in:', err);
+    console.error("Error resolving alerts on check-in:", err);
     // Don't fail the check-in if alert resolution fails
   }
 
-  if (result.status === 'late_checkin') {
+  if (result.status === "late_checkin") {
     try {
       const { rows } = await db.query(
-        'SELECT 1 FROM alerts WHERE route_id = $1 AND point_id = $2 AND status = $3 AND alert_type = $4 LIMIT 1',
-        [route_id, point_id, 'open', 'late_checkin']
+        "SELECT 1 FROM alerts WHERE route_id = $1 AND point_id = $2 AND status = $3 AND alert_type = $4 LIMIT 1",
+        [route_id, point_id, "open", "late_checkin"]
       );
 
       if (rows.length === 0) {
-        console.log(`🚨 LATE CHECK-IN DETECTED! Route: ${route_id}, Point: ${point_id}`);
+        console.log(
+          `🚨 LATE CHECK-IN DETECTED! Route: ${route_id}, Point: ${point_id}`
+        );
         // Use NULL for route_id if not a valid UUID to satisfy FK constraint
-        const routeIdForInsert = (typeof route_id === 'string' && /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(route_id)) ? route_id : null;
+        const routeIdForInsert =
+          typeof route_id === "string" &&
+          /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
+            route_id
+          )
+            ? route_id
+            : null;
         await db.query(
           `INSERT INTO alerts (alert_type, point_id, vehicle_id, route_id, severity, status, details)
            VALUES ($1, $2, $3, $4, $5, $6, $7)`,
           [
-            'late_checkin',
+            "late_checkin",
             point_id,
             vehicle_id,
             routeIdForInsert,
-            'warning', // Late check-ins are warnings
-            'open',
-            JSON.stringify({ detected_at: new Date().toISOString() })
+            "warning", // Late check-ins are warnings
+            "open",
+            JSON.stringify({ detected_at: new Date().toISOString() }),
           ]
         );
       }
-      return res.status(200).json({ ok: true, status: 'late_checkin_recorded' });
-
+      return res
+        .status(200)
+        .json({ ok: true, status: "late_checkin_recorded" });
     } catch (err) {
-      console.error('Error creating late check-in alert:', err);
-      return res.status(500).json({ ok: false, error: 'Failed to record late check-in alert' });
+      console.error("Error creating late check-in alert:", err);
+      return res
+        .status(500)
+        .json({ ok: false, error: "Failed to record late check-in alert" });
     }
   }
 
@@ -228,127 +248,175 @@ app.post('/api/rt/checkin', async (req, res) => {
 
 // Realtime mock endpoints for demo UI
 const randomInRange = (min, max) => Math.random() * (max - min) + min;
-const TYPES = ['household', 'recyclable', 'bulky'];
-const LEVELS = ['low', 'medium', 'high'];
+const TYPES = ["household", "recyclable", "bulky"];
+const LEVELS = ["low", "medium", "high"];
 
-app.get('/api/rt/checkins', (req, res) => {
+app.get("/api/rt/checkins", (req, res) => {
   // Generate random check-ins around HCMC with CN5-compliant status mapping
-  const center = { lat: 10.78, lon: 106.70 };
+  const center = { lat: 10.78, lon: 106.7 };
   const n = Number(req.query.n || 30);
   const points = Array.from({ length: n }).map(() => {
     const isGhost = Math.random() < 0.12; // ~12% ghost (no trash)
-    const type = isGhost ? 'ghost' : TYPES[Math.floor(Math.random() * TYPES.length)];
-    const level = isGhost ? 'none' : LEVELS[Math.floor(Math.random() * LEVELS.length)];
+    const type = isGhost
+      ? "ghost"
+      : TYPES[Math.floor(Math.random() * TYPES.length)];
+    const level = isGhost
+      ? "none"
+      : LEVELS[Math.floor(Math.random() * LEVELS.length)];
     const lat = center.lat + randomInRange(-0.08, 0.08);
     const lon = center.lon + randomInRange(-0.08, 0.08);
     // Occasionally mark as incident (bulky or issue)
     const incident = !isGhost && Math.random() < 0.05;
-    return { id: `${Date.now()}-${Math.random().toString(36).slice(2,6)}`, type, level, incident, lat, lon, ts: Date.now() };
+    return {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      type,
+      level,
+      incident,
+      lat,
+      lon,
+      ts: Date.now(),
+    };
   });
-  res.set('Cache-Control','no-store').json({ ok: true, data: points });
+  res.set("Cache-Control", "no-store").json({ ok: true, data: points });
 });
 
 // Realtime endpoints (viewport + delta)
-app.get('/api/rt/points', (req, res) => {
-  const bbox = (req.query.bbox||'').split(',').map(parseFloat)
-  const since = req.query.since ? Number(req.query.since) : undefined
-  const data = store.getPoints({ bbox: bbox.length===4?bbox:undefined, since })
-  res.set('Cache-Control','no-store').json({ ok:true, ...data })
-})
+app.get("/api/rt/points", (req, res) => {
+  const bbox = (req.query.bbox || "").split(",").map(parseFloat);
+  const since = req.query.since ? Number(req.query.since) : undefined;
+  const data = store.getPoints({
+    bbox: bbox.length === 4 ? bbox : undefined,
+    since,
+  });
+  res.set("Cache-Control", "no-store").json({ ok: true, ...data });
+});
 
-app.get('/api/rt/vehicles', (req, res) => {
-  res.set('Cache-Control','no-store').json({ ok:true, data: store.getVehicles(), serverTime: Date.now() })
-})
-
-
-
+app.get("/api/rt/vehicles", (req, res) => {
+  res
+    .set("Cache-Control", "no-store")
+    .json({ ok: true, data: store.getVehicles(), serverTime: Date.now() });
+});
 
 // Socket.IO for fleet broadcast
-io.on('connection', (socket) => {
-  socket.emit('fleet:init', store.getVehicles())
-})
-setInterval(()=>{
-  store.tickVehicles()
-  io.emit('fleet', store.getVehicles())
-}, 1000)
+io.on("connection", (socket) => {
+  socket.emit("fleet:init", store.getVehicles());
+});
+setInterval(() => {
+  store.tickVehicles();
+  io.emit("fleet", store.getVehicles());
+}, 1000);
 
-app.get('/api/analytics/summary', (req, res) => {
-  res.json({ ok: true, routesActive: 12, collectionRate: 0.85, todayTons: 3.2 });
+app.get("/api/analytics/summary", (req, res) => {
+  res.json({
+    ok: true,
+    routesActive: 12,
+    collectionRate: 0.85,
+    todayTons: 3.2,
+  });
 });
 
 // Master data endpoints
-app.get('/api/master/fleet', (req, res) => {
+app.get("/api/master/fleet", (req, res) => {
   const mockFleet = [
-    { id: 'V01', plate: '51A-123.45', type: 'compactor', capacity: 3000, types: ['household'], status: 'ready' },
-    { id: 'V02', plate: '51B-678.90', type: 'mini-truck', capacity: 1200, types: ['recyclable'], status: 'ready' },
-    { id: 'V03', plate: '51C-246.80', type: 'electric-trike', capacity: 300, types: ['household','recyclable'], status: 'maintenance' },
+    {
+      id: "V01",
+      plate: "51A-123.45",
+      type: "compactor",
+      capacity: 3000,
+      types: ["household"],
+      status: "ready",
+    },
+    {
+      id: "V02",
+      plate: "51B-678.90",
+      type: "mini-truck",
+      capacity: 1200,
+      types: ["recyclable"],
+      status: "ready",
+    },
+    {
+      id: "V03",
+      plate: "51C-246.80",
+      type: "electric-trike",
+      capacity: 300,
+      types: ["household", "recyclable"],
+      status: "maintenance",
+    },
   ];
   res.json({ ok: true, data: mockFleet });
 });
 
-app.post('/api/master/fleet', (req, res) => {
-  res.json({ ok: true, data: { id: 'V' + Date.now(), ...req.body } });
+app.post("/api/master/fleet", (req, res) => {
+  res.json({ ok: true, data: { id: "V" + Date.now(), ...req.body } });
 });
 
-app.patch('/api/master/fleet/:id', (req, res) => {
+app.patch("/api/master/fleet/:id", (req, res) => {
   res.json({ ok: true, data: { id: req.params.id, ...req.body } });
 });
 
-app.delete('/api/master/fleet/:id', (req, res) => {
-  res.json({ ok: true, message: 'Vehicle deleted' });
+app.delete("/api/master/fleet/:id", (req, res) => {
+  res.json({ ok: true, message: "Vehicle deleted" });
 });
 
 // Collection points endpoint
-app.get('/api/points', (req, res) => {
-  const center = { lat: 10.78, lon: 106.70 };
+app.get("/api/points", (req, res) => {
+  const center = { lat: 10.78, lon: 106.7 };
   const n = 120;
   const points = Array.from({ length: n }).map((_, i) => {
     const type = TYPES[Math.floor(Math.random() * TYPES.length)];
     const lat = center.lat + randomInRange(-0.08, 0.08);
     const lon = center.lon + randomInRange(-0.08, 0.08);
     const demand = Math.floor(randomInRange(20, 120));
-    const status = Math.random() < 0.1 ? 'grey' : 'active';
-    return { id: `P${i+1}`, type, lat, lon, demand, status };
+    const status = Math.random() < 0.1 ? "grey" : "active";
+    return { id: `P${i + 1}`, type, lat, lon, demand, status };
   });
   res.json({ ok: true, data: points });
 });
 
 // VRP optimization endpoint
-app.post('/api/vrp/optimize', (req, res) => {
+app.post("/api/vrp/optimize", (req, res) => {
   const { vehicles = [], points = [] } = req.body;
   const routes = vehicles.map((v, idx) => ({
     vehicleId: v.id,
     distance: Math.round(8000 + Math.random() * 9000),
     eta: `${1 + idx}:2${idx}`,
     geojson: {
-      type: 'FeatureCollection',
+      type: "FeatureCollection",
       features: [
         {
-          type: 'Feature',
+          type: "Feature",
           geometry: {
-            type: 'LineString',
-            coordinates: points.slice(idx, points.length).map(p => [p.lon, p.lat])
+            type: "LineString",
+            coordinates: points
+              .slice(idx, points.length)
+              .map((p) => [p.lon, p.lat]),
           },
-          properties: {}
-        }
-      ]
+          properties: {},
+        },
+      ],
     },
-    stops: points.map((p, i) => ({ id: p.id, seq: i + 1 }))
+    stops: points.map((p, i) => ({ id: p.id, seq: i + 1 })),
   }));
   res.json({ ok: true, data: { routes } });
 });
 
 // Dispatch endpoints
-app.post('/api/dispatch/send-routes', (req, res) => {
-  res.json({ ok: true, data: { message: 'Routes dispatched' } });
+app.post("/api/dispatch/send-routes", (req, res) => {
+  res.json({ ok: true, data: { message: "Routes dispatched" } });
 });
 
-app.post('/api/dispatch/reroute', (req, res) => {
-  res.json({ ok: true, data: { message: 'Re-route created', routeId: `R${Math.floor(Math.random() * 1000)}` } });
+app.post("/api/dispatch/reroute", (req, res) => {
+  res.json({
+    ok: true,
+    data: {
+      message: "Re-route created",
+      routeId: `R${Math.floor(Math.random() * 1000)}`,
+    },
+  });
 });
 
 // --- CN7: Alerts API ---
-app.get('/api/alerts', async (req, res) => {
+app.get("/api/alerts", async (req, res) => {
   try {
     const { rows } = await db.query(
       `SELECT
@@ -363,12 +431,12 @@ app.get('/api/alerts', async (req, res) => {
     );
     res.json({ ok: true, data: rows });
   } catch (err) {
-    console.error('Error fetching alerts:', err);
-    res.status(500).json({ ok: false, error: 'Failed to fetch alerts' });
+    console.error("Error fetching alerts:", err);
+    res.status(500).json({ ok: false, error: "Failed to fetch alerts" });
   }
 });
 
-app.post('/api/alerts/:alertId/dispatch', async (req, res) => {
+app.post("/api/alerts/:alertId/dispatch", async (req, res) => {
   const { alertId } = req.params;
 
   try {
@@ -387,7 +455,9 @@ app.post('/api/alerts/:alertId/dispatch', async (req, res) => {
     );
 
     if (alertResult.rows.length === 0) {
-      return res.status(404).json({ ok: false, error: 'Alert or associated point not found' });
+      return res
+        .status(404)
+        .json({ ok: false, error: "Alert or associated point not found" });
     }
     const alertData = alertResult.rows[0];
 
@@ -395,16 +465,20 @@ app.post('/api/alerts/:alertId/dispatch', async (req, res) => {
     const activeVehicles = store.getVehicles();
 
     if (activeVehicles.length === 0) {
-      return res.json({ ok: true, data: [], message: 'No active vehicles available' });
+      return res.json({
+        ok: true,
+        data: [],
+        message: "No active vehicles available",
+      });
     }
 
     // 3. Calculate the distance to the missed point for each vehicle
-    const vehiclesWithDistance = activeVehicles.map(v => ({
+    const vehiclesWithDistance = activeVehicles.map((v) => ({
       ...v,
       distance: getHaversineDistance(
         { lat: alertData.lat, lon: alertData.lon },
         { lat: v.lat, lon: v.lon }
-      )
+      ),
     }));
 
     // 4. Sort by distance and take the top 3
@@ -413,20 +487,23 @@ app.post('/api/alerts/:alertId/dispatch', async (req, res) => {
       .slice(0, 3);
 
     res.json({ ok: true, data: suggestedVehicles });
-
   } catch (err) {
     console.error(`Error processing dispatch for alert ${alertId}:`, err);
-    res.status(500).json({ ok: false, error: 'Failed to process dispatch request' });
+    res
+      .status(500)
+      .json({ ok: false, error: "Failed to process dispatch request" });
   }
 });
 
 // CN7: Assign vehicle to alert and create re-route
-app.post('/api/alerts/:alertId/assign', async (req, res) => {
+app.post("/api/alerts/:alertId/assign", async (req, res) => {
   const { alertId } = req.params;
   const { vehicle_id } = req.body;
 
   if (!vehicle_id) {
-    return res.status(400).json({ ok: false, error: 'Missing vehicle_id in request body' });
+    return res
+      .status(400)
+      .json({ ok: false, error: "Missing vehicle_id in request body" });
   }
 
   try {
@@ -446,13 +523,15 @@ app.post('/api/alerts/:alertId/assign', async (req, res) => {
     );
 
     if (alertResult.rows.length === 0) {
-      return res.status(404).json({ ok: false, error: 'Alert not found or already processed' });
+      return res
+        .status(404)
+        .json({ ok: false, error: "Alert not found or already processed" });
     }
 
     const alert = alertResult.rows[0];
 
     // 2. Create a new route in the database for the re-routing
-    const { v4: uuidv4 } = require('uuid');
+    const { v4: uuidv4 } = require("uuid");
     const newRouteId = uuidv4();
     const now = new Date();
 
@@ -463,13 +542,13 @@ app.post('/api/alerts/:alertId/assign', async (req, res) => {
         newRouteId,
         vehicle_id,
         now,
-        'in_progress',
+        "in_progress",
         JSON.stringify({
-          type: 'incident_response',
+          type: "incident_response",
           original_alert_id: alertId,
           original_route_id: alert.original_route_id,
-          created_by: 'dynamic_dispatch'
-        })
+          created_by: "dynamic_dispatch",
+        }),
       ]
     );
 
@@ -478,7 +557,7 @@ app.post('/api/alerts/:alertId/assign', async (req, res) => {
     await db.query(
       `INSERT INTO route_stops (id, route_id, point_id, seq, status, planned_eta)
        VALUES ($1, $2, $3, $4, $5, $6)`,
-      [stopId, newRouteId, alert.point_id, 1, 'pending', now]
+      [stopId, newRouteId, alert.point_id, 1, "pending", now]
     );
 
     // 4. Update alert status to 'acknowledged'
@@ -502,57 +581,65 @@ app.post('/api/alerts/:alertId/assign', async (req, res) => {
       {
         point_id: alert.point_id,
         lat: alert.lat,
-        lon: alert.lon
-      }
+        lon: alert.lon,
+      },
     ]);
 
-    console.log(`✅ Alert ${alertId} assigned to vehicle ${vehicle_id}, new route ${newRouteId} created`);
+    console.log(
+      `✅ Alert ${alertId} assigned to vehicle ${vehicle_id}, new route ${newRouteId} created`
+    );
 
     res.json({
       ok: true,
       data: {
-        message: 'Vehicle assigned successfully',
+        message: "Vehicle assigned successfully",
         route_id: newRouteId,
         vehicle_id: vehicle_id,
-        alert_id: alertId
-      }
+        alert_id: alertId,
+      },
     });
-
   } catch (err) {
     console.error(`Error assigning vehicle to alert ${alertId}:`, err);
-    res.status(500).json({ ok: false, error: 'Failed to assign vehicle' });
+    res.status(500).json({ ok: false, error: "Failed to assign vehicle" });
   }
 });
 
-
 // Analytics endpoints
-app.get('/api/analytics/timeseries', (req, res) => {
+app.get("/api/analytics/timeseries", (req, res) => {
   const now = Date.now();
   const series = Array.from({ length: 24 }).map((_, i) => ({
     t: new Date(now - (23 - i) * 3600e3).toISOString(),
-    value: Math.round(60 + 30 * Math.sin(i / 4) + Math.random() * 10)
+    value: Math.round(60 + 30 * Math.sin(i / 4) + Math.random() * 10),
   }));
 
   // Mock data for waste by type (donut chart)
   const byType = {
     household: Math.round(40 + Math.random() * 20),
     recyclable: Math.round(25 + Math.random() * 15),
-    bulky: Math.round(15 + Math.random() * 10)
+    bulky: Math.round(15 + Math.random() * 10),
   };
 
   res.json({ ok: true, series, byType, data: series }); // Keep 'data' for backward compatibility
 });
 
-app.get('/api/analytics/predict', (req, res) => {
+app.get("/api/analytics/predict", (req, res) => {
   const days = Number(req.query.days || 7);
   const today = new Date();
   const actual = Array.from({ length: days }).map((_, i) => ({
-    d: new Date(today.getFullYear(), today.getMonth(), today.getDate() - days + i).toISOString().slice(0, 10),
-    v: Math.round(50 + Math.random() * 10)
+    d: new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate() - days + i
+    )
+      .toISOString()
+      .slice(0, 10),
+    v: Math.round(50 + Math.random() * 10),
   }));
   const forecast = Array.from({ length: days }).map((_, i) => ({
-    d: new Date(today.getFullYear(), today.getMonth(), today.getDate() + i).toISOString().slice(0, 10),
-    v: Math.round(55 + Math.random() * 12)
+    d: new Date(today.getFullYear(), today.getMonth(), today.getDate() + i)
+      .toISOString()
+      .slice(0, 10),
+    v: Math.round(55 + Math.random() * 12),
   }));
   res.json({ ok: true, data: { actual, forecast } });
 });
@@ -562,12 +649,12 @@ app.get('/api/analytics/predict', (req, res) => {
 // --- CN7: Dynamic Dispatch - Incident Detection ---
 const MISSED_POINT_DISTANCE_THRESHOLD = 500; // meters
 
-cron.schedule('*/15 * * * * *', async () => {
-  console.log('🛰️  Running Missed Point Detection...');
+cron.schedule("*/15 * * * * *", async () => {
+  console.log("🛰️  Running Missed Point Detection...");
   const activeRoutes = store.getActiveRoutes();
 
   for (const route of activeRoutes) {
-    if (route.status !== 'inprogress') continue;
+    if (route.status !== "inprogress") continue;
 
     const vehicle = store.getVehicle(route.vehicle_id);
     if (!vehicle) continue;
@@ -586,32 +673,43 @@ cron.schedule('*/15 * * * * *', async () => {
         try {
           // Check if an open alert for this point on this route already exists
           const { rows } = await db.query(
-            'SELECT 1 FROM alerts WHERE route_id = $1 AND point_id = $2 AND status = $3 LIMIT 1',
-            [route.route_id, point.point_id, 'open']
+            "SELECT 1 FROM alerts WHERE route_id = $1 AND point_id = $2 AND status = $3 LIMIT 1",
+            [route.route_id, point.point_id, "open"]
           );
 
           if (rows.length === 0) {
-            console.log(`🚨 MISSED POINT DETECTED! Route: ${route.route_id}, Point: ${point.point_id}`);
+            console.log(
+              `🚨 MISSED POINT DETECTED! Route: ${route.route_id}, Point: ${point.point_id}`
+            );
             // Create a new alert in the database
             // Ensure FK safety: if route_id is not a UUID, store NULL; vehicle_id may not exist in DB (mock IDs), also store NULL
-            const routeIdForInsert = (typeof route.route_id === 'string' && /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(route.route_id)) ? route.route_id : null;
+            const routeIdForInsert =
+              typeof route.route_id === "string" &&
+              /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
+                route.route_id
+              )
+                ? route.route_id
+                : null;
             const vehicleIdForInsert = null;
             await db.query(
               `INSERT INTO alerts (alert_type, point_id, vehicle_id, route_id, severity, status, details)
                VALUES ($1, $2, $3, $4, $5, $6, $7)`,
               [
-                'missed_point',
+                "missed_point",
                 point.point_id,
                 vehicleIdForInsert,
                 routeIdForInsert,
-                'critical', // Missed points are considered critical
-                'open',
-                JSON.stringify({ detected_at: new Date().toISOString(), vehicle_location: { lat: vehicle.lat, lon: vehicle.lon } })
+                "critical", // Missed points are considered critical
+                "open",
+                JSON.stringify({
+                  detected_at: new Date().toISOString(),
+                  vehicle_location: { lat: vehicle.lat, lon: vehicle.lon },
+                }),
               ]
             );
           }
         } catch (err) {
-          console.error('Error creating missed point alert:', err);
+          console.error("Error creating missed point alert:", err);
         }
       }
     }
@@ -620,51 +718,820 @@ cron.schedule('*/15 * * * * *', async () => {
 
 // --- Testing Endpoints (CN7) ---
 // Start a mock route so the cron can detect missed points
-app.post('/api/test/start-route', async (req, res) => {
+app.post("/api/test/start-route", async (req, res) => {
   try {
-    const { route_id = 1, vehicle_id = 'V01' } = req.body || {};
+    const { route_id = 1, vehicle_id = "V01" } = req.body || {};
     // Take first 5 points from the in-memory store
-    const points = Array.from(store.points.values()).slice(0, 5).map(p => ({
-      point_id: p.id,
-      lat: p.lat,
-      lon: p.lon,
-    }));
+    const points = Array.from(store.points.values())
+      .slice(0, 5)
+      .map((p) => ({
+        point_id: p.id,
+        lat: p.lat,
+        lon: p.lon,
+      }));
 
     if (points.length === 0) {
-      return res.status(500).json({ ok: false, error: 'No points available in store' });
+      return res
+        .status(500)
+        .json({ ok: false, error: "No points available in store" });
     }
 
     store.startRoute(route_id, vehicle_id, points);
-    return res.json({ ok: true, message: `Test route ${route_id} started for vehicle ${vehicle_id}`, points: points.map(p=>p.point_id) });
+    return res.json({
+      ok: true,
+      message: `Test route ${route_id} started for vehicle ${vehicle_id}`,
+      points: points.map((p) => p.point_id),
+    });
   } catch (err) {
-    console.error('Error starting test route:', err);
-    return res.status(500).json({ ok: false, error: 'Failed to start test route' });
+    console.error("Error starting test route:", err);
+    return res
+      .status(500)
+      .json({ ok: false, error: "Failed to start test route" });
   }
 });
 
-
-app.get('/api/exceptions', (req, res) => {
+app.get("/api/exceptions", (req, res) => {
   const exceptions = Array.from({ length: 12 }).map((_, i) => ({
     id: `E${i + 1}`,
     time: new Date(Date.now() - i * 5e5).toLocaleString(),
     location: `10.${78 + i}, 106.${70 + i}`,
-    type: ['oversize', 'blocked', 'other'][i % 3],
-    status: ['pending', 'approved', 'rejected'][i % 3]
+    type: ["oversize", "blocked", "other"][i % 3],
+    status: ["pending", "approved", "rejected"][i % 3],
   }));
   res.json({ ok: true, data: exceptions });
 });
 
-app.post('/api/exceptions/:id/approve', (req, res) => {
-  res.json({ ok: true, data: { message: 'Approved' } });
+app.post("/api/exceptions/:id/approve", (req, res) => {
+  res.json({ ok: true, data: { message: "Approved" } });
 });
 
-app.post('/api/exceptions/:id/reject', (req, res) => {
-  res.json({ ok: true, data: { message: 'Rejected' } });
+app.post("/api/exceptions/:id/reject", (req, res) => {
+  res.json({ ok: true, data: { message: "Rejected" } });
+});
+
+// ==================== SCHEDULE API ====================
+// Get schedules (with optional filters)
+app.get("/api/schedules", async (req, res) => {
+  try {
+    const { citizen_id, status, limit = 50, offset = 0 } = req.query;
+
+    let query = "SELECT * FROM schedules WHERE 1=1";
+    const params = [];
+    let paramIndex = 1;
+
+    if (citizen_id) {
+      query += ` AND citizen_id = $${paramIndex}`;
+      params.push(citizen_id);
+      paramIndex++;
+    }
+
+    if (status) {
+      query += ` AND status = $${paramIndex}`;
+      params.push(status);
+      paramIndex++;
+    }
+
+    query += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${
+      paramIndex + 1
+    }`;
+    params.push(limit, offset);
+
+    const { rows } = await db.query(query, params);
+
+    res.json({
+      ok: true,
+      data: rows,
+      total: rows.length,
+    });
+  } catch (error) {
+    console.error("[Schedule] Get error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Get assigned schedules for worker (worker-specific endpoint)
+app.get("/api/schedules/assigned", async (req, res) => {
+  try {
+    const { employee_id, status, limit = 50, offset = 0 } = req.query;
+
+    let query = `
+      SELECT * FROM schedules 
+      WHERE employee_id IS NOT NULL
+    `;
+    const params = [];
+    let paramIndex = 1;
+
+    if (employee_id) {
+      query += ` AND employee_id = $${paramIndex}`;
+      params.push(employee_id);
+      paramIndex++;
+    }
+
+    if (status) {
+      query += ` AND status = $${paramIndex}`;
+      params.push(status);
+      paramIndex++;
+    }
+
+    query += ` ORDER BY scheduled_date DESC, created_at DESC LIMIT $${paramIndex} OFFSET $${
+      paramIndex + 1
+    }`;
+    params.push(limit, offset);
+
+    const { rows } = await db.query(query, params);
+
+    console.log(`📋 Found ${rows.length} assigned schedules`);
+
+    res.json({
+      ok: true,
+      data: rows,
+      total: rows.length,
+    });
+  } catch (error) {
+    console.error("[Schedule] Get assigned error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Get schedule by ID
+app.get("/api/schedules/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { rows } = await db.query(
+      "SELECT * FROM schedules WHERE schedule_id = $1",
+      [id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "Schedule not found" });
+    }
+
+    res.json({ ok: true, data: rows[0] });
+  } catch (error) {
+    console.error("[Schedule] Get by ID error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Create new schedule
+app.post("/api/schedules", async (req, res) => {
+  try {
+    const {
+      citizen_id,
+      scheduled_date,
+      time_slot,
+      waste_type,
+      estimated_weight,
+      latitude,
+      longitude,
+      address,
+    } = req.body;
+
+    // Validation
+    if (
+      !citizen_id ||
+      !scheduled_date ||
+      !time_slot ||
+      !waste_type ||
+      !estimated_weight
+    ) {
+      return res.status(400).json({
+        ok: false,
+        error:
+          "Missing required fields: citizen_id, scheduled_date, time_slot, waste_type, estimated_weight",
+      });
+    }
+
+    const { rows } = await db.query(
+      `INSERT INTO schedules (
+        citizen_id, scheduled_date, time_slot, waste_type, estimated_weight,
+        latitude, longitude, address, status, priority
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      RETURNING *`,
+      [
+        citizen_id,
+        scheduled_date,
+        time_slot,
+        waste_type,
+        estimated_weight,
+        latitude || null,
+        longitude || null,
+        address || null,
+        "scheduled", // Default status - Đã lên lịch thành công
+        0, // Default priority
+      ]
+    );
+
+    console.log(
+      `✅ Schedule created: ${rows[0].schedule_id} for citizen ${citizen_id} - Status: scheduled`
+    );
+
+    // Emit event to Socket.IO for real-time updates (for web manager & worker apps)
+    io.emit("schedule:created", {
+      schedule_id: rows[0].schedule_id,
+      citizen_id: rows[0].citizen_id,
+      scheduled_date: rows[0].scheduled_date,
+      time_slot: rows[0].time_slot,
+      waste_type: rows[0].waste_type,
+      estimated_weight: rows[0].estimated_weight,
+      latitude: rows[0].latitude,
+      longitude: rows[0].longitude,
+      address: rows[0].address,
+      status: rows[0].status,
+      created_at: rows[0].created_at,
+    });
+
+    console.log(
+      `📡 Emitted schedule:created event for schedule ${rows[0].schedule_id}`
+    );
+
+    res.status(201).json({
+      ok: true,
+      data: rows[0],
+      message: "Schedule created successfully",
+    });
+  } catch (error) {
+    console.error("[Schedule] Create error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Update schedule status
+app.patch("/api/schedules/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, employee_id, actual_weight, notes } = req.body;
+
+    const updates = [];
+    const params = [];
+    let paramIndex = 1;
+
+    if (status) {
+      updates.push(`status = $${paramIndex}`);
+      params.push(status);
+      paramIndex++;
+    }
+
+    if (employee_id) {
+      updates.push(`employee_id = $${paramIndex}`);
+      params.push(employee_id);
+      paramIndex++;
+    }
+
+    if (actual_weight !== undefined) {
+      updates.push(`actual_weight = $${paramIndex}`);
+      params.push(actual_weight);
+      paramIndex++;
+    }
+
+    if (notes) {
+      updates.push(`notes = $${paramIndex}`);
+      params.push(notes);
+      paramIndex++;
+    }
+
+    if (status === "completed") {
+      updates.push(`completed_at = NOW()`);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ ok: false, error: "No fields to update" });
+    }
+
+    updates.push("updated_at = NOW()");
+    params.push(id);
+
+    const query = `UPDATE schedules SET ${updates.join(
+      ", "
+    )} WHERE schedule_id = $${paramIndex} RETURNING *`;
+    const { rows } = await db.query(query, params);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "Schedule not found" });
+    }
+
+    console.log(
+      `✅ Schedule updated: ${id} -> status: ${status || "unchanged"}`
+    );
+
+    res.json({
+      ok: true,
+      data: rows[0],
+      message: "Schedule updated successfully",
+    });
+  } catch (error) {
+    console.error("[Schedule] Update error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Cancel schedule
+app.patch("/api/schedules/:id/cancel", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { rows } = await db.query(
+      `UPDATE schedules 
+       SET status = 'cancelled', updated_at = NOW() 
+       WHERE schedule_id = $1 AND status = 'pending'
+       RETURNING *`,
+      [id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        ok: false,
+        error: "Schedule not found or cannot be cancelled",
+      });
+    }
+
+    console.log(`❌ Schedule cancelled: ${id}`);
+
+    res.json({
+      ok: true,
+      data: rows[0],
+      message: "Schedule cancelled successfully",
+    });
+  } catch (error) {
+    console.error("[Schedule] Cancel error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Delete schedule (soft delete by setting status to cancelled)
+app.delete("/api/schedules/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { rows } = await db.query(
+      `UPDATE schedules 
+       SET status = 'cancelled', updated_at = NOW() 
+       WHERE schedule_id = $1
+       RETURNING *`,
+      [id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "Schedule not found" });
+    }
+
+    console.log(`🗑️ Schedule deleted: ${id}`);
+
+    res.json({
+      ok: true,
+      message: "Schedule deleted successfully",
+    });
+  } catch (error) {
+    console.error("[Schedule] Delete error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// ==================== ROUTES API (Worker App) ====================
+// Get active route for worker
+app.get("/api/routes/active", async (req, res) => {
+  try {
+    const { employee_id } = req.query;
+
+    if (!employee_id) {
+      return res.status(400).json({
+        ok: false,
+        error: "employee_id is required",
+      });
+    }
+
+    // TODO: Implement routes table and logic
+    // For now, return empty route
+    console.log(`🚛 Checking active route for employee: ${employee_id}`);
+
+    res.json({
+      ok: true,
+      data: null, // No active route for now
+    });
+  } catch (error) {
+    console.error("[Route] Get active error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Start route
+app.post("/api/routes/:id/start", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // TODO: Implement route start logic
+    console.log(`🚀 Starting route: ${id}`);
+
+    res.json({
+      ok: true,
+      message: "Route started successfully",
+    });
+  } catch (error) {
+    console.error("[Route] Start error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Complete route
+app.post("/api/routes/:id/complete", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // TODO: Implement route completion logic
+    console.log(`✅ Completing route: ${id}`);
+
+    res.json({
+      ok: true,
+      message: "Route completed successfully",
+    });
+  } catch (error) {
+    console.error("[Route] Complete error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// ==================== AUTHENTICATION API ====================
+// Login
+app.post("/api/auth/login", async (req, res) => {
+  try {
+    const { phone, password } = req.body;
+
+    if (!phone || !password) {
+      return res.status(400).json({
+        ok: false,
+        error: "Phone and password are required",
+      });
+    }
+
+    // Query user by phone
+    const { rows } = await db.query(
+      `SELECT id, phone, email, role, status, profile, created_at, updated_at
+       FROM users WHERE phone = $1 AND status = 'active'`,
+      [phone]
+    );
+
+    if (rows.length === 0) {
+      return res.status(401).json({
+        ok: false,
+        error: "Invalid phone or password",
+      });
+    }
+
+    const user = rows[0];
+
+    // TODO: In production, verify password hash
+    // For now, accept any password for demo (or check if password === '123456')
+    if (password !== "123456") {
+      return res.status(401).json({
+        ok: false,
+        error: "Invalid phone or password",
+      });
+    }
+
+    // Update last login time
+    await db.query("UPDATE users SET last_login_at = NOW() WHERE id = $1", [
+      user.id,
+    ]);
+
+    console.log(`🔐 User logged in: ${user.phone} (${user.id})`);
+
+    // Return user data (in production, also return JWT token)
+    res.json({
+      ok: true,
+      data: {
+        id: user.id,
+        phone: user.phone,
+        email: user.email,
+        role: user.role,
+        fullName: user.profile?.name || user.profile?.full_name || "User",
+        address: user.profile?.address || "",
+        latitude: user.profile?.latitude || null,
+        longitude: user.profile?.longitude || null,
+        isVerified: true,
+        isActive: user.status === "active",
+        createdAt: user.created_at,
+        updatedAt: user.updated_at,
+      },
+      message: "Login successful",
+    });
+  } catch (error) {
+    console.error("[Auth] Login error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Register
+app.post("/api/auth/register", async (req, res) => {
+  try {
+    const { phone, email, password, fullName } = req.body;
+
+    if (!phone || !password) {
+      return res.status(400).json({
+        ok: false,
+        error: "Phone and password are required",
+      });
+    }
+
+    // Check if phone already exists
+    const existing = await db.query("SELECT id FROM users WHERE phone = $1", [
+      phone,
+    ]);
+
+    if (existing.rows.length > 0) {
+      return res.status(409).json({
+        ok: false,
+        error: "Phone number already registered",
+      });
+    }
+
+    // Create new user with UUID
+    const { rows } = await db.query(
+      `INSERT INTO users (id, phone, email, role, status, profile, password_hash)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6)
+       RETURNING id, phone, email, role, status, profile, created_at`,
+      [
+        phone,
+        email || null,
+        "citizen", // Default role
+        "active",
+        JSON.stringify({ name: fullName || "User" }),
+        password, // TODO: Hash password in production
+      ]
+    );
+
+    const user = rows[0];
+
+    console.log(`👤 New user registered: ${user.phone} (${user.id})`);
+
+    res.status(201).json({
+      ok: true,
+      data: {
+        id: user.id,
+        phone: user.phone,
+        email: user.email,
+        role: user.role,
+        fullName: user.profile?.name || fullName || "User",
+        isActive: true,
+        createdAt: user.created_at,
+      },
+      message: "Registration successful",
+    });
+  } catch (error) {
+    console.error("[Auth] Register error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Get current user profile
+app.get("/api/auth/me", async (req, res) => {
+  try {
+    // TODO: Extract user ID from JWT token in Authorization header
+    // For now, use query param
+    const userId = req.query.user_id || req.headers["x-user-id"];
+
+    if (!userId) {
+      return res.status(401).json({
+        ok: false,
+        error: "User not authenticated",
+      });
+    }
+
+    const { rows } = await db.query(
+      `SELECT id, phone, email, role, status, profile, created_at, updated_at
+       FROM users WHERE id = $1`,
+      [userId]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        ok: false,
+        error: "User not found",
+      });
+    }
+
+    const user = rows[0];
+
+    res.json({
+      ok: true,
+      data: {
+        id: user.id,
+        phone: user.phone,
+        email: user.email,
+        role: user.role,
+        fullName: user.profile?.name || user.profile?.full_name || "User",
+        address: user.profile?.address || "",
+        latitude: user.profile?.latitude || null,
+        longitude: user.profile?.longitude || null,
+        isVerified: true,
+        isActive: user.status === "active",
+        createdAt: user.created_at,
+        updatedAt: user.updated_at,
+      },
+    });
+  } catch (error) {
+    console.error("[Auth] Get user error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// ==================== GAMIFICATION API ====================
+// Get user statistics (points, badges, rank)
+app.get("/api/gamification/stats/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Get user points
+    const pointsQuery = await db.query(
+      `SELECT points, level, total_checkins, streak_days
+       FROM user_points WHERE user_id = $1`,
+      [userId]
+    );
+
+    const pointsData = pointsQuery.rows[0] || {
+      points: 0,
+      level: 1,
+      total_checkins: 0,
+      streak_days: 0,
+    };
+
+    // Determine rank tier based on level
+    let rankTier = "Người mới";
+    if (pointsData.level >= 10) rankTier = "Huyền thoại";
+    else if (pointsData.level >= 7) rankTier = "Chuyên gia";
+    else if (pointsData.level >= 5) rankTier = "Chiến binh xanh";
+    else if (pointsData.level >= 3) rankTier = "Người tích cực";
+
+    // Get user badges
+    const badgesQuery = await db.query(
+      `SELECT b.id, b.name, b.description, b.icon_url, b.points_reward, b.rarity,
+              ub.earned_at IS NOT NULL as is_unlocked,
+              ub.earned_at as unlocked_at
+       FROM badges b
+       LEFT JOIN user_badges ub ON b.id = ub.badge_id AND ub.user_id = $1
+       WHERE b.active = true
+       ORDER BY b.points_reward ASC`,
+      [userId]
+    );
+
+    const badges = badgesQuery.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      icon: row.icon_url || "🏆",
+      requiredPoints: row.points_reward,
+      rarity: row.rarity,
+      isUnlocked: row.is_unlocked,
+      unlockedAt: row.unlocked_at,
+    }));
+
+    // Get user rank position
+    const rankQuery = await db.query(
+      `SELECT COUNT(*) + 1 as rank
+       FROM user_points
+       WHERE points > (SELECT points FROM user_points WHERE user_id = $1)`,
+      [userId]
+    );
+
+    const rank = rankQuery.rows[0]?.rank || 1;
+
+    res.json({
+      ok: true,
+      data: {
+        totalPoints: pointsData.points,
+        currentPoints: pointsData.points,
+        level: pointsData.level,
+        rankTier: rankTier,
+        rank: rank,
+        totalCheckins: pointsData.total_checkins,
+        streakDays: pointsData.streak_days,
+        badges: badges,
+      },
+    });
+  } catch (error) {
+    console.error("[Gamification] Get stats error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Get leaderboard
+app.get("/api/gamification/leaderboard", async (req, res) => {
+  try {
+    const { period = "all", limit = 20 } = req.query;
+    const currentUserId = req.query.user_id;
+
+    // TODO: Implement period filtering (week, month, all)
+    const { rows } = await db.query(
+      `SELECT 
+        u.id as user_id,
+        u.profile->>'name' as user_name,
+        u.profile->>'avatar_url' as avatar_url,
+        up.points,
+        up.level,
+        ROW_NUMBER() OVER (ORDER BY up.points DESC) as rank
+       FROM user_points up
+       JOIN users u ON u.id = up.user_id
+       WHERE u.status = 'active'
+       ORDER BY up.points DESC
+       LIMIT $1`,
+      [limit]
+    );
+
+    const leaderboard = rows.map((row) => {
+      let rankTier = "Người mới";
+      if (row.level >= 10) rankTier = "Huyền thoại";
+      else if (row.level >= 7) rankTier = "Chuyên gia";
+      else if (row.level >= 5) rankTier = "Chiến binh xanh";
+      else if (row.level >= 3) rankTier = "Người tích cực";
+
+      return {
+        userId: row.user_id,
+        userName: row.user_name || "User",
+        avatarUrl: row.avatar_url || null,
+        points: row.points,
+        level: row.level,
+        rankTier: rankTier,
+        rank: parseInt(row.rank),
+        isCurrentUser: row.user_id === currentUserId,
+      };
+    });
+
+    res.json({
+      ok: true,
+      data: leaderboard,
+    });
+  } catch (error) {
+    console.error("[Gamification] Get leaderboard error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Get all badges
+app.get("/api/gamification/badges", async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT id, code, name, description, icon_url, points_reward, rarity
+       FROM badges
+       WHERE active = true
+       ORDER BY points_reward ASC`
+    );
+
+    res.json({
+      ok: true,
+      data: rows,
+    });
+  } catch (error) {
+    console.error("[Gamification] Get badges error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Claim reward (add points to user)
+app.post("/api/gamification/claim-reward", async (req, res) => {
+  try {
+    const { userId, points, reason } = req.body;
+
+    if (!userId || !points) {
+      return res.status(400).json({
+        ok: false,
+        error: "userId and points are required",
+      });
+    }
+
+    // Add points transaction
+    await db.query(
+      `INSERT INTO point_transactions (user_id, points, transaction_type, description)
+       VALUES ($1, $2, $3, $4)`,
+      [userId, points, "reward", reason || "Reward claimed"]
+    );
+
+    // Update user points
+    const { rows } = await db.query(
+      `UPDATE user_points
+       SET points = points + $1,
+           updated_at = NOW()
+       WHERE user_id = $2
+       RETURNING points, level`,
+      [points, userId]
+    );
+
+    console.log(`🎁 Reward claimed: ${points} points for user ${userId}`);
+
+    res.json({
+      ok: true,
+      data: {
+        totalPoints: rows[0]?.points || 0,
+        level: rows[0]?.level || 1,
+        pointsAdded: points,
+      },
+      message: "Reward claimed successfully",
+    });
+  } catch (error) {
+    console.error("[Gamification] Claim reward error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
 });
 
 // Scheduled tasks for data collection
-cron.schedule('*/5 * * * *', () => {
-  console.log('Running scheduled environmental data collection...');
+cron.schedule("*/5 * * * *", () => {
+  console.log("Running scheduled environmental data collection...");
   // TODO: Implement scheduled data collection from sensors
 });
 
@@ -672,16 +1539,19 @@ cron.schedule('*/5 * * * *', () => {
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({
-    error: 'Internal Server Error',
-    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
+    error: "Internal Server Error",
+    message:
+      process.env.NODE_ENV === "development"
+        ? err.message
+        : "Something went wrong",
   });
 });
 
 // 404 handler
-app.use('*', (req, res) => {
+app.use("*", (req, res) => {
   res.status(404).json({
-    error: 'Not Found',
-    message: `Route ${req.originalUrl} not found`
+    error: "Not Found",
+    message: `Route ${req.originalUrl} not found`,
   });
 });
 
@@ -689,7 +1559,7 @@ app.use('*', (req, res) => {
 server.listen(PORT, () => {
   console.log(`🚀 EcoCheck Backend started on port ${PORT}`);
   console.log(`📊 Health check: http://localhost:${PORT}/health`);
-  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
 });
 
 module.exports = app;
