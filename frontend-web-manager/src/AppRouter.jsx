@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import App from './App.jsx'
 import RouteOptimization from './pages/operations/RouteOptimization.jsx'
 import DynamicDispatch from './pages/operations/DynamicDispatch.jsx'
+import Schedules from './pages/operations/Schedules.jsx'
 import AnalyticsPage from './pages/analytics/Analytics.jsx'
 import Fleet from './pages/master/Fleet.jsx'
 import Personnel from './pages/master/Personnel.jsx'
@@ -16,6 +17,7 @@ export default function AppRouter() {
         <Route path="/" element={<App />} />
         <Route path="/operations/route-optimization" element={<RouteOptimization />} />
         <Route path="/operations/dynamic-dispatch" element={<DynamicDispatch />} />
+        <Route path="/operations/schedules" element={<Schedules />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/master/fleet" element={<Fleet />} />
         <Route path="/master/personnel" element={<Personnel />} />

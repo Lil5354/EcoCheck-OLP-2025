@@ -346,6 +346,33 @@ app.get("/api/master/fleet", (req, res) => {
   res.json({ ok: true, data: mockFleet });
 });
 
+// GET /api/master/depots - Get all depots
+app.get("/api/master/depots", async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT id, name, address, status, capacity_vehicles, opening_hours
+       FROM depots
+       WHERE status = 'active'
+       ORDER BY name ASC`
+    );
+    
+    res.json({
+      ok: true,
+      data: rows.map(row => ({
+        id: row.id,
+        name: row.name,
+        address: row.address,
+        status: row.status,
+        capacityVehicles: row.capacity_vehicles,
+        openingHours: row.opening_hours,
+      })),
+    });
+  } catch (error) {
+    console.error('[Master] Get depots error:', error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 app.post("/api/master/fleet", (req, res) => {
   res.json({ ok: true, data: { id: "V" + Date.now(), ...req.body } });
 });
@@ -769,39 +796,126 @@ app.post("/api/exceptions/:id/reject", (req, res) => {
   res.json({ ok: true, data: { message: "Rejected" } });
 });
 
+// ==================== MANAGER MIDDLEWARE ====================
+// Middleware: Check manager role (simplified for now)
+const requireManager = async (req, res, next) => {
+  // TODO: Extract from JWT token in production
+  const userId = req.headers['x-user-id'] || req.query.manager_id;
+  if (!userId) {
+    // For development, allow if no auth header (will be secured in production)
+    req.managerId = userId;
+    return next();
+  }
+  
+  try {
+    const { rows } = await db.query(
+      'SELECT role FROM users WHERE id = $1',
+      [userId]
+    );
+    
+    if (rows.length === 0 || !['manager', 'admin'].includes(rows[0].role)) {
+      return res.status(403).json({ ok: false, error: 'Forbidden: Manager access required' });
+    }
+    
+    req.managerId = userId;
+    next();
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+};
+
 // ==================== SCHEDULE API ====================
-// Get schedules (with optional filters)
-app.get("/api/schedules", async (req, res) => {
+// GET /api/schedules - Get all collection schedules (for manager)
+app.get("/api/schedules", requireManager, async (req, res) => {
   try {
     const { citizen_id, status, limit = 50, offset = 0 } = req.query;
 
-    let query = "SELECT * FROM schedules WHERE 1=1";
+    // Query with JOIN to get citizen information
+    let query = `
+      SELECT 
+        cs.id,
+        cs.citizen_id,
+        cs.scheduled_date,
+        cs.time_slot,
+        cs.waste_type,
+        cs.estimated_weight_kg,
+        cs.latitude,
+        cs.longitude,
+        cs.address,
+        cs.status,
+        cs.priority,
+        cs.employee_id,
+        cs.route_id,
+        cs.notes,
+        cs.completed_at,
+        cs.cancelled_at,
+        cs.cancelled_reason,
+        cs.created_at,
+        cs.updated_at,
+        -- Citizen information
+        u.phone as citizen_phone,
+        u.email as citizen_email,
+        u.profile->>'name' as citizen_name,
+        -- Assigned employee information
+        p.name as employee_name,
+        p.role as employee_role
+      FROM collection_schedules cs
+      LEFT JOIN users u ON cs.citizen_id = u.id
+      LEFT JOIN personnel p ON cs.employee_id = p.id
+      WHERE 1=1
+    `;
     const params = [];
     let paramIndex = 1;
 
     if (citizen_id) {
-      query += ` AND citizen_id = $${paramIndex}`;
+      query += ` AND cs.citizen_id = $${paramIndex}`;
       params.push(citizen_id);
       paramIndex++;
     }
 
     if (status) {
-      query += ` AND status = $${paramIndex}`;
+      query += ` AND cs.status = $${paramIndex}`;
       params.push(status);
       paramIndex++;
     }
 
-    query += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${
-      paramIndex + 1
-    }`;
-    params.push(limit, offset);
+    query += ` ORDER BY cs.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    params.push(parseInt(limit, 10), parseInt(offset, 10));
 
     const { rows } = await db.query(query, params);
 
+    // Format response to snake_case (matching mobile app format)
+    const formattedData = rows.map(row => ({
+      id: row.id,
+      citizen_id: row.citizen_id,
+      citizen_name: row.citizen_name || 'N/A',
+      citizen_phone: row.citizen_phone || null,
+      citizen_email: row.citizen_email || null,
+      scheduled_date: row.scheduled_date ? row.scheduled_date.toISOString().split('T')[0] : null,
+      time_slot: row.time_slot,
+      waste_type: row.waste_type,
+      estimated_weight: row.estimated_weight_kg || 0,
+      latitude: row.latitude,
+      longitude: row.longitude,
+      address: row.address,
+      status: row.status,
+      priority: row.priority?.toString() || '0',
+      employee_id: row.employee_id || null,
+      employee_name: row.employee_name || null,
+      employee_role: row.employee_role || null,
+      route_id: row.route_id || null,
+      notes: row.notes || null,
+      completed_at: row.completed_at ? row.completed_at.toISOString() : null,
+      cancelled_at: row.cancelled_at ? row.cancelled_at.toISOString() : null,
+      cancelled_reason: row.cancelled_reason || null,
+      created_at: row.created_at.toISOString(),
+      updated_at: row.updated_at ? row.updated_at.toISOString() : null,
+    }));
+
     res.json({
       ok: true,
-      data: rows,
-      total: rows.length,
+      data: formattedData,
+      total: formattedData.length,
     });
   } catch (error) {
     console.error("[Schedule] Get error:", error);
@@ -810,42 +924,98 @@ app.get("/api/schedules", async (req, res) => {
 });
 
 // Get assigned schedules for worker (worker-specific endpoint)
+// Mobile app uses this endpoint to fetch schedules assigned to the logged-in worker
 app.get("/api/schedules/assigned", async (req, res) => {
   try {
     const { employee_id, status, limit = 50, offset = 0 } = req.query;
 
+    // Query with JOIN to get citizen and employee information (matching format with /api/schedules)
     let query = `
-      SELECT * FROM schedules 
-      WHERE employee_id IS NOT NULL
+      SELECT 
+        cs.id,
+        cs.citizen_id,
+        cs.scheduled_date,
+        cs.time_slot,
+        cs.waste_type,
+        cs.estimated_weight_kg,
+        cs.latitude,
+        cs.longitude,
+        cs.address,
+        cs.status,
+        cs.priority,
+        cs.employee_id,
+        cs.route_id,
+        cs.notes,
+        cs.completed_at,
+        cs.cancelled_at,
+        cs.cancelled_reason,
+        cs.created_at,
+        cs.updated_at,
+        -- Citizen information
+        u.phone as citizen_phone,
+        u.email as citizen_email,
+        u.profile->>'name' as citizen_name,
+        -- Assigned employee information
+        p.name as employee_name,
+        p.role as employee_role
+      FROM collection_schedules cs
+      LEFT JOIN users u ON cs.citizen_id = u.id
+      LEFT JOIN personnel p ON cs.employee_id = p.id
+      WHERE cs.employee_id IS NOT NULL
     `;
     const params = [];
     let paramIndex = 1;
 
     if (employee_id) {
-      query += ` AND employee_id = $${paramIndex}`;
+      query += ` AND cs.employee_id = $${paramIndex}`;
       params.push(employee_id);
       paramIndex++;
     }
 
     if (status) {
-      query += ` AND status = $${paramIndex}`;
+      query += ` AND cs.status = $${paramIndex}`;
       params.push(status);
       paramIndex++;
     }
 
-    query += ` ORDER BY scheduled_date DESC, created_at DESC LIMIT $${paramIndex} OFFSET $${
-      paramIndex + 1
-    }`;
-    params.push(limit, offset);
+    query += ` ORDER BY cs.scheduled_date DESC, cs.created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    params.push(parseInt(limit, 10), parseInt(offset, 10));
 
     const { rows } = await db.query(query, params);
 
-    console.log(`📋 Found ${rows.length} assigned schedules`);
+    // Format response to match mobile app CollectionRequest model (snake_case)
+    const formattedData = rows.map(row => ({
+      id: row.id,
+      citizen_id: row.citizen_id,
+      citizen_name: row.citizen_name || 'N/A',
+      citizen_phone: row.citizen_phone || null,
+      address: row.address,
+      latitude: row.latitude,
+      longitude: row.longitude,
+      waste_type: row.waste_type,
+      estimated_weight: row.estimated_weight_kg || 0,
+      description: row.notes || null,
+      images: null, // TODO: Add images field to collection_schedules table if needed
+      status: row.status,
+      priority: row.priority?.toString() || '0',
+      scheduled_date: row.scheduled_date ? row.scheduled_date.toISOString().split('T')[0] : null,
+      assigned_worker_id: row.employee_id || null,
+      assigned_worker_name: row.employee_name || null,
+      route_id: row.route_id || null,
+      collected_at: row.completed_at ? row.completed_at.toISOString() : null,
+      actual_weight: row.meta?.actual_weight || null,
+      collection_notes: row.notes || null,
+      collection_images: null, // TODO: Add collection_images field if needed
+      created_at: row.created_at.toISOString(),
+      updated_at: row.updated_at ? row.updated_at.toISOString() : null,
+    }));
+
+    console.log(`📋 Found ${formattedData.length} assigned schedules for employee_id: ${employee_id || 'all'}`);
 
     res.json({
       ok: true,
-      data: rows,
-      total: rows.length,
+      data: formattedData,
+      total: formattedData.length,
     });
   } catch (error) {
     console.error("[Schedule] Get assigned error:", error);
@@ -858,7 +1028,17 @@ app.get("/api/schedules/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const { rows } = await db.query(
-      "SELECT * FROM schedules WHERE schedule_id = $1",
+      `SELECT 
+        cs.*,
+        u.phone as citizen_phone,
+        u.email as citizen_email,
+        u.profile->>'name' as citizen_name,
+        p.name as employee_name,
+        p.role as employee_role
+      FROM collection_schedules cs
+      LEFT JOIN users u ON cs.citizen_id = u.id
+      LEFT JOIN personnel p ON cs.employee_id = p.id
+      WHERE cs.id = $1`,
       [id]
     );
 
@@ -866,7 +1046,36 @@ app.get("/api/schedules/:id", async (req, res) => {
       return res.status(404).json({ ok: false, error: "Schedule not found" });
     }
 
-    res.json({ ok: true, data: rows[0] });
+    const row = rows[0];
+    res.json({ 
+      ok: true, 
+      data: {
+        id: row.id,
+        citizen_id: row.citizen_id,
+        citizen_name: row.citizen_name || 'N/A',
+        citizen_phone: row.citizen_phone || null,
+        citizen_email: row.citizen_email || null,
+        scheduled_date: row.scheduled_date ? row.scheduled_date.toISOString().split('T')[0] : null,
+        time_slot: row.time_slot,
+        waste_type: row.waste_type,
+        estimated_weight: row.estimated_weight_kg || 0,
+        latitude: row.latitude,
+        longitude: row.longitude,
+        address: row.address,
+        status: row.status,
+        priority: row.priority?.toString() || '0',
+        employee_id: row.employee_id || null,
+        employee_name: row.employee_name || null,
+        employee_role: row.employee_role || null,
+        route_id: row.route_id || null,
+        notes: row.notes || null,
+        completed_at: row.completed_at ? row.completed_at.toISOString() : null,
+        cancelled_at: row.cancelled_at ? row.cancelled_at.toISOString() : null,
+        cancelled_reason: row.cancelled_reason || null,
+        created_at: row.created_at.toISOString(),
+        updated_at: row.updated_at ? row.updated_at.toISOString() : null,
+      }
+    });
   } catch (error) {
     console.error("[Schedule] Get by ID error:", error);
     res.status(500).json({ ok: false, error: error.message });
@@ -903,8 +1112,8 @@ app.post("/api/schedules", async (req, res) => {
     }
 
     const { rows } = await db.query(
-      `INSERT INTO schedules (
-        citizen_id, scheduled_date, time_slot, waste_type, estimated_weight,
+      `INSERT INTO collection_schedules (
+        citizen_id, scheduled_date, time_slot, waste_type, estimated_weight_kg,
         latitude, longitude, address, status, priority
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING *`,
@@ -923,17 +1132,18 @@ app.post("/api/schedules", async (req, res) => {
     );
 
     console.log(
-      `✅ Schedule created: ${rows[0].schedule_id} for citizen ${citizen_id} - Status: scheduled`
+      `✅ Schedule created: ${rows[0].id} for citizen ${citizen_id} - Status: scheduled`
     );
 
     // Emit event to Socket.IO for real-time updates (for web manager & worker apps)
     io.emit("schedule:created", {
-      schedule_id: rows[0].schedule_id,
+      id: rows[0].id,
+      schedule_id: rows[0].id, // Keep for backward compatibility
       citizen_id: rows[0].citizen_id,
       scheduled_date: rows[0].scheduled_date,
       time_slot: rows[0].time_slot,
       waste_type: rows[0].waste_type,
-      estimated_weight: rows[0].estimated_weight,
+      estimated_weight: rows[0].estimated_weight_kg,
       latitude: rows[0].latitude,
       longitude: rows[0].longitude,
       address: rows[0].address,
@@ -942,12 +1152,34 @@ app.post("/api/schedules", async (req, res) => {
     });
 
     console.log(
-      `📡 Emitted schedule:created event for schedule ${rows[0].schedule_id}`
+      `📡 Emitted schedule:created event for schedule ${rows[0].id}`
     );
 
+    // Format response to snake_case (matching mobile app format)
+    const row = rows[0];
     res.status(201).json({
       ok: true,
-      data: rows[0],
+      data: {
+        id: row.id,
+        citizen_id: row.citizen_id,
+        scheduled_date: row.scheduled_date ? row.scheduled_date.toISOString().split('T')[0] : null,
+        time_slot: row.time_slot,
+        waste_type: row.waste_type,
+        estimated_weight: row.estimated_weight_kg || 0,
+        latitude: row.latitude,
+        longitude: row.longitude,
+        address: row.address,
+        status: row.status,
+        priority: row.priority?.toString() || '0',
+        employee_id: row.employee_id || null,
+        route_id: row.route_id || null,
+        notes: row.notes || null,
+        completed_at: row.completed_at ? row.completed_at.toISOString() : null,
+        cancelled_at: row.cancelled_at ? row.cancelled_at.toISOString() : null,
+        cancelled_reason: row.cancelled_reason || null,
+        created_at: row.created_at.toISOString(),
+        updated_at: row.updated_at ? row.updated_at.toISOString() : null,
+      },
       message: "Schedule created successfully",
     });
   } catch (error) {
@@ -978,9 +1210,10 @@ app.patch("/api/schedules/:id", async (req, res) => {
       paramIndex++;
     }
 
+    // Note: actual_weight is stored in meta JSONB for now
     if (actual_weight !== undefined) {
-      updates.push(`actual_weight = $${paramIndex}`);
-      params.push(actual_weight);
+      updates.push(`meta = jsonb_set(COALESCE(meta, '{}'::jsonb), '{actual_weight}', $${paramIndex}::text::jsonb)`);
+      params.push(JSON.stringify(actual_weight));
       paramIndex++;
     }
 
@@ -1001,9 +1234,9 @@ app.patch("/api/schedules/:id", async (req, res) => {
     updates.push("updated_at = NOW()");
     params.push(id);
 
-    const query = `UPDATE schedules SET ${updates.join(
+    const query = `UPDATE collection_schedules SET ${updates.join(
       ", "
-    )} WHERE schedule_id = $${paramIndex} RETURNING *`;
+    )} WHERE id = $${paramIndex} RETURNING *`;
     const { rows } = await db.query(query, params);
 
     if (rows.length === 0) {
@@ -1011,12 +1244,78 @@ app.patch("/api/schedules/:id", async (req, res) => {
     }
 
     console.log(
-      `✅ Schedule updated: ${id} -> status: ${status || "unchanged"}`
+      `✅ Schedule updated: ${id} -> status: ${status || "unchanged"}, employee_id: ${employee_id || "unchanged"}`
     );
 
+    // Fetch updated schedule with JOIN to get full information (for response and Socket.IO)
+    const { rows: updatedRows } = await db.query(
+      `SELECT 
+        cs.*,
+        u.phone as citizen_phone,
+        u.email as citizen_email,
+        u.profile->>'name' as citizen_name,
+        p.name as employee_name,
+        p.role as employee_role
+      FROM collection_schedules cs
+      LEFT JOIN users u ON cs.citizen_id = u.id
+      LEFT JOIN personnel p ON cs.employee_id = p.id
+      WHERE cs.id = $1`,
+      [id]
+    );
+
+    if (updatedRows.length === 0) {
+      return res.status(404).json({ ok: false, error: "Schedule not found" });
+    }
+
+    const row = updatedRows[0];
+
+    // Emit Socket.IO event for real-time updates (for mobile worker app)
+    if (employee_id || status) {
+      io.emit("schedule:updated", {
+        id: row.id,
+        employee_id: row.employee_id,
+        employee_name: row.employee_name,
+        employee_role: row.employee_role,
+        status: row.status,
+        scheduled_date: row.scheduled_date,
+        time_slot: row.time_slot,
+        address: row.address,
+        waste_type: row.waste_type,
+        estimated_weight_kg: row.estimated_weight_kg,
+        updated_at: row.updated_at,
+      });
+      console.log(`📡 Emitted schedule:updated event for schedule ${id}`);
+    }
+
+    // Format response to snake_case (matching mobile app format)
     res.json({
       ok: true,
-      data: rows[0],
+      data: {
+        id: row.id,
+        citizen_id: row.citizen_id,
+        citizen_name: row.citizen_name || 'N/A',
+        citizen_phone: row.citizen_phone || null,
+        citizen_email: row.citizen_email || null,
+        scheduled_date: row.scheduled_date ? row.scheduled_date.toISOString().split('T')[0] : null,
+        time_slot: row.time_slot,
+        waste_type: row.waste_type,
+        estimated_weight: row.estimated_weight_kg || 0,
+        latitude: row.latitude,
+        longitude: row.longitude,
+        address: row.address,
+        status: row.status,
+        priority: row.priority?.toString() || '0',
+        employee_id: row.employee_id || null,
+        employee_name: row.employee_name || null,
+        employee_role: row.employee_role || null,
+        route_id: row.route_id || null,
+        notes: row.notes || null,
+        completed_at: row.completed_at ? row.completed_at.toISOString() : null,
+        cancelled_at: row.cancelled_at ? row.cancelled_at.toISOString() : null,
+        cancelled_reason: row.cancelled_reason || null,
+        created_at: row.created_at.toISOString(),
+        updated_at: row.updated_at ? row.updated_at.toISOString() : null,
+      },
       message: "Schedule updated successfully",
     });
   } catch (error) {
@@ -1062,9 +1361,9 @@ app.delete("/api/schedules/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const { rows } = await db.query(
-      `UPDATE schedules 
-       SET status = 'cancelled', updated_at = NOW() 
-       WHERE schedule_id = $1
+      `UPDATE collection_schedules 
+       SET status = 'cancelled', cancelled_at = NOW(), updated_at = NOW() 
+       WHERE id = $1
        RETURNING *`,
       [id]
     );
@@ -1098,13 +1397,109 @@ app.get("/api/routes/active", async (req, res) => {
       });
     }
 
-    // TODO: Implement routes table and logic
-    // For now, return empty route
     console.log(`🚛 Checking active route for employee: ${employee_id}`);
+
+    // Query active route for employee (driver or collector)
+    const routeQuery = `
+      SELECT 
+        r.id,
+        r.vehicle_id,
+        r.depot_id,
+        r.driver_id,
+        r.collector_id,
+        r.start_at,
+        r.end_at,
+        r.status,
+        r.created_at,
+        r.updated_at,
+        -- Driver/Collector name
+        p.name as worker_name,
+        -- Vehicle plate
+        v.plate_number as vehicle_plate,
+        -- Depot name
+        d.name as depot_name
+      FROM routes r
+      LEFT JOIN personnel p ON (r.driver_id = p.id OR r.collector_id = p.id) AND p.id = $1
+      LEFT JOIN vehicles v ON r.vehicle_id = v.id
+      LEFT JOIN depots d ON r.depot_id = d.id
+      WHERE (r.driver_id = $1 OR r.collector_id = $1)
+        AND r.status IN ('planned', 'in_progress')
+      ORDER BY r.start_at DESC
+      LIMIT 1
+    `;
+
+    const routeResult = await db.query(routeQuery, [employee_id]);
+
+    if (routeResult.rows.length === 0) {
+      return res.json({
+        ok: true,
+        data: null, // No active route
+      });
+    }
+
+    const route = routeResult.rows[0];
+
+    // Query collection schedules (points) for this route
+    const pointsQuery = `
+      SELECT 
+        cs.id,
+        cs.citizen_id,
+        cs.scheduled_date,
+        cs.waste_type,
+        cs.latitude,
+        cs.longitude,
+        cs.address,
+        cs.status,
+        cs.completed_at,
+        cs.estimated_weight_kg,
+        -- Get sequence from route_stops if exists
+        COALESCE(rs.seq, ROW_NUMBER() OVER (ORDER BY cs.scheduled_date, cs.created_at))::int as seq
+      FROM collection_schedules cs
+      LEFT JOIN route_stops rs ON rs.route_id = $1 AND rs.point_id = cs.id
+      WHERE cs.route_id = $1
+      ORDER BY COALESCE(rs.seq, ROW_NUMBER() OVER (ORDER BY cs.scheduled_date, cs.created_at))
+    `;
+
+    const pointsResult = await db.query(pointsQuery, [route.id]);
+
+    // Format points to match mobile app RoutePoint model (snake_case)
+    const points = pointsResult.rows.map((row, index) => ({
+      id: row.id,
+      order: row.seq || (index + 1),
+      collection_request_id: row.id, // Same as schedule id
+      address: row.address || 'N/A',
+      latitude: parseFloat(row.latitude) || 0,
+      longitude: parseFloat(row.longitude) || 0,
+      waste_type: row.waste_type || null,
+      status: row.status === 'completed' ? 'completed' : row.status === 'in_progress' ? 'in_progress' : 'pending',
+      arrived_at: null, // TODO: Add actual_arrival_at from route_stops
+      completed_at: row.completed_at ? row.completed_at.toISOString() : null,
+    }));
+
+    // Format route to match mobile app WorkerRoute model (snake_case)
+    const formattedRoute = {
+      id: route.id,
+      name: `Route ${route.id.substring(0, 8)}`, // Generate route name
+      worker_id: employee_id,
+      worker_name: route.worker_name || 'N/A',
+      vehicle_plate: route.vehicle_plate || null,
+      schedule_date: route.start_at ? route.start_at.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+      status: route.status,
+      points: points,
+      started_at: route.status === 'in_progress' ? route.start_at?.toISOString() : null,
+      completed_at: route.status === 'completed' ? route.end_at?.toISOString() : null,
+      total_distance: null, // TODO: Calculate from route_stops
+      total_collections: points.length,
+      completed_collections: points.filter(p => p.status === 'completed').length,
+      created_at: route.created_at.toISOString(),
+      updated_at: route.updated_at ? route.updated_at.toISOString() : null,
+    };
+
+    console.log(`✅ Found active route: ${route.id} with ${points.length} points`);
 
     res.json({
       ok: true,
-      data: null, // No active route for now
+      data: formattedRoute,
     });
   } catch (error) {
     console.error("[Route] Get active error:", error);
@@ -1149,40 +1544,47 @@ app.post("/api/routes/:id/complete", async (req, res) => {
 });
 
 // ==================== AUTHENTICATION API ====================
-// Login
+// Login - Supports both email and phone for mobile app compatibility
 app.post("/api/auth/login", async (req, res) => {
   try {
-    const { phone, password } = req.body;
+    const { phone, email, password } = req.body;
 
-    if (!phone || !password) {
+    if (!password || (!phone && !email)) {
       return res.status(400).json({
         ok: false,
-        error: "Phone and password are required",
+        error: "Phone or email and password are required",
       });
     }
 
-    // Query user by phone
-    const { rows } = await db.query(
-      `SELECT id, phone, email, role, status, profile, created_at, updated_at
-       FROM users WHERE phone = $1 AND status = 'active'`,
-      [phone]
-    );
+    // Query user by phone or email
+    let query, params;
+    if (email) {
+      query = `SELECT id, phone, email, role, status, profile, created_at, updated_at, password_hash
+               FROM users WHERE email = $1 AND status = 'active'`;
+      params = [email];
+    } else {
+      query = `SELECT id, phone, email, role, status, profile, created_at, updated_at, password_hash
+               FROM users WHERE phone = $1 AND status = 'active'`;
+      params = [phone];
+    }
+
+    const { rows } = await db.query(query, params);
 
     if (rows.length === 0) {
       return res.status(401).json({
         ok: false,
-        error: "Invalid phone or password",
+        error: "Invalid credentials",
       });
     }
 
     const user = rows[0];
 
-    // TODO: In production, verify password hash
+    // TODO: In production, verify password hash using bcrypt
     // For now, accept any password for demo (or check if password === '123456')
-    if (password !== "123456") {
+    if (password !== "123456" && password !== user.password_hash) {
       return res.status(401).json({
         ok: false,
-        error: "Invalid phone or password",
+        error: "Invalid credentials",
       });
     }
 
@@ -1191,25 +1593,51 @@ app.post("/api/auth/login", async (req, res) => {
       user.id,
     ]);
 
-    console.log(`🔐 User logged in: ${user.phone} (${user.id})`);
+    // For workers, get personnel info
+    let personnelData = null;
+    if (user.role === 'worker') {
+      const personnelQuery = await db.query(
+        `SELECT p.id, p.name, p.role as personnel_role, p.phone, p.email, p.depot_id, d.name as depot_name
+         FROM personnel p
+         LEFT JOIN depots d ON p.depot_id = d.id
+         WHERE p.user_id = $1`,
+        [user.id]
+      );
+      if (personnelQuery.rows.length > 0) {
+        personnelData = personnelQuery.rows[0];
+      }
+    }
 
-    // Return user data (in production, also return JWT token)
+    console.log(`🔐 User logged in: ${user.email || user.phone} (${user.id})`);
+
+    // Return user data - format compatible with mobile app
+    const responseData = {
+      id: user.id,
+      phone: user.phone,
+      email: user.email,
+      role: user.role,
+      fullName: user.profile?.name || user.profile?.full_name || "User",
+      address: user.profile?.address || "",
+      latitude: user.profile?.latitude || null,
+      longitude: user.profile?.longitude || null,
+      isVerified: true,
+      isActive: user.status === "active",
+      createdAt: user.created_at,
+      updatedAt: user.updated_at,
+    };
+
+    // Add worker-specific data if personnel exists
+    if (personnelData) {
+      responseData.workerId = personnelData.id;
+      responseData.workerName = personnelData.name;
+      responseData.workerRole = personnelData.personnel_role;
+      responseData.depotId = personnelData.depot_id;
+      responseData.depotName = personnelData.depot_name;
+    }
+
     res.json({
       ok: true,
-      data: {
-        id: user.id,
-        phone: user.phone,
-        email: user.email,
-        role: user.role,
-        fullName: user.profile?.name || user.profile?.full_name || "User",
-        address: user.profile?.address || "",
-        latitude: user.profile?.latitude || null,
-        longitude: user.profile?.longitude || null,
-        isVerified: true,
-        isActive: user.status === "active",
-        createdAt: user.created_at,
-        updatedAt: user.updated_at,
-      },
+      data: responseData,
       message: "Login successful",
     });
   } catch (error) {
@@ -1328,6 +1756,349 @@ app.get("/api/auth/me", async (req, res) => {
     });
   } catch (error) {
     console.error("[Auth] Get user error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// ==================== MANAGER API - PERSONNEL MANAGEMENT ====================
+// GET /api/manager/personnel - Get all personnel
+app.get('/api/manager/personnel', requireManager, async (req, res) => {
+  try {
+    const { role, status, depot_id } = req.query;
+    
+    let query = `
+      SELECT 
+        p.id,
+        p.name,
+        p.role as personnel_role,
+        p.phone,
+        p.email,
+        p.status,
+        p.depot_id,
+        p.user_id,
+        d.name as depot_name,
+        u.email as user_email,
+        u.phone as user_phone,
+        p.certifications,
+        p.hired_at,
+        p.created_at,
+        p.updated_at
+      FROM personnel p
+      LEFT JOIN depots d ON p.depot_id = d.id
+      LEFT JOIN users u ON p.user_id = u.id
+      WHERE 1=1
+    `;
+    const params = [];
+    let paramCount = 1;
+    
+    if (role) {
+      query += ` AND p.role = $${paramCount++}`;
+      params.push(role);
+    }
+    if (status) {
+      query += ` AND p.status = $${paramCount++}`;
+      params.push(status);
+    }
+    if (depot_id) {
+      query += ` AND p.depot_id = $${paramCount++}`;
+      params.push(depot_id);
+    }
+    
+    query += ` ORDER BY p.created_at DESC`;
+    
+    const { rows } = await db.query(query, params);
+    
+    res.json({
+      ok: true,
+      data: rows.map(row => ({
+        id: row.id,
+        name: row.name,
+        role: row.personnel_role,
+        phone: row.phone || row.user_phone,
+        email: row.email || row.user_email,
+        status: row.status,
+        depotId: row.depot_id,
+        depotName: row.depot_name,
+        userId: row.user_id,
+        certifications: row.certifications || [],
+        hiredAt: row.hired_at,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      })),
+    });
+  } catch (error) {
+    console.error('[Manager] Get personnel error:', error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// POST /api/manager/personnel - Create worker account
+app.post('/api/manager/personnel', requireManager, async (req, res) => {
+  try {
+    const { name, phone, email, role, depot_id, certifications = [], password } = req.body;
+    
+    // Validation
+    if (!name || !email || !password || !role || !depot_id) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Missing required fields: name, email, password, role, depot_id',
+      });
+    }
+    
+    // Validate role
+    if (!['driver', 'collector'].includes(role)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Invalid role. Must be driver or collector',
+      });
+    }
+    
+    // Validate email format
+    if (!email.includes('@')) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Invalid email format',
+      });
+    }
+    
+    // Check if email already exists
+    const existingEmail = await db.query('SELECT id FROM users WHERE email = $1', [email]);
+    if (existingEmail.rows.length > 0) {
+      return res.status(409).json({
+        ok: false,
+        error: 'Email already registered',
+      });
+    }
+    
+    // Check if phone already exists (if provided)
+    if (phone) {
+      const existingPhone = await db.query('SELECT id FROM users WHERE phone = $1', [phone]);
+      if (existingPhone.rows.length > 0) {
+        return res.status(409).json({
+          ok: false,
+          error: 'Phone number already registered',
+        });
+      }
+    }
+    
+    // Check if depot exists
+    const depotCheck = await db.query('SELECT id FROM depots WHERE id = $1', [depot_id]);
+    if (depotCheck.rows.length === 0) {
+      return res.status(404).json({
+        ok: false,
+        error: 'Depot not found',
+      });
+    }
+    
+    // Start transaction
+    await db.query('BEGIN');
+    
+    try {
+      // 1. Create user account with role='worker'
+      const { rows: userRows } = await db.query(
+        `INSERT INTO users (id, phone, email, role, status, profile, password_hash)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6)
+         RETURNING id, phone, email, role, status, created_at`,
+        [
+          phone || null,
+          email,
+          'worker', // User role
+          'active',
+          JSON.stringify({ name }),
+          password, // TODO: Hash password with bcrypt in production
+        ]
+      );
+      
+      const user = userRows[0];
+      
+      // 2. Create personnel record
+      const { rows: personnelRows } = await db.query(
+        `INSERT INTO personnel (id, name, role, phone, email, certifications, status, depot_id, user_id)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING id, name, role, phone, email, status, depot_id, user_id, created_at`,
+        [
+          name,
+          role, // Personnel role: driver/collector
+          phone || null,
+          email,
+          certifications,
+          'active',
+          depot_id,
+          user.id,
+        ]
+      );
+      
+      await db.query('COMMIT');
+      
+      const personnel = personnelRows[0];
+      
+      console.log(`👷 New worker created: ${name} (${personnel.id}) - User: ${user.id}`);
+      
+      res.status(201).json({
+        ok: true,
+        data: {
+          id: personnel.id,
+          userId: user.id,
+          name: personnel.name,
+          phone: personnel.phone || user.phone,
+          email: user.email,
+          role: personnel.role,
+          depotId: personnel.depot_id,
+          status: personnel.status,
+          certifications: personnel.certifications || [],
+          credentials: {
+            email: user.email,
+            phone: user.phone,
+            password: password, // Return for manager to share with worker
+          },
+          createdAt: personnel.created_at,
+        },
+        message: 'Worker account created successfully',
+      });
+    } catch (err) {
+      await db.query('ROLLBACK');
+      throw err;
+    }
+  } catch (error) {
+    console.error('[Manager] Create personnel error:', error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// PUT /api/manager/personnel/:id - Update personnel
+app.put('/api/manager/personnel/:id', requireManager, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, phone, email, role, depot_id, status, certifications } = req.body;
+    
+    // Build update query dynamically
+    const updates = [];
+    const params = [];
+    let paramCount = 1;
+    
+    if (name !== undefined) {
+      updates.push(`name = $${paramCount++}`);
+      params.push(name);
+    }
+    if (phone !== undefined) {
+      updates.push(`phone = $${paramCount++}`);
+      params.push(phone);
+    }
+    if (email !== undefined) {
+      updates.push(`email = $${paramCount++}`);
+      params.push(email);
+    }
+    if (role !== undefined) {
+      updates.push(`role = $${paramCount++}`);
+      params.push(role);
+    }
+    if (depot_id !== undefined) {
+      updates.push(`depot_id = $${paramCount++}`);
+      params.push(depot_id);
+    }
+    if (status !== undefined) {
+      updates.push(`status = $${paramCount++}`);
+      params.push(status);
+    }
+    if (certifications !== undefined) {
+      updates.push(`certifications = $${paramCount++}`);
+      params.push(certifications);
+    }
+    
+    if (updates.length === 0) {
+      return res.status(400).json({
+        ok: false,
+        error: 'No fields to update',
+      });
+    }
+    
+    updates.push(`updated_at = NOW()`);
+    params.push(id);
+    
+    const query = `
+      UPDATE personnel 
+      SET ${updates.join(', ')}
+      WHERE id = $${paramCount}
+      RETURNING id, name, role, phone, email, status, depot_id, user_id, updated_at
+    `;
+    
+    const { rows } = await db.query(query, params);
+    
+    if (rows.length === 0) {
+      return res.status(404).json({
+        ok: false,
+        error: 'Personnel not found',
+      });
+    }
+    
+    // Also update user if email/phone changed
+    if (email !== undefined || phone !== undefined) {
+      const userUpdates = [];
+      const userParams = [];
+      let userParamCount = 1;
+      
+      if (email !== undefined) {
+        userUpdates.push(`email = $${userParamCount++}`);
+        userParams.push(email);
+      }
+      if (phone !== undefined) {
+        userUpdates.push(`phone = $${userParamCount++}`);
+        userParams.push(phone);
+      }
+      
+      if (userUpdates.length > 0) {
+        userParams.push(rows[0].user_id);
+        await db.query(
+          `UPDATE users SET ${userUpdates.join(', ')}, updated_at = NOW() WHERE id = $${userParamCount}`,
+          userParams
+        );
+      }
+    }
+    
+    res.json({
+      ok: true,
+      data: rows[0],
+      message: 'Personnel updated successfully',
+    });
+  } catch (error) {
+    console.error('[Manager] Update personnel error:', error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// DELETE /api/manager/personnel/:id - Delete personnel (soft delete)
+app.delete('/api/manager/personnel/:id', requireManager, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Soft delete: set status to inactive
+    const { rows } = await db.query(
+      `UPDATE personnel SET status = 'inactive', updated_at = NOW() WHERE id = $1 RETURNING id`,
+      [id]
+    );
+    
+    if (rows.length === 0) {
+      return res.status(404).json({
+        ok: false,
+        error: 'Personnel not found',
+      });
+    }
+    
+    // Also deactivate user account
+    const personnelData = await db.query('SELECT user_id FROM personnel WHERE id = $1', [id]);
+    if (personnelData.rows.length > 0 && personnelData.rows[0].user_id) {
+      await db.query(
+        `UPDATE users SET status = 'inactive', updated_at = NOW() WHERE id = $1`,
+        [personnelData.rows[0].user_id]
+      );
+    }
+    
+    res.json({
+      ok: true,
+      message: 'Personnel deactivated successfully',
+    });
+  } catch (error) {
+    console.error('[Manager] Delete personnel error:', error);
     res.status(500).json({ ok: false, error: error.message });
   }
 });

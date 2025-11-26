@@ -19,7 +19,7 @@ export default function Table({ columns, data, onRowClick, emptyText = 'Không c
         <tbody>
           {data.map((row, idx) => (
             <tr
-              key={idx}
+              key={row.id || row._id || idx}
               onClick={() => onRowClick?.(row)}
               style={{
                 borderBottom: '1px solid #f0f0f0',

@@ -1,7 +1,7 @@
 import React from 'react'
 import { NavLink } from 'react-router-dom'
 import logo from '../assets/ecocheck-logo.svg'
-import { MdOutlineDashboard, MdOutlineMap, MdOutlineAnalytics, MdOutlineRoute, MdSettings, MdLocalShipping, MdPeopleAlt, MdWarehouse, MdWarningAmber } from 'react-icons/md'
+import { MdOutlineDashboard, MdOutlineMap, MdOutlineAnalytics, MdOutlineRoute, MdSettings, MdLocalShipping, MdPeopleAlt, MdWarehouse, MdWarningAmber, MdEventNote } from 'react-icons/md'
 
 const groups = [
   {
@@ -13,6 +13,7 @@ const groups = [
   {
     title: 'VẬN HÀNH',
     items: [
+      { to: '/operations/schedules', label: 'Lịch thu gom', icon: <MdEventNote /> },
       { to: '/operations/route-optimization', label: 'Tối ưu tuyến đường', icon: <MdOutlineRoute /> },
       { to: '/operations/dynamic-dispatch', label: 'Điều phối động', icon: <MdOutlineMap /> },
     ]

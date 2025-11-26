@@ -31,7 +31,19 @@ export default function FormModal({ open, title, children, onClose, onSubmit, su
           <button className="btn" onClick={onClose}>
             {cancelLabel}
           </button>
-          <button className="btn btn-primary" onClick={onSubmit}>
+          <button 
+            className="btn btn-primary" 
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              console.log('🔘 Submit button clicked! Calling onSubmit...')
+              if (onSubmit) {
+                onSubmit()
+              } else {
+                console.warn('⚠️ onSubmit is not defined!')
+              }
+            }}
+          >
             {submitLabel}
           </button>
         </div>
