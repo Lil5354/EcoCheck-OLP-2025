@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-EcoCheck is a comprehensive, FIWARE-based platform for dynamic waste collection management, designed for the OLP 2025 competition. It includes a backend API, a frontend web manager, a complete database stack (PostgreSQL, PostGIS, TimescaleDB), and the FIWARE Orion-LD Context Broker.
+EcoCheck is a comprehensive, FIWARE-based platform for dynamic waste collection management, designed for the OLP 2025 competition. It includes a backend API, a frontend web manager, mobile applications (Flutter), a complete database stack (PostgreSQL, PostGIS, TimescaleDB), and the FIWARE Orion-LD Context Broker.
 
 ## 🚀 Quick Start (5-10 Minutes)
 
@@ -62,12 +62,114 @@ Your environment is now ready! You can verify that all services are running corr
 
 - `/backend`: Node.js backend API.
 - `/frontend-web-manager`: React-based web application for managers.
+- `/frontend-mobile`: Flutter mobile applications (User App & Worker App).
 - `/db`: Contains all database-related files:
   - `/init`: SQL scripts for initial database setup (e.g., creating extensions).
   - `/migrations`: SQL scripts for creating schema and seeding data.
   - `run_migrations.sh` / `.ps1`: Scripts to run migrations.
 - `docker-compose.yml`: Defines all the services, networks, and volumes for the project.
-- `README.md`: This file.
+
+## 🗄️ Database Architecture
+
+The EcoCheck database is built on **PostgreSQL 15** with **PostGIS** for spatial data and **TimescaleDB** for time-series optimization. It follows FIWARE NGSI-LD standards and implements a comprehensive schema for dynamic waste collection management.
+
+### Technology Stack
+- **PostgreSQL 15**: Core relational database
+- **PostGIS**: Spatial and geographic data support
+- **TimescaleDB**: Time-series data optimization
+- **Extensions**: uuid-ossp, pg_trgm, btree_gist
+
+### Key Features
+- ✅ Spatial indexing for geographic queries
+- ✅ Time-series optimization for tracking and analytics
+- ✅ Automatic triggers for data integrity
+- ✅ Comprehensive gamification system
+- ✅ Pay-As-You-Throw (PAYT) billing support
+- ✅ Real-time vehicle tracking
+- ✅ Multi-role user management
+
+### Core Tables
+
+#### Master Data
+- **depots**: Collection stations/depots
+- **dumps**: Waste disposal sites and transfer stations
+- **vehicles**: Collection vehicles (trucks, trikes, etc.)
+- **personnel**: Staff members (drivers, collectors, managers)
+
+#### User Management
+- **users**: All system users (citizens, workers, managers, admins)
+- **user_addresses**: User registered addresses
+- **points**: Collection points (linked to addresses or ghost points)
+- **collection_schedules**: Citizen waste collection requests
+
+#### Operations
+- **checkins**: Waste check-ins from citizens
+- **routes**: Collection routes
+- **route_stops**: Stops within routes
+- **alerts**: Real-time alerts (missed points, late check-ins)
+- **incidents**: Reported issues
+- **exceptions**: Collection exceptions
+
+#### Gamification
+- **user_points**: User point balances and levels
+- **point_transactions**: Point transaction history
+- **badges**: Available badges
+- **user_badges**: Badges earned by users
+
+#### Billing (PAYT)
+- **billing_cycles**: Monthly billing periods
+- **user_bills**: User bills per cycle
+
+#### Analytics
+- **vehicle_tracking**: Real-time vehicle GPS tracking (hypertable)
+- **system_logs**: System activity logs (hypertable)
+
+### Connection Details
+
+#### Docker Environment
+- **Host**: localhost
+- **Port**: 5432
+- **Database**: ecocheck
+- **User**: ecocheck_user
+- **Password**: ecocheck_pass
+
+#### Connection String
+```
+postgresql://ecocheck_user:ecocheck_pass@localhost:5432/ecocheck
+```
+
+### Database Features
+
+#### 1. Spatial Queries
+All geographic data uses PostGIS `geography(Point,4326)` type with GIST indexes for efficient spatial queries.
+
+```sql
+-- Find points within 1km radius
+SELECT * FROM points 
+WHERE ST_DWithin(geom, ST_GeogFromText('POINT(106.6958 10.7769)'), 1000);
+```
+
+#### 2. Time-Series Optimization
+TimescaleDB hypertables for high-volume time-series data:
+- `checkins`: Partitioned by `created_at`
+- `point_transactions`: Partitioned by `created_at`
+- `vehicle_tracking`: Partitioned by `recorded_at`
+- `system_logs`: Partitioned by `created_at`
+
+#### 3. Gamification System
+Points are awarded based on waste type:
+- Household: 10 points
+- Recyclable: 20 points
+- Organic: 15 points
+- Hazardous: 25 points
+- Bulky: 30 points
+
+Levels:
+- Level 1: 0-49 points
+- Level 2: 50-199 points
+- Level 3: 200-499 points
+- Level 4: 500-999 points
+- Level 5: 1000+ points
 
 ## 🔧 Troubleshooting
 
@@ -110,6 +212,154 @@ Or, you can get a shell inside the container:
 docker compose exec postgres psql -U ecocheck_user -d ecocheck
 ```
 
-## License
+## 📱 Mobile Applications
+
+The project includes two Flutter mobile applications located in `/frontend-mobile`:
+
+### EcoCheck User App (`/frontend-mobile/EcoCheck_User`)
+For citizens to request waste collection, check schedules, and track gamification points.
+
+**Key Features:**
+- Schedule waste collection with flexible time slots
+- Smart check-in with location and waste type
+- Personal statistics and gamification (points, badges, leaderboard)
+- Real-time notifications
+
+**Tech Stack:**
+- Flutter 3.x, Dart 3.x
+- BLoC state management
+- Dio for networking
+- Google Maps Flutter
+
+**Quick Start:**
+```bash
+cd frontend-mobile/EcoCheck_User
+flutter pub get
+flutter run
+```
+
+**Demo Account:**
+- Phone: `0901234567`
+- Password: `123456`
+
+### EcoCheck Worker App (`/frontend-mobile/EcoCheck_Worker`)
+For workers to view assigned routes, check in at collection points, and report incidents.
+
+**Key Features:**
+- View assigned collection schedules
+- Route navigation and map integration
+- Update work status (start, complete)
+- Report incidents and exceptions
+
+**Tech Stack:**
+- Flutter 3.x, Dart 3.x
+- BLoC state management
+- Dio for networking
+- Google Maps Flutter
+
+**Quick Start:**
+```bash
+cd frontend-mobile/EcoCheck_Worker
+flutter pub get
+flutter run
+```
+
+**Demo Account:**
+- Phone: `0987654321`
+- Password: `123456`
+
+**Note:** Ensure backend is running at `http://localhost:3000` (or update API URL in app constants).
+
+## 🌐 API Endpoints
+
+### Manager Endpoints (Require Manager Role)
+- `POST /api/manager/personnel` - Create worker account
+- `GET /api/manager/personnel` - List all personnel
+- `GET /api/schedules` - Get collection schedules
+- `POST /api/schedules/:id/assign` - Assign personnel to schedule
+
+### Operations
+- `GET /api/alerts` - Get real-time alerts
+- `POST /api/alerts/:alertId/dispatch` - Get nearest vehicles for dispatch
+- `POST /api/alerts/:alertId/assign` - Assign vehicle to alert
+- `GET /api/exceptions` - Get collection exceptions
+- `POST /api/exceptions/:id/approve` - Approve exception
+- `POST /api/exceptions/:id/reject` - Reject exception
+- `POST /api/optimize/vrp` - Optimize routes (VRP algorithm)
+
+### Analytics
+- `GET /api/analytics/summary` - Get summary statistics
+- `GET /api/analytics/timeseries` - Get time-series data
+- `GET /api/analytics/predict` - Get forecast predictions
+
+### Master Data
+- `GET /api/master/fleet` - Get all vehicles
+- `POST /api/master/fleet` - Create vehicle
+- `PATCH /api/master/fleet/:id` - Update vehicle
+- `DELETE /api/master/fleet/:id` - Delete vehicle
+- `GET /api/master/depots` - Get all depots
+- `GET /api/master/dumps` - Get all dumps
+
+## 🏗️ Architecture
+
+### Backend
+- **Framework**: Node.js with Express.js
+- **Database**: PostgreSQL 15 with PostGIS and TimescaleDB
+- **Context Broker**: FIWARE Orion-LD (NGSI-LD)
+- **Real-time**: Socket.IO for live updates
+
+### Frontend Web Manager
+- **Framework**: React with Vite
+- **State Management**: React Hooks
+- **Maps**: MapLibre GL for route visualization
+- **Charts**: Custom SVG-based charts
+
+### Mobile Apps
+- **Framework**: Flutter
+- **State Management**: BLoC pattern
+- **Architecture**: Clean Architecture with separation of concerns
+
+## 📊 Key Features
+
+### CN7: Dynamic Dispatch
+- Automated detection of missed collection points
+- Late check-in alerts
+- Nearest vehicle assignment using Haversine distance
+- Real-time route re-routing
+
+### CN8: Analytics & Prediction
+- Time-series data visualization
+- 7-day forecast predictions
+- Summary statistics (total collection, completion rate, fuel savings)
+- Waste type distribution
+
+### CN15: Exception Handling
+- Exception reporting (cannot collect, road blocked, wrong waste type, vehicle breakdown)
+- Manager approval/rejection workflow
+- Exception resolution planning
+
+### Route Optimization (VRP)
+- Nearest Neighbor algorithm
+- 2-opt optimization
+- Cross-route optimization
+- Multi-vehicle assignment
+- Distance and time calculations using PostGIS
+
+## 🔐 Security
+
+- Role-based access control (RBAC)
+- Manager-only endpoints protected by `requireManager` middleware
+- Input validation and sanitization
+- SQL injection prevention using parameterized queries
+
+## 📝 License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+## 🤝 Contributing
+
+This project was developed for the OLP 2025 competition. For questions or issues, please open an issue on the GitHub repository.
+
+---
+
+**Copyright (c) 2025 Lil5354**

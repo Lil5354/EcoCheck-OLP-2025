@@ -1,21 +1,41 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import SidebarPro from '../../navigation/SidebarPro.jsx'
 import Table from '../../components/common/Table.jsx'
 import FormModal from '../../components/common/FormModal.jsx'
 import MapPicker from '../../components/common/MapPicker.jsx'
 import Toast from '../../components/common/Toast.jsx'
+import api from '../../lib/api.js'
 
 export default function DepotsDumps() {
-  const [depots, setDepots] = useState([
-    { id: 'D1', name: 'Main Depot', lon: 106.7, lat: 10.78, type: 'depot' }
-  ])
-  const [dumps, setDumps] = useState([
-    { id: 'DU1', name: 'Transfer Station 1', lon: 106.72, lat: 10.81, type: 'dump' }
-  ])
+  const [depots, setDepots] = useState([])
+  const [dumps, setDumps] = useState([])
   const [modalOpen, setModalOpen] = useState(false)
   const [editItem, setEditItem] = useState(null)
   const [editType, setEditType] = useState('depot')
   const [toast, setToast] = useState(null)
+
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  async function loadData() {
+    try {
+      const [d, du] = await Promise.all([
+        api.getDepots(),
+        api.getDumps()
+      ])
+      
+      if (d.ok && Array.isArray(d.data)) {
+        setDepots(d.data.map(item => ({ ...item, type: 'depot' })))
+      }
+      if (du.ok && Array.isArray(du.data)) {
+        setDumps(du.data.map(item => ({ ...item, type: 'dump' })))
+      }
+    } catch (error) {
+      console.error('Error loading data:', error)
+      setToast({ message: 'Lỗi khi tải dữ liệu', type: 'error' })
+    }
+  }
 
   function handleAdd(type) {
     setEditType(type)
@@ -25,13 +45,52 @@ export default function DepotsDumps() {
 
   function handleEdit(item) {
     setEditType(item.type)
-    setEditItem(item)
+    setEditItem({ ...item })
     setModalOpen(true)
   }
 
-  function handleSave() {
-    setModalOpen(false)
-    setToast({ message: `Đã lưu ${editType === 'depot' ? 'trạm' : 'bãi rác'}`, type: 'success' })
+  async function handleSave() {
+    try {
+      if (!editItem?.name || editItem?.lon === undefined || editItem?.lat === undefined) {
+        setToast({ message: 'Vui lòng điền đầy đủ thông tin', type: 'error' })
+        return
+      }
+
+      const data = {
+        name: editItem.name,
+        lon: editItem.lon,
+        lat: editItem.lat,
+        address: editItem.address || null
+      }
+
+      let res
+      if (editItem.id && editItem.id !== '') {
+        // Update
+        if (editType === 'depot') {
+          res = await api.updateDepot(editItem.id, data)
+        } else {
+          res = await api.updateDump(editItem.id, data)
+        }
+      } else {
+        // Create
+        if (editType === 'depot') {
+          res = await api.createDepot(data)
+        } else {
+          res = await api.createDump(data)
+        }
+      }
+
+      if (res && res.ok) {
+        setModalOpen(false)
+        setToast({ message: `Đã lưu ${editType === 'depot' ? 'trạm' : 'bãi rác'}`, type: 'success' })
+        await loadData()
+      } else {
+        setToast({ message: res?.error || `Lỗi khi lưu ${editType === 'depot' ? 'trạm' : 'bãi rác'}`, type: 'error' })
+      }
+    } catch (error) {
+      console.error('Error saving:', error)
+      setToast({ message: 'Lỗi khi lưu: ' + error.message, type: 'error' })
+    }
   }
 
   const columns = [
@@ -87,6 +146,15 @@ export default function DepotsDumps() {
               type="text"
               value={editItem?.name || ''}
               onChange={(e) => setEditItem({ ...editItem, name: e.target.value })}
+              style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 6 }}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 500 }}>Địa chỉ</label>
+            <input
+              type="text"
+              value={editItem?.address || ''}
+              onChange={(e) => setEditItem({ ...editItem, address: e.target.value })}
               style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 6 }}
             />
           </div>

@@ -40,11 +40,53 @@ export default function Exceptions() {
     }
   }
 
+  const getTypeLabel = (type) => {
+    const labels = {
+      'cannot_collect': 'Không thể thu gom',
+      'road_blocked': 'Đường bị chặn',
+      'vehicle_breakdown': 'Xe hỏng',
+      'wrong_waste_type': 'Sai loại rác',
+      'other': 'Khác'
+    };
+    return labels[type] || type;
+  };
+
+  const getStatusLabel = (status) => {
+    const labels = {
+      'pending': 'Chờ xử lý',
+      'approved': 'Đã phê duyệt',
+      'rejected': 'Đã từ chối',
+      'resolved': 'Đã giải quyết'
+    };
+    return labels[status] || status;
+  };
+
   const columns = [
-    { key: 'time', label: 'Thời gian' },
-    { key: 'location', label: 'Vị trí' },
-    { key: 'type', label: 'Loại' },
-    { key: 'status', label: 'Trạng thái' },
+    { 
+      key: 'time', 
+      label: 'Thời gian',
+      render: (r) => r.created_at ? new Date(r.created_at).toLocaleString('vi-VN') : r.time || 'N/A'
+    },
+    { 
+      key: 'location', 
+      label: 'Vị trí',
+      render: (r) => r.stop_address || r.location || 'N/A'
+    },
+    { 
+      key: 'type', 
+      label: 'Loại',
+      render: (r) => getTypeLabel(r.type)
+    },
+    { 
+      key: 'status', 
+      label: 'Trạng thái',
+      render: (r) => {
+        const color = r.status === 'pending' ? '#f59e0b' : 
+                     r.status === 'approved' ? '#10b981' : 
+                     r.status === 'rejected' ? '#ef4444' : '#6b7280';
+        return <span style={{ color }}>{getStatusLabel(r.status)}</span>;
+      }
+    },
     {
       key: 'action',
       label: 'Hành động',

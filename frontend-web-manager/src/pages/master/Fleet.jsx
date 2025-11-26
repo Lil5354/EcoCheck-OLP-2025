@@ -17,7 +17,12 @@ export default function Fleet() {
 
   async function loadFleet() {
     const res = await api.getFleet()
-    if (res.ok && Array.isArray(res.data)) setFleet(res.data)
+    if (res && res.ok && Array.isArray(res.data)) {
+      setFleet(res.data)
+    } else if (Array.isArray(res)) {
+      // Handle legacy format (direct array)
+      setFleet(res)
+    }
   }
 
   function handleAdd() {
@@ -30,11 +35,42 @@ export default function Fleet() {
     setModalOpen(true)
   }
 
-  function handleSave() {
-    // mock save
-    setModalOpen(false)
-    setToast({ message: 'Đã lưu phương tiện', type: 'success' })
-    loadFleet()
+  async function handleSave() {
+    try {
+      if (!editItem?.plate || !editItem?.type || !editItem?.capacity) {
+        setToast({ message: 'Vui lòng điền đầy đủ thông tin', type: 'error' })
+        return
+      }
+
+      const vehicleData = {
+        plate: editItem.plate,
+        type: editItem.type,
+        capacity: editItem.capacity,
+        types: editItem.types || [],
+        status: editItem.status || 'available',
+        depot_id: editItem.depot_id || null
+      }
+
+      let res
+      if (editItem.id && editItem.id !== '') {
+        // Update
+        res = await api.updateVehicle(editItem.id, vehicleData)
+      } else {
+        // Create
+        res = await api.createVehicle(vehicleData)
+      }
+
+      if (res && res.ok) {
+        setModalOpen(false)
+        setToast({ message: 'Đã lưu phương tiện', type: 'success' })
+        await loadFleet()
+      } else {
+        setToast({ message: res?.error || 'Lỗi khi lưu phương tiện', type: 'error' })
+      }
+    } catch (error) {
+      console.error('Error saving vehicle:', error)
+      setToast({ message: 'Lỗi khi lưu: ' + error.message, type: 'error' })
+    }
   }
 
   const columns = [

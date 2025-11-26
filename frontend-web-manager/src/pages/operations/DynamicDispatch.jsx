@@ -20,7 +20,10 @@ export default function DynamicDispatch() {
 
   async function loadAlerts() {
     const res = await api.getAlerts();
-    if (res.ok && Array.isArray(res.data.data)) {
+    if (res.ok && Array.isArray(res.data)) {
+      setAlerts(res.data);
+    } else if (res.ok && Array.isArray(res.data?.data)) {
+      // Handle legacy format
       setAlerts(res.data.data);
     }
   }
@@ -30,11 +33,15 @@ export default function DynamicDispatch() {
     setCurrentAlert(alert);
     const res = await api.dispatchAlert(alert.alert_id);
     setLoading(false);
-    if (res.ok && Array.isArray(res.data.data)) {
+    if (res.ok && Array.isArray(res.data)) {
+      setSuggestedVehicles(res.data);
+      setIsModalOpen(true);
+    } else if (res.ok && Array.isArray(res.data?.data)) {
+      // Handle legacy format
       setSuggestedVehicles(res.data.data);
       setIsModalOpen(true);
     } else {
-      setToast({ message: 'Không tìm thấy xe phù hợp.', type: 'error' });
+      setToast({ message: res.error || 'Không tìm thấy xe phù hợp.', type: 'error' });
     }
   }
 
@@ -83,8 +90,9 @@ export default function DynamicDispatch() {
           setLoading(false);
 
           if (res.ok) {
+            const routeId = res.data?.route_id || res.data?.data?.route_id || 'N/A';
             setToast({
-              message: `Đã giao việc cho xe ${vehicleId} để xử lý sự cố. Tuyến mới: ${res.data.data.route_id}`,
+              message: `Đã giao việc cho xe ${vehicleId} để xử lý sự cố. Tuyến mới: ${routeId}`,
               type: 'success'
             });
             setIsModalOpen(false);
