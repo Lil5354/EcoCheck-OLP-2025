@@ -7,6 +7,7 @@ services:
   # FIWARE Orion-LD Context Broker (NGSI-LD)
   orion-ld:
     image: fiware/orion-ld:latest
+    platform: linux/amd64 # Force AMD64 platform for ARM64 Macs
     hostname: orion-ld
     container_name: ecocheck-orion-ld
     depends_on:
@@ -110,7 +111,8 @@ services:
       - DB_PORT=5432
     volumes:
       - ./backend/src:/app/src:ro
-      - ./backend/public:/app/public:ro
+      - ./backend/public/contexts:/app/public/contexts:ro
+      - ./backend/public/uploads:/app/public/uploads:rw # Read-write for file uploads
     healthcheck:
       test: curl --fail -s http://localhost:3000/health || exit 1
       interval: 30s

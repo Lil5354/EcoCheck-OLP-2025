@@ -58,8 +58,54 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Static serve for NGSI-LD contexts
+// File upload configuration
+const multer = require("multer");
+const fs = require("fs");
 const path = require("path");
+
+// Create uploads directory if not exists
+const uploadsDir = path.join(__dirname, "..", "public", "uploads");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Configure multer storage
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, uploadsDir);
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    const ext = path.extname(file.originalname);
+    cb(null, file.fieldname + "-" + uniqueSuffix + ext);
+  },
+});
+
+// File filter for images only
+const fileFilter = (req, file, cb) => {
+  const allowedTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+  if (allowedTypes.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(
+      new Error("Invalid file type. Only JPEG, PNG and WebP are allowed."),
+      false
+    );
+  }
+};
+
+const upload = multer({
+  storage: storage,
+  fileFilter: fileFilter,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB max file size
+  },
+});
+
+// Static serve for uploaded files
+app.use("/uploads", express.static(uploadsDir));
+
+// Static serve for NGSI-LD contexts
 app.use(
   "/contexts",
   express.static(path.join(__dirname, "..", "public", "contexts"))
@@ -83,6 +129,56 @@ app.get("/health", (req, res) => {
     service: "EcoCheck Backend",
     version: "1.0.0",
   });
+});
+
+// Image upload endpoint
+app.post("/api/upload", upload.single("image"), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No image file provided" });
+    }
+
+    // Generate public URL for the uploaded image
+    const imageUrl = `${req.protocol}://${req.get("host")}/uploads/${
+      req.file.filename
+    }`;
+
+    res.status(200).json({
+      success: true,
+      url: imageUrl,
+      filename: req.file.filename,
+      size: req.file.size,
+      mimetype: req.file.mimetype,
+    });
+  } catch (error) {
+    console.error("Upload error:", error);
+    res.status(500).json({ error: error.message || "Upload failed" });
+  }
+});
+
+// Multiple images upload endpoint
+app.post("/api/upload/multiple", upload.array("images", 5), (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: "No image files provided" });
+    }
+
+    const imageUrls = req.files.map((file) => ({
+      url: `${req.protocol}://${req.get("host")}/uploads/${file.filename}`,
+      filename: file.filename,
+      size: file.size,
+      mimetype: file.mimetype,
+    }));
+
+    res.status(200).json({
+      success: true,
+      images: imageUrls,
+      count: imageUrls.length,
+    });
+  } catch (error) {
+    console.error("Upload error:", error);
+    res.status(500).json({ error: error.message || "Upload failed" });
+  }
 });
 
 // API Routes
@@ -144,7 +240,7 @@ app.post("/api/optimize-routes", (req, res) => {
 
 // CN7: Check-in endpoint with late detection
 app.post("/api/rt/checkin", async (req, res) => {
-  const { route_id, point_id, vehicle_id } = req.body;
+  const { route_id, point_id, vehicle_id, image_url } = req.body;
 
   if (!route_id || !point_id || !vehicle_id) {
     return res
@@ -152,7 +248,14 @@ app.post("/api/rt/checkin", async (req, res) => {
       .json({ ok: false, error: "Missing route_id, point_id, or vehicle_id" });
   }
 
-  const result = store.recordCheckin(route_id, point_id);
+  // Validate that image_url is provided
+  if (!image_url) {
+    return res
+      .status(400)
+      .json({ ok: false, error: "Image is required for check-in" });
+  }
+
+  const result = store.recordCheckin(route_id, point_id, image_url);
 
   // CN7: Check if this check-in resolves any open/acknowledged alerts for this point
   try {
@@ -1525,6 +1628,338 @@ app.post("/api/gamification/claim-reward", async (req, res) => {
     });
   } catch (error) {
     console.error("[Gamification] Claim reward error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// ==================== INCIDENT REPORTS API ====================
+
+// Get all incident reports (with filters)
+app.get("/api/incidents", async (req, res) => {
+  try {
+    const {
+      reporter_id,
+      report_category, // 'violation' or 'damage'
+      type,
+      status,
+      priority,
+      limit = 50,
+      offset = 0,
+    } = req.query;
+
+    let query = "SELECT * FROM incidents WHERE 1=1";
+    const params = [];
+    let paramIndex = 1;
+
+    if (reporter_id) {
+      query += ` AND reporter_id = $${paramIndex++}`;
+      params.push(reporter_id);
+    }
+
+    if (report_category) {
+      query += ` AND report_category = $${paramIndex++}`;
+      params.push(report_category);
+    }
+
+    if (type) {
+      query += ` AND type = $${paramIndex++}`;
+      params.push(type);
+    }
+
+    if (status) {
+      query += ` AND status = $${paramIndex++}`;
+      params.push(status);
+    }
+
+    if (priority) {
+      query += ` AND priority = $${paramIndex++}`;
+      params.push(priority);
+    }
+
+    query += ` ORDER BY created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
+    params.push(limit, offset);
+
+    const { rows } = await db.query(query, params);
+
+    res.json({
+      ok: true,
+      data: rows,
+      total: rows.length,
+    });
+  } catch (error) {
+    console.error("[Incidents] Get incidents error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Get incidents by user ID
+app.get("/api/incidents/user/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { limit = 100, offset = 0 } = req.query;
+
+    const { rows } = await db.query(
+      `SELECT * FROM incidents 
+       WHERE reporter_id = $1 
+       ORDER BY created_at DESC 
+       LIMIT $2 OFFSET $3`,
+      [userId, limit, offset]
+    );
+
+    res.json({
+      ok: true,
+      data: rows,
+      total: rows.length,
+    });
+  } catch (error) {
+    console.error("[Incidents] Get user incidents error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Get incident by ID
+app.get("/api/incidents/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { rows } = await db.query("SELECT * FROM incidents WHERE id = $1", [
+      id,
+    ]);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "Incident not found" });
+    }
+
+    res.json({
+      ok: true,
+      data: rows[0],
+    });
+  } catch (error) {
+    console.error("[Incidents] Get incident error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Create new incident report
+app.post("/api/incidents", async (req, res) => {
+  try {
+    const {
+      reporter_id,
+      reporter_name,
+      reporter_phone,
+      report_category, // 'violation' or 'damage'
+      type,
+      description,
+      latitude,
+      longitude,
+      location_address,
+      image_urls = [], // Array of image URLs
+      priority = "medium",
+    } = req.body;
+
+    // Validation
+    if (!reporter_id || !report_category || !type || !description) {
+      return res.status(400).json({
+        ok: false,
+        error:
+          "Missing required fields: reporter_id, report_category, type, description",
+      });
+    }
+
+    if (!["violation", "damage"].includes(report_category)) {
+      return res.status(400).json({
+        ok: false,
+        error: "report_category must be 'violation' or 'damage'",
+      });
+    }
+
+    // Validate that at least one image is provided
+    if (!image_urls || image_urls.length === 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "At least one image is required for reporting",
+      });
+    }
+
+    // Insert incident
+    const { rows } = await db.query(
+      `INSERT INTO incidents (
+        reporter_id, reporter_name, reporter_phone, report_category, type,
+        description, geom, location_address, image_urls, priority, status, created_at, updated_at
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6,
+        ${
+          latitude && longitude
+            ? `ST_SetSRID(ST_MakePoint($7, $8), 4326)`
+            : "NULL"
+        },
+        ${latitude && longitude ? "$9" : "$7"},
+        ${latitude && longitude ? "$10" : "$8"},
+        ${latitude && longitude ? "$11" : "$9"},
+        'pending', NOW(), NOW()
+      ) RETURNING *`,
+      latitude && longitude
+        ? [
+            reporter_id,
+            reporter_name,
+            reporter_phone,
+            report_category,
+            type,
+            description,
+            longitude,
+            latitude,
+            location_address,
+            image_urls,
+            priority,
+          ]
+        : [
+            reporter_id,
+            reporter_name,
+            reporter_phone,
+            report_category,
+            type,
+            description,
+            location_address,
+            image_urls,
+            priority,
+          ]
+    );
+
+    console.log(
+      `📝 New incident report created: ${rows[0].id} (${report_category})`
+    );
+
+    res.status(201).json({
+      ok: true,
+      data: rows[0],
+      message: "Incident report submitted successfully",
+    });
+  } catch (error) {
+    console.error("[Incidents] Create incident error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Update incident status
+app.patch("/api/incidents/:id/status", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, resolution_notes, assigned_to } = req.body;
+
+    if (!status) {
+      return res.status(400).json({ ok: false, error: "Status is required" });
+    }
+
+    const validStatuses = [
+      "pending",
+      "open",
+      "in_progress",
+      "resolved",
+      "closed",
+      "rejected",
+    ];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        ok: false,
+        error: `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
+      });
+    }
+
+    let query = `UPDATE incidents SET status = $1, updated_at = NOW()`;
+    const params = [status];
+    let paramIndex = 2;
+
+    if (resolution_notes) {
+      query += `, resolution_notes = $${paramIndex++}`;
+      params.push(resolution_notes);
+    }
+
+    if (assigned_to) {
+      query += `, assigned_to = $${paramIndex++}`;
+      params.push(assigned_to);
+    }
+
+    if (status === "resolved" || status === "closed") {
+      query += `, resolved_at = NOW()`;
+    }
+
+    query += ` WHERE id = $${paramIndex} RETURNING *`;
+    params.push(id);
+
+    const { rows } = await db.query(query, params);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "Incident not found" });
+    }
+
+    res.json({
+      ok: true,
+      data: rows[0],
+      message: "Incident status updated successfully",
+    });
+  } catch (error) {
+    console.error("[Incidents] Update status error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Get incident statistics
+app.get("/api/incidents/stats", async (req, res) => {
+  try {
+    const { reporter_id } = req.query;
+
+    let whereClause = "";
+    const params = [];
+
+    if (reporter_id) {
+      whereClause = "WHERE reporter_id = $1";
+      params.push(reporter_id);
+    }
+
+    const { rows } = await db.query(
+      `SELECT
+        COUNT(*) as total_reports,
+        COUNT(CASE WHEN report_category = 'violation' THEN 1 END) as total_violations,
+        COUNT(CASE WHEN report_category = 'damage' THEN 1 END) as total_damages,
+        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending,
+        COUNT(CASE WHEN status = 'in_progress' THEN 1 END) as in_progress,
+        COUNT(CASE WHEN status = 'resolved' THEN 1 END) as resolved,
+        COUNT(CASE WHEN status = 'closed' THEN 1 END) as closed
+      FROM incidents
+      ${whereClause}`,
+      params
+    );
+
+    res.json({
+      ok: true,
+      data: rows[0],
+    });
+  } catch (error) {
+    console.error("[Incidents] Get stats error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Delete incident (admin only)
+app.delete("/api/incidents/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { rows } = await db.query(
+      "DELETE FROM incidents WHERE id = $1 RETURNING *",
+      [id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "Incident not found" });
+    }
+
+    res.json({
+      ok: true,
+      message: "Incident deleted successfully",
+    });
+  } catch (error) {
+    console.error("[Incidents] Delete incident error:", error);
     res.status(500).json({ ok: false, error: error.message });
   }
 });

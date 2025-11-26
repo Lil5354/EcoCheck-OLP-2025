@@ -53,6 +53,9 @@ dependencies:
   
   # Image & Camera
   image_picker: ^1.0.7
+  flutter_image_compress: ^2.1.0
+  path_provider: ^2.1.1
+  path: ^1.8.3
   
   # Local Storage
   shared_preferences: ^2.2.2

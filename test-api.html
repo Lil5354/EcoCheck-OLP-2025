@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EcoCheck API Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+        
+        .status.online {
+            background: #10b981;
+        }
+        
+        .status.offline {
+            background: #ef4444;
+        }
+        
+        .content {
+            padding: 30px;
+        }
+        
+        .api-section {
+            margin-bottom: 30px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .api-section-header {
+            background: #f9fafb;
+            padding: 15px 20px;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .api-section-header h3 {
+            color: #1f2937;
+            font-size: 1.2em;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #059669;
+        }
+        
+        .response {
+            padding: 20px;
+            background: #1f2937;
+            color: #10b981;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        .response:empty::before {
+            content: "Chưa có dữ liệu. Nhấn nút Test để gọi API.";
+            color: #6b7280;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .card {
+            background: #f9fafb;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+        }
+        
+        .card h4 {
+            color: #1f2937;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+        
+        .card p {
+            color: #6b7280;
+            line-height: 1.6;
+        }
+        
+        .endpoint {
+            background: #1f2937;
+            color: #10b981;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            margin-top: 10px;
+            word-break: break-all;
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 3px solid #f3f4f6;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌿 EcoCheck API Test</h1>
+            <p>Backend Connection Testing Tool</p>
+            <div id="connectionStatus" class="status offline">Đang kiểm tra...</div>
+        </div>
+        
+        <div class="content">
+            <div class="grid">
+                <div class="card">
+                    <h4>📡 Backend URL</h4>
+                    <p>http://localhost:3000</p>
+                    <div class="endpoint">Base API: /api</div>
+                </div>
+                <div class="card">
+                    <h4>🗄️ Database</h4>
+                    <p>PostgreSQL + MongoDB + Redis</p>
+                    <div class="endpoint">Port: 5432, 27017, 6379</div>
+                </div>
+                <div class="card">
+                    <h4>🔧 FIWARE Orion-LD</h4>
+                    <p>Context Broker NGSI-LD</p>
+                    <div class="endpoint">http://localhost:1026</div>
+                </div>
+            </div>
+            
+            <!-- Health Check -->
+            <div class="api-section">
+                <div class="api-section-header">
+                    <h3>❤️ Health Check</h3>
+                    <button class="btn btn-primary" onclick="testHealth()">Test</button>
+                </div>
+                <div id="healthResponse" class="response"></div>
+            </div>
+            
+            <!-- API Status -->
+            <div class="api-section">
+                <div class="api-section-header">
+                    <h3>📊 API Status</h3>
+                    <button class="btn btn-primary" onclick="testStatus()">Test</button>
+                </div>
+                <div id="statusResponse" class="response"></div>
+            </div>
+            
+            <!-- Alerts -->
+            <div class="api-section">
+                <div class="api-section-header">
+                    <h3>🚨 Alerts (Cảnh báo)</h3>
+                    <button class="btn btn-primary" onclick="testAlerts()">Test</button>
+                </div>
+                <div id="alertsResponse" class="response"></div>
+            </div>
+            
+            <!-- Real-time Check-ins -->
+            <div class="api-section">
+                <div class="api-section-header">
+                    <h3>📍 Real-time Check-ins</h3>
+                    <button class="btn btn-primary" onclick="testCheckins()">Test (10 điểm)</button>
+                </div>
+                <div id="checkinsResponse" class="response"></div>
+            </div>
+            
+            <!-- Fleet -->
+            <div class="api-section">
+                <div class="api-section-header">
+                    <h3>🚛 Fleet Management</h3>
+                    <button class="btn btn-primary" onclick="testFleet()">Test</button>
+                </div>
+                <div id="fleetResponse" class="response"></div>
+            </div>
+            
+            <!-- Analytics -->
+            <div class="api-section">
+                <div class="api-section-header">
+                    <h3>📈 Analytics Summary</h3>
+                    <button class="btn btn-primary" onclick="testAnalytics()">Test</button>
+                </div>
+                <div id="analyticsResponse" class="response"></div>
+            </div>
+            
+            <!-- Test All -->
+            <div style="text-align: center; margin-top: 30px;">
+                <button class="btn btn-success" style="padding: 15px 40px; font-size: 16px;" onclick="testAll()">
+                    🚀 Test Tất Cả API
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = 'http://localhost:3000';
+        
+        // Check connection on load
+        window.addEventListener('load', checkConnection);
+        
+        async function checkConnection() {
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                const data = await response.json();
+                
+                const statusEl = document.getElementById('connectionStatus');
+                if (data.status === 'OK') {
+                    statusEl.textContent = '✅ Đã Kết Nối';
+                    statusEl.className = 'status online';
+                } else {
+                    statusEl.textContent = '❌ Lỗi Kết Nối';
+                    statusEl.className = 'status offline';
+                }
+            } catch (error) {
+                const statusEl = document.getElementById('connectionStatus');
+                statusEl.textContent = '❌ Không Kết Nối Được';
+                statusEl.className = 'status offline';
+            }
+        }
+        
+        async function testHealth() {
+            const responseEl = document.getElementById('healthResponse');
+            responseEl.textContent = 'Đang gọi API...';
+            
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                const data = await response.json();
+                responseEl.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                responseEl.textContent = `❌ Lỗi: ${error.message}`;
+            }
+        }
+        
+        async function testStatus() {
+            const responseEl = document.getElementById('statusResponse');
+            responseEl.textContent = 'Đang gọi API...';
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/status`);
+                const data = await response.json();
+                responseEl.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                responseEl.textContent = `❌ Lỗi: ${error.message}`;
+            }
+        }
+        
+        async function testAlerts() {
+            const responseEl = document.getElementById('alertsResponse');
+            responseEl.textContent = 'Đang gọi API...';
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/alerts`);
+                const data = await response.json();
+                responseEl.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                responseEl.textContent = `❌ Lỗi: ${error.message}`;
+            }
+        }
+        
+        async function testCheckins() {
+            const responseEl = document.getElementById('checkinsResponse');
+            responseEl.textContent = 'Đang gọi API...';
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/rt/checkins?n=10`);
+                const data = await response.json();
+                responseEl.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                responseEl.textContent = `❌ Lỗi: ${error.message}`;
+            }
+        }
+        
+        async function testFleet() {
+            const responseEl = document.getElementById('fleetResponse');
+            responseEl.textContent = 'Đang gọi API...';
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/master/fleet`);
+                const data = await response.json();
+                responseEl.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                responseEl.textContent = `❌ Lỗi: ${error.message}`;
+            }
+        }
+        
+        async function testAnalytics() {
+            const responseEl = document.getElementById('analyticsResponse');
+            responseEl.textContent = 'Đang gọi API...';
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/analytics/summary`);
+                const data = await response.json();
+                responseEl.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                responseEl.textContent = `❌ Lỗi: ${error.message}`;
+            }
+        }
+        
+        async function testAll() {
+            await testHealth();
+            await new Promise(r => setTimeout(r, 500));
+            await testStatus();
+            await new Promise(r => setTimeout(r, 500));
+            await testAlerts();
+            await new Promise(r => setTimeout(r, 500));
+            await testCheckins();
+            await new Promise(r => setTimeout(r, 500));
+            await testFleet();
+            await new Promise(r => setTimeout(r, 500));
+            await testAnalytics();
+            await checkConnection();
+        }
+    </script>
+</body>
+</html>
