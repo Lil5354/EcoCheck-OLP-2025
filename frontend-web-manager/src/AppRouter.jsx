@@ -1,6 +1,7 @@
 import React from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import App from './App.jsx'
+import Schedules from './pages/operations/Schedules.jsx'
 import RouteOptimization from './pages/operations/RouteOptimization.jsx'
 import DynamicDispatch from './pages/operations/DynamicDispatch.jsx'
 import AnalyticsPage from './pages/analytics/Analytics.jsx'
@@ -14,6 +15,7 @@ export default function AppRouter() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<App />} />
+        <Route path="/operations/schedules" element={<Schedules />} />
         <Route path="/operations/route-optimization" element={<RouteOptimization />} />
         <Route path="/operations/dynamic-dispatch" element={<DynamicDispatch />} />
         <Route path="/analytics" element={<AnalyticsPage />} />

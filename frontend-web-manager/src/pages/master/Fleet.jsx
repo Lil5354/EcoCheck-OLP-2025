@@ -21,7 +21,7 @@ export default function Fleet() {
   }
 
   function handleAdd() {
-    setEditItem({ id: '', plate: '', type: 'compactor', capacity: 3000, types: ['household'], status: 'ready' })
+    setEditItem({ id: '', plate: '', type: 'compactor', capacity: 3000, types: ['household'], status: 'available' })
     setModalOpen(true)
   }
 
@@ -30,11 +30,44 @@ export default function Fleet() {
     setModalOpen(true)
   }
 
-  function handleSave() {
-    // mock save
-    setModalOpen(false)
-    setToast({ message: 'Đã lưu phương tiện', type: 'success' })
-    loadFleet()
+  async function handleSave() {
+    try {
+      if (editItem.id) {
+        // Update existing
+        const res = await api.updateVehicle(editItem.id, {
+          plate: editItem.plate,
+          type: editItem.type,
+          capacity: editItem.capacity,
+          types: editItem.types || [],
+          status: editItem.status || 'ready',
+        })
+        if (res.ok) {
+          setModalOpen(false)
+          setToast({ message: 'Đã cập nhật phương tiện', type: 'success' })
+          loadFleet()
+        } else {
+          setToast({ message: res.error || 'Cập nhật thất bại', type: 'error' })
+        }
+      } else {
+        // Create new
+        const res = await api.createVehicle({
+          plate: editItem.plate,
+          type: editItem.type,
+          capacity: editItem.capacity,
+          types: editItem.types || [],
+          status: editItem.status || 'ready',
+        })
+        if (res.ok) {
+          setModalOpen(false)
+          setToast({ message: 'Đã tạo phương tiện', type: 'success' })
+          loadFleet()
+        } else {
+          setToast({ message: res.error || 'Tạo thất bại', type: 'error' })
+        }
+      }
+    } catch (error) {
+      setToast({ message: 'Lỗi: ' + error.message, type: 'error' })
+    }
   }
 
   const columns = [
@@ -102,6 +135,19 @@ export default function Fleet() {
               onChange={(e) => setEditItem({ ...editItem, capacity: Number(e.target.value) })}
               style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 6 }}
             />
+          </div>
+          <div>
+            <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 500 }}>Trạng thái</label>
+            <select
+              value={editItem?.status || 'available'}
+              onChange={(e) => setEditItem({ ...editItem, status: e.target.value })}
+              style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 6 }}
+            >
+              <option value="available">Sẵn sàng</option>
+              <option value="in_use">Đang sử dụng</option>
+              <option value="maintenance">Bảo trì</option>
+              <option value="retired">Nghỉ hưu</option>
+            </select>
           </div>
         </div>
       </FormModal>

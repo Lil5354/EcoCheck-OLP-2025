@@ -195,12 +195,21 @@ app.get("/api/status", (req, res) => {
 app.get("/api/fiware/version", async (req, res) => {
   try {
     const orionUrl = process.env.ORION_LD_URL || "http://localhost:1026";
-    const response = await require("axios").get(`${orionUrl}/version`, {
+    const axios = require("axios");
+    const response = await axios.get(`${orionUrl}/version`, {
       timeout: 4000,
     });
     res.json({ ok: true, data: response.data });
   } catch (e) {
-    res.status(503).json({ ok: false, error: e.message });
+    // Return success with offline status instead of error
+    res.json({ 
+      ok: false, 
+      error: e.message || "Orion-LD không khả dụng",
+      data: { 
+        'orionld version': 'N/A',
+        uptime: 'N/A'
+      }
+    });
   }
 });
 
@@ -412,53 +421,695 @@ setInterval(() => {
 app.get("/api/analytics/summary", (req, res) => {
   res.json({
     ok: true,
+    data: {
     routesActive: 12,
     collectionRate: 0.85,
     todayTons: 3.2,
+      totalTons: 122.3,
+      completed: 934,
+      fuelSaving: 0.09,
+      byType: {
+        household: 62,
+        recyclable: 31,
+        bulky: 7
+      }
+    },
+    // Also return flat for backward compatibility
+    routesActive: 12,
+    collectionRate: 0.85,
+    todayTons: 3.2,
+    totalTons: 122.3,
+    completed: 934,
+    fuelSaving: 0.09,
+    byType: {
+      household: 62,
+      recyclable: 31,
+      bulky: 7
+    }
   });
 });
 
-// Master data endpoints
-app.get("/api/master/fleet", (req, res) => {
-  const mockFleet = [
-    {
-      id: "V01",
-      plate: "51A-123.45",
-      type: "compactor",
-      capacity: 3000,
-      types: ["household"],
-      status: "ready",
-    },
-    {
-      id: "V02",
-      plate: "51B-678.90",
-      type: "mini-truck",
-      capacity: 1200,
-      types: ["recyclable"],
-      status: "ready",
-    },
-    {
-      id: "V03",
-      plate: "51C-246.80",
-      type: "electric-trike",
-      capacity: 300,
-      types: ["household", "recyclable"],
-      status: "maintenance",
-    },
-  ];
-  res.json({ ok: true, data: mockFleet });
+// ==================== MASTER DATA - FLEET API ====================
+// Get all vehicles
+app.get("/api/master/fleet", async (req, res) => {
+  try {
+    const { status, type, depot_id } = req.query;
+    
+    let query = `
+      SELECT 
+        v.id,
+        v.plate,
+        v.type,
+        v.capacity_kg as capacity,
+        v.accepted_types as types,
+        v.status,
+        v.depot_id,
+        v.fuel_type,
+        v.current_load_kg,
+        v.last_maintenance_at,
+        d.name as depot_name,
+        v.created_at,
+        v.updated_at
+      FROM vehicles v
+      LEFT JOIN depots d ON v.depot_id = d.id
+      WHERE 1=1
+    `;
+    const params = [];
+    let paramIndex = 1;
+
+    if (status) {
+      query += ` AND v.status = $${paramIndex++}`;
+      params.push(status);
+    }
+
+    if (type) {
+      query += ` AND v.type = $${paramIndex++}`;
+      params.push(type);
+    }
+
+    if (depot_id) {
+      query += ` AND v.depot_id = $${paramIndex++}`;
+      params.push(depot_id);
+    }
+
+    query += ` ORDER BY v.created_at DESC`;
+
+    const { rows } = await db.query(query, params);
+
+    // Map database fields to frontend format
+    const fleet = rows.map((row) => ({
+      id: row.id,
+      plate: row.plate,
+      type: row.type,
+      capacity: row.capacity,
+      types: row.types || [],
+      status: row.status === 'available' ? 'ready' : row.status === 'in_use' ? 'in_use' : row.status,
+      depot_id: row.depot_id,
+      depot_name: row.depot_name,
+      fuel_type: row.fuel_type,
+      current_load_kg: row.current_load_kg,
+      last_maintenance_at: row.last_maintenance_at,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    }));
+
+    res.json({ ok: true, data: fleet });
+  } catch (error) {
+    console.error("[Fleet] Get error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
 });
 
-app.post("/api/master/fleet", (req, res) => {
-  res.json({ ok: true, data: { id: "V" + Date.now(), ...req.body } });
+// Create new vehicle
+app.post("/api/master/fleet", async (req, res) => {
+  try {
+    const { plate, type, capacity, types, status, depot_id, fuel_type } = req.body;
+
+    if (!plate || !type || !capacity) {
+      return res.status(400).json({
+        ok: false,
+        error: "Missing required fields: plate, type, capacity",
+      });
+    }
+
+    // Validate vehicle type
+    const validTypes = ['compactor', 'mini-truck', 'electric-trike', 'specialized'];
+    if (!validTypes.includes(type)) {
+      return res.status(400).json({
+        ok: false,
+        error: `Invalid type. Must be one of: ${validTypes.join(", ")}`,
+      });
+    }
+
+    // Check if plate already exists
+    const existing = await db.query("SELECT id FROM vehicles WHERE plate = $1", [plate]);
+    if (existing.rows.length > 0) {
+      return res.status(409).json({
+        ok: false,
+        error: "Vehicle with this plate number already exists",
+      });
+    }
+
+    // Generate vehicle ID
+    const vehicleId = `VH${Date.now().toString().slice(-6)}`;
+
+    const { rows } = await db.query(
+      `INSERT INTO vehicles (
+        id, plate, type, capacity_kg, accepted_types, status, depot_id, fuel_type, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+      RETURNING *`,
+      [
+        vehicleId,
+        plate,
+        type,
+        capacity,
+        types || [],
+        status || 'available',
+        depot_id || null,
+        fuel_type || 'diesel',
+      ]
+    );
+
+    console.log(`✅ Vehicle created: ${vehicleId} (${plate})`);
+
+    res.status(201).json({
+      ok: true,
+      data: {
+        id: rows[0].id,
+        plate: rows[0].plate,
+        type: rows[0].type,
+        capacity: rows[0].capacity_kg,
+        types: rows[0].accepted_types || [],
+        status: rows[0].status,
+        depot_id: rows[0].depot_id,
+        fuel_type: rows[0].fuel_type,
+      },
+      message: "Vehicle created successfully",
+    });
+  } catch (error) {
+    console.error("[Fleet] Create error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
 });
 
-app.patch("/api/master/fleet/:id", (req, res) => {
-  res.json({ ok: true, data: { id: req.params.id, ...req.body } });
+// Update vehicle
+app.patch("/api/master/fleet/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { plate, type, capacity, types, status, depot_id, fuel_type } = req.body;
+
+    const updates = [];
+    const params = [];
+    let paramIndex = 1;
+
+    if (plate !== undefined) {
+      // Check if new plate already exists (excluding current vehicle)
+      const existing = await db.query(
+        "SELECT id FROM vehicles WHERE plate = $1 AND id != $2",
+        [plate, id]
+      );
+      if (existing.rows.length > 0) {
+        return res.status(409).json({
+          ok: false,
+          error: "Vehicle with this plate number already exists",
+        });
+      }
+      updates.push(`plate = $${paramIndex++}`);
+      params.push(plate);
+    }
+
+    if (type !== undefined) {
+      updates.push(`type = $${paramIndex++}`);
+      params.push(type);
+    }
+
+    if (capacity !== undefined) {
+      updates.push(`capacity_kg = $${paramIndex++}`);
+      params.push(capacity);
+    }
+
+    if (types !== undefined) {
+      updates.push(`accepted_types = $${paramIndex++}`);
+      params.push(types);
+    }
+
+    if (status !== undefined) {
+      updates.push(`status = $${paramIndex++}`);
+      params.push(status);
+    }
+
+    if (depot_id !== undefined) {
+      updates.push(`depot_id = $${paramIndex++}`);
+      params.push(depot_id);
+    }
+
+    if (fuel_type !== undefined) {
+      updates.push(`fuel_type = $${paramIndex++}`);
+      params.push(fuel_type);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ ok: false, error: "No fields to update" });
+    }
+
+    updates.push(`updated_at = NOW()`);
+    params.push(id);
+
+    const query = `UPDATE vehicles SET ${updates.join(", ")} WHERE id = $${paramIndex} RETURNING *`;
+    const { rows } = await db.query(query, params);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "Vehicle not found" });
+    }
+
+    console.log(`✅ Vehicle updated: ${id}`);
+
+    res.json({
+      ok: true,
+      data: {
+        id: rows[0].id,
+        plate: rows[0].plate,
+        type: rows[0].type,
+        capacity: rows[0].capacity_kg,
+        types: rows[0].accepted_types || [],
+        status: rows[0].status,
+        depot_id: rows[0].depot_id,
+        fuel_type: rows[0].fuel_type,
+      },
+      message: "Vehicle updated successfully",
+    });
+  } catch (error) {
+    console.error("[Fleet] Update error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
 });
 
-app.delete("/api/master/fleet/:id", (req, res) => {
-  res.json({ ok: true, message: "Vehicle deleted" });
+// Delete vehicle
+app.delete("/api/master/fleet/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { rows } = await db.query("DELETE FROM vehicles WHERE id = $1 RETURNING *", [id]);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "Vehicle not found" });
+    }
+
+    console.log(`🗑️ Vehicle deleted: ${id}`);
+
+    res.json({
+      ok: true,
+      message: "Vehicle deleted successfully",
+    });
+  } catch (error) {
+    console.error("[Fleet] Delete error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// ==================== MASTER DATA - DEPOTS API ====================
+// Get all depots
+app.get("/api/master/depots", async (req, res) => {
+  try {
+    const { status } = req.query;
+    
+    let query = `
+      SELECT 
+        id,
+        name,
+        ST_X(geom::geometry) as lon,
+        ST_Y(geom::geometry) as lat,
+        address,
+        capacity_vehicles,
+        opening_hours,
+        status,
+        meta,
+        created_at,
+        updated_at
+      FROM depots
+      WHERE 1=1
+    `;
+    const params = [];
+    let paramIndex = 1;
+
+    if (status) {
+      query += ` AND status = $${paramIndex++}`;
+      params.push(status);
+    }
+
+    query += ` ORDER BY created_at DESC`;
+
+    const { rows } = await db.query(query, params);
+
+    res.json({ ok: true, data: rows });
+  } catch (error) {
+    console.error("[Depots] Get error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Create new depot
+app.post("/api/master/depots", async (req, res) => {
+  try {
+    const { name, lon, lat, address, capacity_vehicles, opening_hours, status } = req.body;
+
+    if (!name || lon === undefined || lat === undefined) {
+      return res.status(400).json({
+        ok: false,
+        error: "Missing required fields: name, lon, lat",
+      });
+    }
+
+    const { v4: uuidv4 } = require("uuid");
+    const depotId = uuidv4();
+
+    const { rows } = await db.query(
+      `INSERT INTO depots (
+        id, name, geom, address, capacity_vehicles, opening_hours, status, created_at, updated_at
+      ) VALUES ($1, $2, ST_SetSRID(ST_MakePoint($3, $4), 4326), $5, $6, $7, $8, NOW(), NOW())
+      RETURNING 
+        id,
+        name,
+        ST_X(geom::geometry) as lon,
+        ST_Y(geom::geometry) as lat,
+        address,
+        capacity_vehicles,
+        opening_hours,
+        status,
+        created_at,
+        updated_at`,
+      [
+        depotId,
+        name,
+        lon,
+        lat,
+        address || null,
+        capacity_vehicles || 10,
+        opening_hours || '18:00-06:00',
+        status || 'active',
+      ]
+    );
+
+    console.log(`✅ Depot created: ${depotId} (${name})`);
+
+    res.status(201).json({
+      ok: true,
+      data: rows[0],
+      message: "Depot created successfully",
+    });
+  } catch (error) {
+    console.error("[Depots] Create error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Update depot
+app.patch("/api/master/depots/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, lon, lat, address, capacity_vehicles, opening_hours, status } = req.body;
+
+    const updates = [];
+    const params = [];
+    let paramIndex = 1;
+
+    if (name !== undefined) {
+      updates.push(`name = $${paramIndex++}`);
+      params.push(name);
+    }
+
+    if (lon !== undefined && lat !== undefined) {
+      updates.push(`geom = ST_SetSRID(ST_MakePoint($${paramIndex}, $${paramIndex + 1}), 4326)`);
+      params.push(lon, lat);
+      paramIndex += 2;
+    }
+
+    if (address !== undefined) {
+      updates.push(`address = $${paramIndex++}`);
+      params.push(address);
+    }
+
+    if (capacity_vehicles !== undefined) {
+      updates.push(`capacity_vehicles = $${paramIndex++}`);
+      params.push(capacity_vehicles);
+    }
+
+    if (opening_hours !== undefined) {
+      updates.push(`opening_hours = $${paramIndex++}`);
+      params.push(opening_hours);
+    }
+
+    if (status !== undefined) {
+      updates.push(`status = $${paramIndex++}`);
+      params.push(status);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ ok: false, error: "No fields to update" });
+    }
+
+    updates.push(`updated_at = NOW()`);
+    params.push(id);
+
+    const query = `UPDATE depots SET ${updates.join(", ")} WHERE id = $${paramIndex} 
+      RETURNING 
+        id,
+        name,
+        ST_X(geom::geometry) as lon,
+        ST_Y(geom::geometry) as lat,
+        address,
+        capacity_vehicles,
+        opening_hours,
+        status,
+        created_at,
+        updated_at`;
+    const { rows } = await db.query(query, params);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "Depot not found" });
+    }
+
+    console.log(`✅ Depot updated: ${id}`);
+
+    res.json({
+      ok: true,
+      data: rows[0],
+      message: "Depot updated successfully",
+    });
+  } catch (error) {
+    console.error("[Depots] Update error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Delete depot
+app.delete("/api/master/depots/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { rows } = await db.query("DELETE FROM depots WHERE id = $1 RETURNING *", [id]);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "Depot not found" });
+    }
+
+    console.log(`🗑️ Depot deleted: ${id}`);
+
+    res.json({
+      ok: true,
+      message: "Depot deleted successfully",
+    });
+  } catch (error) {
+    console.error("[Depots] Delete error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// ==================== MASTER DATA - DUMPS API ====================
+// Get all dumps
+app.get("/api/master/dumps", async (req, res) => {
+  try {
+    const { status } = req.query;
+    
+    let query = `
+      SELECT 
+        id,
+        name,
+        ST_X(geom::geometry) as lon,
+        ST_Y(geom::geometry) as lat,
+        address,
+        accepted_waste_types,
+        capacity_tons,
+        opening_hours,
+        status,
+        meta,
+        created_at,
+        updated_at
+      FROM dumps
+      WHERE 1=1
+    `;
+    const params = [];
+    let paramIndex = 1;
+
+    if (status) {
+      query += ` AND status = $${paramIndex++}`;
+      params.push(status);
+    }
+
+    query += ` ORDER BY created_at DESC`;
+
+    const { rows } = await db.query(query, params);
+
+    res.json({ ok: true, data: rows });
+  } catch (error) {
+    console.error("[Dumps] Get error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Create new dump
+app.post("/api/master/dumps", async (req, res) => {
+  try {
+    const { name, lon, lat, address, accepted_waste_types, capacity_tons, opening_hours, status } = req.body;
+
+    if (!name || lon === undefined || lat === undefined) {
+      return res.status(400).json({
+        ok: false,
+        error: "Missing required fields: name, lon, lat",
+      });
+    }
+
+    const { v4: uuidv4 } = require("uuid");
+    const dumpId = uuidv4();
+
+    const { rows } = await db.query(
+      `INSERT INTO dumps (
+        id, name, geom, address, accepted_waste_types, capacity_tons, opening_hours, status, created_at, updated_at
+      ) VALUES ($1, $2, ST_SetSRID(ST_MakePoint($3, $4), 4326), $5, $6, $7, $8, $9, NOW(), NOW())
+      RETURNING 
+        id,
+        name,
+        ST_X(geom::geometry) as lon,
+        ST_Y(geom::geometry) as lat,
+        address,
+        accepted_waste_types,
+        capacity_tons,
+        opening_hours,
+        status,
+        created_at,
+        updated_at`,
+      [
+        dumpId,
+        name,
+        lon,
+        lat,
+        address || null,
+        accepted_waste_types || ['household', 'recyclable', 'bulky'],
+        capacity_tons || null,
+        opening_hours || '18:00-06:00',
+        status || 'active',
+      ]
+    );
+
+    console.log(`✅ Dump created: ${dumpId} (${name})`);
+
+    res.status(201).json({
+      ok: true,
+      data: rows[0],
+      message: "Dump created successfully",
+    });
+  } catch (error) {
+    console.error("[Dumps] Create error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Update dump
+app.patch("/api/master/dumps/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, lon, lat, address, accepted_waste_types, capacity_tons, opening_hours, status } = req.body;
+
+    const updates = [];
+    const params = [];
+    let paramIndex = 1;
+
+    if (name !== undefined) {
+      updates.push(`name = $${paramIndex++}`);
+      params.push(name);
+    }
+
+    if (lon !== undefined && lat !== undefined) {
+      updates.push(`geom = ST_SetSRID(ST_MakePoint($${paramIndex}, $${paramIndex + 1}), 4326)`);
+      params.push(lon, lat);
+      paramIndex += 2;
+    }
+
+    if (address !== undefined) {
+      updates.push(`address = $${paramIndex++}`);
+      params.push(address);
+    }
+
+    if (accepted_waste_types !== undefined) {
+      updates.push(`accepted_waste_types = $${paramIndex++}`);
+      params.push(accepted_waste_types);
+    }
+
+    if (capacity_tons !== undefined) {
+      updates.push(`capacity_tons = $${paramIndex++}`);
+      params.push(capacity_tons);
+    }
+
+    if (opening_hours !== undefined) {
+      updates.push(`opening_hours = $${paramIndex++}`);
+      params.push(opening_hours);
+    }
+
+    if (status !== undefined) {
+      updates.push(`status = $${paramIndex++}`);
+      params.push(status);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ ok: false, error: "No fields to update" });
+    }
+
+    updates.push(`updated_at = NOW()`);
+    params.push(id);
+
+    const query = `UPDATE dumps SET ${updates.join(", ")} WHERE id = $${paramIndex} 
+      RETURNING 
+        id,
+        name,
+        ST_X(geom::geometry) as lon,
+        ST_Y(geom::geometry) as lat,
+        address,
+        accepted_waste_types,
+        capacity_tons,
+        opening_hours,
+        status,
+        created_at,
+        updated_at`;
+    const { rows } = await db.query(query, params);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "Dump not found" });
+    }
+
+    console.log(`✅ Dump updated: ${id}`);
+
+    res.json({
+      ok: true,
+      data: rows[0],
+      message: "Dump updated successfully",
+    });
+  } catch (error) {
+    console.error("[Dumps] Update error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Delete dump
+app.delete("/api/master/dumps/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { rows } = await db.query("DELETE FROM dumps WHERE id = $1 RETURNING *", [id]);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "Dump not found" });
+    }
+
+    console.log(`🗑️ Dump deleted: ${id}`);
+
+    res.json({
+      ok: true,
+      message: "Dump deleted successfully",
+    });
+  } catch (error) {
+    console.error("[Dumps] Delete error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
 });
 
 // Collection points endpoint
@@ -476,36 +1127,289 @@ app.get("/api/points", (req, res) => {
   res.json({ ok: true, data: points });
 });
 
+// Helper function to get route from OSRM (Open Source Routing Machine)
+async function getOSRMRoute(waypoints) {
+  try {
+    if (!waypoints || waypoints.length < 2) {
+      return null;
+    }
+
+    // Build OSRM API URL
+    // Using public OSRM demo server (for production, use your own OSRM instance)
+    const coordinates = waypoints.map(wp => `${wp[0]},${wp[1]}`).join(';');
+    const url = `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson`;
+    
+    const axios = require('axios');
+    const response = await axios.get(url, { 
+      timeout: 10000,
+      headers: {
+        'User-Agent': 'EcoCheck-Backend/1.0'
+      }
+    });
+    
+    if (response.data && response.data.code === 'Ok' && response.data.routes && response.data.routes.length > 0) {
+      const route = response.data.routes[0];
+      return {
+        geometry: route.geometry,
+        distance: route.distance,
+        duration: route.duration
+      };
+    }
+    return null;
+  } catch (error) {
+    console.warn(`[OSRM] Route calculation failed: ${error.message}`);
+    return null;
+  }
+}
+
+// ==================== VRP OPTIMIZATION API ====================
 // VRP optimization endpoint
-app.post("/api/vrp/optimize", (req, res) => {
-  const { vehicles = [], points = [] } = req.body;
-  const routes = vehicles.map((v, idx) => ({
-    vehicleId: v.id,
-    distance: Math.round(8000 + Math.random() * 9000),
-    eta: `${1 + idx}:2${idx}`,
+app.post("/api/vrp/optimize", async (req, res) => {
+  try {
+    const { vehicles = [], points = [], depot, dump, timeWindow } = req.body;
+
+    if (!vehicles || vehicles.length === 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "At least one vehicle is required",
+      });
+    }
+
+    if (!points || points.length === 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "At least one point is required",
+      });
+    }
+
+    // Simple VRP algorithm: distribute points evenly among vehicles
+    // In production, use a proper VRP solver (OR-Tools, VROOM, etc.)
+    const pointsPerVehicle = Math.ceil(points.length / vehicles.length);
+    const routes = [];
+
+    for (let i = 0; i < vehicles.length; i++) {
+      const vehicle = vehicles[i];
+      const startIdx = i * pointsPerVehicle;
+      const endIdx = Math.min(startIdx + pointsPerVehicle, points.length);
+      const vehiclePoints = points.slice(startIdx, endIdx);
+
+      if (vehiclePoints.length === 0) continue;
+
+      // Build waypoints: depot -> points -> dump
+      const waypoints = [];
+      if (depot) {
+        waypoints.push([depot.lon, depot.lat]);
+      }
+      vehiclePoints.forEach(p => {
+        waypoints.push([p.lon, p.lat]);
+      });
+      if (dump) {
+        waypoints.push([dump.lon, dump.lat]);
+      }
+
+      // Get route from OSRM (road network routing)
+      let routeGeometry = null;
+      let totalDistance = 0;
+      let totalDuration = 0;
+
+      try {
+        const osrmRoute = await getOSRMRoute(waypoints);
+        if (osrmRoute) {
+          routeGeometry = osrmRoute.geometry;
+          totalDistance = Math.round(osrmRoute.distance);
+          totalDuration = Math.round(osrmRoute.duration);
+        } else {
+          // Fallback to straight line if OSRM fails
+          console.warn(`[VRP] OSRM failed for vehicle ${vehicle.id}, using straight line`);
+          routeGeometry = {
+            type: "LineString",
+            coordinates: waypoints
+          };
+          // Calculate haversine distance as fallback
+          for (let j = 1; j < waypoints.length; j++) {
+            totalDistance += getHaversineDistance(
+              { lat: waypoints[j-1][1], lon: waypoints[j-1][0] },
+              { lat: waypoints[j][1], lon: waypoints[j][0] }
+            );
+          }
+          totalDistance = Math.round(totalDistance);
+          totalDuration = Math.round(totalDistance / 8.33); // Assume 30 km/h = 8.33 m/s
+        }
+      } catch (error) {
+        console.warn(`[VRP] Route calculation error for vehicle ${vehicle.id}:`, error.message);
+        // Fallback to straight line
+        routeGeometry = {
+          type: "LineString",
+          coordinates: waypoints
+        };
+        for (let j = 1; j < waypoints.length; j++) {
+          totalDistance += getHaversineDistance(
+            { lat: waypoints[j-1][1], lon: waypoints[j-1][0] },
+            { lat: waypoints[j][1], lon: waypoints[j][0] }
+          );
+        }
+        totalDistance = Math.round(totalDistance);
+        totalDuration = Math.round(totalDistance / 8.33);
+      }
+
+      // Estimate ETA from duration (in seconds)
+      const hours = Math.floor(totalDuration / 3600);
+      const minutes = Math.round((totalDuration % 3600) / 60);
+      const eta = `${hours}:${minutes.toString().padStart(2, '0')}`;
+
+      routes.push({
+        vehicleId: vehicle.id,
+        vehiclePlate: vehicle.plate,
+        distance: totalDistance,
+        eta: eta,
     geojson: {
       type: "FeatureCollection",
       features: [
         {
           type: "Feature",
-          geometry: {
-            type: "LineString",
-            coordinates: points
-              .slice(idx, points.length)
-              .map((p) => [p.lon, p.lat]),
-          },
-          properties: {},
+              geometry: routeGeometry,
+              properties: {
+                vehicleId: vehicle.id,
+                vehiclePlate: vehicle.plate,
+              },
         },
       ],
     },
-    stops: points.map((p, i) => ({ id: p.id, seq: i + 1 })),
-  }));
+        stops: vehiclePoints.map((p, idx) => ({
+          id: p.id,
+          seq: idx + 1,
+          lat: p.lat,
+          lon: p.lon,
+        })),
+        depot: depot ? { lat: depot.lat, lon: depot.lon } : null,
+        dump: dump ? { lat: dump.lat, lon: dump.lon } : null,
+      });
+    }
+
+    console.log(`✅ VRP optimization completed: ${routes.length} routes for ${vehicles.length} vehicles`);
+
   res.json({ ok: true, data: { routes } });
+  } catch (error) {
+    console.error("[VRP] Optimize error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Save optimized routes to database
+app.post("/api/vrp/save-routes", async (req, res) => {
+  try {
+    const { routes } = req.body;
+
+    if (!routes || !Array.isArray(routes) || routes.length === 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "Routes array is required",
+      });
+    }
+
+    const { v4: uuidv4 } = require("uuid");
+    const savedRoutes = [];
+
+    for (const routeData of routes) {
+      const routeId = uuidv4();
+      const now = new Date();
+
+      // Create route
+      await db.query(
+        `INSERT INTO routes (id, vehicle_id, start_at, status, meta)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          routeId,
+          routeData.vehicleId,
+          now,
+          'pending',
+          JSON.stringify({
+            optimized: true,
+            distance: routeData.distance,
+            eta: routeData.eta,
+            geojson: routeData.geojson,
+          }),
+        ]
+      );
+
+      // Create route stops
+      if (routeData.stops && Array.isArray(routeData.stops)) {
+        for (let i = 0; i < routeData.stops.length; i++) {
+          const stop = routeData.stops[i];
+          const stopId = uuidv4();
+
+          // Get point_id from points table if stop.id is a point identifier
+          // For now, assume stop.id is already a valid point_id
+          await db.query(
+            `INSERT INTO route_stops (id, route_id, point_id, seq, status, planned_eta)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [
+              stopId,
+              routeId,
+              stop.id,
+              stop.seq || i + 1,
+              'pending',
+              now,
+            ]
+          );
+        }
+      }
+
+      savedRoutes.push({
+        route_id: routeId,
+        vehicle_id: routeData.vehicleId,
+        stops_count: routeData.stops?.length || 0,
+      });
+    }
+
+    console.log(`✅ Saved ${savedRoutes.length} optimized routes to database`);
+
+    res.json({
+      ok: true,
+      data: {
+        routes: savedRoutes,
+        message: `${savedRoutes.length} routes saved successfully`,
+      },
+    });
+  } catch (error) {
+    console.error("[VRP] Save routes error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
 });
 
 // Dispatch endpoints
-app.post("/api/dispatch/send-routes", (req, res) => {
-  res.json({ ok: true, data: { message: "Routes dispatched" } });
+app.post("/api/dispatch/send-routes", async (req, res) => {
+  try {
+    const { routes } = req.body;
+
+    if (!routes || !Array.isArray(routes) || routes.length === 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "Routes array is required",
+      });
+    }
+
+    // Update route status to 'assigned' or 'in_progress'
+    // This marks routes as dispatched to drivers
+    for (const route of routes) {
+      if (route.route_id) {
+        await db.query(
+          `UPDATE routes SET status = 'assigned', updated_at = NOW() WHERE id = $1`,
+          [route.route_id]
+        );
+      }
+    }
+
+    console.log(`✅ Dispatched ${routes.length} routes to drivers`);
+
+    res.json({
+      ok: true,
+      data: { message: `${routes.length} routes dispatched successfully` },
+    });
+  } catch (error) {
+    console.error("[Dispatch] Send routes error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
 });
 
 app.post("/api/dispatch/reroute", (req, res) => {
@@ -524,11 +1428,16 @@ app.get("/api/alerts", async (req, res) => {
     const { rows } = await db.query(
       `SELECT
          a.alert_id, a.alert_type, a.severity, a.status, a.created_at,
-         a.point_id, NULL::text as point_name,
+         a.point_id, 
+         COALESCE(ua.address_text, ua.label, a.point_id::text, 'N/A') as point_name,
+         COALESCE(ua.address_text, ua.label) as location_address,
          a.vehicle_id, v.plate as license_plate,
-         a.route_id
+         a.route_id,
+         a.details
        FROM alerts a
        LEFT JOIN vehicles v ON a.vehicle_id = v.id
+       LEFT JOIN points p ON a.point_id = p.id
+       LEFT JOIN user_addresses ua ON p.address_id = ua.id
        ORDER BY a.created_at DESC
        LIMIT 50`
     );
@@ -610,6 +1519,14 @@ app.post("/api/alerts/:alertId/assign", async (req, res) => {
   }
 
   try {
+    // Parse alertId to integer (alert_id is SERIAL/INTEGER)
+    const alertIdInt = parseInt(alertId, 10);
+    if (isNaN(alertIdInt)) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "Invalid alert ID format" });
+    }
+
     // 1. Get alert and point details
     const alertResult = await db.query(
       `SELECT
@@ -622,7 +1539,7 @@ app.post("/api/alerts/:alertId/assign", async (req, res) => {
        FROM alerts a
        JOIN points p ON a.point_id = p.id
        WHERE a.alert_id = $1 AND a.status = 'open'`,
-      [alertId]
+      [alertIdInt]
     );
 
     if (alertResult.rows.length === 0) {
@@ -633,7 +1550,48 @@ app.post("/api/alerts/:alertId/assign", async (req, res) => {
 
     const alert = alertResult.rows[0];
 
-    // 2. Create a new route in the database for the re-routing
+    // 2. Check if vehicle exists in database, if not, create it for mock vehicles (V01, V02, etc.)
+    const vehicleCheck = await db.query(
+      "SELECT id FROM vehicles WHERE id = $1",
+      [vehicle_id]
+    );
+    
+    // If vehicle doesn't exist in DB but is a mock vehicle (V01-V99), create it
+    const isMockVehicle = vehicleCheck.rows.length === 0 && /^V\d{2}$/.test(vehicle_id);
+    
+    if (isMockVehicle) {
+      // Create mock vehicle in database to satisfy foreign key constraint
+      try {
+        const insertResult = await db.query(
+          `INSERT INTO vehicles (id, plate, type, capacity_kg, accepted_types, status)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status
+           RETURNING id`,
+          [
+            vehicle_id,
+            vehicle_id, // Use ID as plate for mock vehicles
+            'compactor',
+            5000,
+            ARRAY['household', 'recyclable'],
+            'in_use'
+          ]
+        );
+        if (insertResult.rows.length > 0) {
+          console.log(`✅ Created/updated mock vehicle ${vehicle_id} in database`);
+        }
+      } catch (err) {
+        console.error(`❌ Failed to create mock vehicle ${vehicle_id}:`, err);
+        return res
+          .status(500)
+          .json({ ok: false, error: `Failed to create vehicle: ${err.message}` });
+      }
+    } else if (vehicleCheck.rows.length === 0) {
+      return res
+        .status(400)
+        .json({ ok: false, error: `Vehicle ${vehicle_id} not found in database` });
+    }
+
+    // 3. Create a new route in the database for the re-routing
     const { v4: uuidv4 } = require("uuid");
     const newRouteId = uuidv4();
     const now = new Date();
@@ -648,14 +1606,15 @@ app.post("/api/alerts/:alertId/assign", async (req, res) => {
         "in_progress",
         JSON.stringify({
           type: "incident_response",
-          original_alert_id: alertId,
+          original_alert_id: alertIdInt,
           original_route_id: alert.original_route_id,
           created_by: "dynamic_dispatch",
+          is_mock_vehicle: isMockVehicle,
         }),
       ]
     );
 
-    // 3. Add the incident point as a route stop
+    // 4. Add the incident point as a route stop
     const stopId = uuidv4();
     await db.query(
       `INSERT INTO route_stops (id, route_id, point_id, seq, status, planned_eta)
@@ -663,7 +1622,7 @@ app.post("/api/alerts/:alertId/assign", async (req, res) => {
       [stopId, newRouteId, alert.point_id, 1, "pending", now]
     );
 
-    // 4. Update alert status to 'acknowledged'
+    // 5. Update alert status to 'acknowledged'
     await db.query(
       `UPDATE alerts
        SET status = 'acknowledged',
@@ -672,14 +1631,14 @@ app.post("/api/alerts/:alertId/assign", async (req, res) => {
              '{assigned_vehicle_id}',
              to_jsonb($1::text)
            ) || jsonb_build_object(
-             'assigned_at', $2,
-             'new_route_id', $3
+             'assigned_at', $2::text,
+             'new_route_id', $3::text
            )
        WHERE alert_id = $4`,
-      [vehicle_id, now.toISOString(), newRouteId, alertId]
+      [vehicle_id, now.toISOString(), newRouteId, alertIdInt]
     );
 
-    // 5. Start the route in the in-memory store
+    // 6. Start the route in the in-memory store
     store.startRoute(newRouteId, vehicle_id, [
       {
         point_id: alert.point_id,
@@ -689,7 +1648,7 @@ app.post("/api/alerts/:alertId/assign", async (req, res) => {
     ]);
 
     console.log(
-      `✅ Alert ${alertId} assigned to vehicle ${vehicle_id}, new route ${newRouteId} created`
+      `✅ Alert ${alertIdInt} assigned to vehicle ${vehicle_id}, new route ${newRouteId} created`
     );
 
     res.json({
@@ -698,12 +1657,12 @@ app.post("/api/alerts/:alertId/assign", async (req, res) => {
         message: "Vehicle assigned successfully",
         route_id: newRouteId,
         vehicle_id: vehicle_id,
-        alert_id: alertId,
+        alert_id: alertIdInt,
       },
     });
   } catch (err) {
     console.error(`Error assigning vehicle to alert ${alertId}:`, err);
-    res.status(500).json({ ok: false, error: "Failed to assign vehicle" });
+    res.status(500).json({ ok: false, error: err.message || "Failed to assign vehicle" });
   }
 });
 
@@ -747,7 +1706,188 @@ app.get("/api/analytics/predict", (req, res) => {
   res.json({ ok: true, data: { actual, forecast } });
 });
 
-// Exceptions endpoint
+// ==================== EXCEPTIONS API ====================
+// Get all exceptions
+app.get("/api/exceptions", async (req, res) => {
+  try {
+    const { status, type, route_id } = req.query;
+    
+    let query = `
+      SELECT 
+        e.id,
+        e.route_id,
+        e.stop_id,
+        e.type,
+        e.reason,
+        e.photo_url,
+        e.status,
+        e.approved_by,
+        e.approved_at,
+        e.plan,
+        e.scheduled_at,
+        e.created_at,
+        r.id as route_id_display,
+        rs.point_id
+      FROM exceptions e
+      LEFT JOIN routes r ON e.route_id = r.id
+      LEFT JOIN route_stops rs ON e.stop_id = rs.id
+      WHERE 1=1
+    `;
+    const params = [];
+    let paramIndex = 1;
+
+    if (status) {
+      query += ` AND e.status = $${paramIndex++}`;
+      params.push(status);
+    }
+
+    if (type) {
+      query += ` AND e.type = $${paramIndex++}`;
+      params.push(type);
+    }
+
+    if (route_id) {
+      query += ` AND e.route_id = $${paramIndex++}`;
+      params.push(route_id);
+    }
+
+    query += ` ORDER BY e.created_at DESC LIMIT 100`;
+
+    const { rows } = await db.query(query, params);
+
+    // Format for frontend
+    const exceptions = rows.map((row) => ({
+      id: row.id,
+      time: row.created_at ? new Date(row.created_at).toLocaleString() : '',
+      location: row.point_id || 'N/A',
+      type: row.type || 'other',
+      status: row.status,
+      route_id: row.route_id,
+      reason: row.reason,
+      photo_url: row.photo_url,
+      plan: row.plan,
+      approved_by: row.approved_by,
+      approved_at: row.approved_at,
+      scheduled_at: row.scheduled_at,
+    }));
+
+    res.json({ ok: true, data: exceptions });
+  } catch (error) {
+    console.error("[Exceptions] Get error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Approve exception
+app.post("/api/exceptions/:id/approve", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { plan, scheduled_at } = req.body;
+
+    // TODO: Get current user ID from JWT token
+    const approved_by = req.headers["x-user-id"] || null;
+
+    const updates = [];
+    const params = [];
+    let paramIndex = 1;
+
+    updates.push(`status = $${paramIndex++}`);
+    params.push('approved');
+
+    updates.push(`approved_by = $${paramIndex++}`);
+    params.push(approved_by);
+
+    updates.push(`approved_at = NOW()`);
+
+    if (plan) {
+      updates.push(`plan = $${paramIndex++}`);
+      params.push(plan);
+    }
+
+    if (scheduled_at) {
+      updates.push(`scheduled_at = $${paramIndex++}`);
+      params.push(scheduled_at);
+    }
+
+    params.push(id);
+
+    const query = `UPDATE exceptions SET ${updates.join(", ")} WHERE id = $${paramIndex} RETURNING *`;
+    const { rows } = await db.query(query, params);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "Exception not found" });
+    }
+
+    console.log(`✅ Exception approved: ${id}`);
+
+    res.json({
+      ok: true,
+      data: {
+        id: rows[0].id,
+        status: rows[0].status,
+        plan: rows[0].plan,
+        approved_at: rows[0].approved_at,
+      },
+      message: "Exception approved successfully",
+    });
+  } catch (error) {
+    console.error("[Exceptions] Approve error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Reject exception
+app.post("/api/exceptions/:id/reject", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    // TODO: Get current user ID from JWT token
+    const approved_by = req.headers["x-user-id"] || null;
+
+    const updates = [];
+    const params = [];
+    let paramIndex = 1;
+
+    updates.push(`status = $${paramIndex++}`);
+    params.push('rejected');
+
+    updates.push(`approved_by = $${paramIndex++}`);
+    params.push(approved_by);
+
+    updates.push(`approved_at = NOW()`);
+
+    if (reason) {
+      updates.push(`reason = COALESCE(reason, '') || $${paramIndex++}`);
+      params.push(`\nRejection reason: ${reason}`);
+    }
+
+    params.push(id);
+
+    const query = `UPDATE exceptions SET ${updates.join(", ")} WHERE id = $${paramIndex} RETURNING *`;
+    const { rows } = await db.query(query, params);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "Exception not found" });
+    }
+
+    console.log(`❌ Exception rejected: ${id}`);
+
+    res.json({
+      ok: true,
+      data: {
+        id: rows[0].id,
+        status: rows[0].status,
+        reason: rows[0].reason,
+        approved_at: rows[0].approved_at,
+      },
+      message: "Exception rejected successfully",
+    });
+  } catch (error) {
+    console.error("[Exceptions] Reject error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
 
 // --- CN7: Dynamic Dispatch - Incident Detection ---
 const MISSED_POINT_DISTANCE_THRESHOLD = 500; // meters
@@ -876,25 +2016,44 @@ app.post("/api/exceptions/:id/reject", (req, res) => {
 // Get schedules (with optional filters)
 app.get("/api/schedules", async (req, res) => {
   try {
-    const { citizen_id, status, limit = 50, offset = 0 } = req.query;
+    const { citizen_id, status, scheduled_date, limit = 50, offset = 0 } = req.query;
 
-    let query = "SELECT * FROM schedules WHERE 1=1";
+    let query = `
+      SELECT 
+        s.*,
+        u.profile->>'name' as citizen_name,
+        u.phone as citizen_phone,
+        p.name as employee_name,
+        p.role as employee_role,
+        d.name as depot_name
+      FROM schedules s
+      LEFT JOIN users u ON s.citizen_id::uuid = u.id
+      LEFT JOIN personnel p ON s.employee_id = p.id
+      LEFT JOIN depots d ON p.depot_id = d.id
+      WHERE 1=1
+    `;
     const params = [];
     let paramIndex = 1;
 
     if (citizen_id) {
-      query += ` AND citizen_id = $${paramIndex}`;
+      query += ` AND s.citizen_id = $${paramIndex}`;
       params.push(citizen_id);
       paramIndex++;
     }
 
     if (status) {
-      query += ` AND status = $${paramIndex}`;
+      query += ` AND s.status = $${paramIndex}`;
       params.push(status);
       paramIndex++;
     }
 
-    query += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${
+    if (scheduled_date) {
+      query += ` AND DATE(s.scheduled_date) = $${paramIndex}`;
+      params.push(scheduled_date);
+      paramIndex++;
+    }
+
+    query += ` ORDER BY s.created_at DESC LIMIT $${paramIndex} OFFSET $${
       paramIndex + 1
     }`;
     params.push(limit, offset);
@@ -1184,6 +2343,250 @@ app.delete("/api/schedules/:id", async (req, res) => {
     });
   } catch (error) {
     console.error("[Schedule] Delete error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// ==================== MASTER DATA - PERSONNEL API ====================
+// Get all personnel
+app.get("/api/manager/personnel", async (req, res) => {
+  try {
+    const { role, status, depot_id } = req.query;
+    
+    let query = `
+      SELECT 
+        p.id,
+        p.name,
+        p.role,
+        p.phone,
+        p.email,
+        p.status,
+        p.depot_id,
+        p.certifications,
+        p.hired_at,
+        p.created_at,
+        p.updated_at,
+        d.name as depot_name
+      FROM personnel p
+      LEFT JOIN depots d ON p.depot_id = d.id
+      WHERE 1=1
+    `;
+    const params = [];
+    let paramIndex = 1;
+
+    if (role) {
+      query += ` AND p.role = $${paramIndex++}`;
+      params.push(role);
+    }
+
+    if (status) {
+      query += ` AND p.status = $${paramIndex++}`;
+      params.push(status);
+    }
+
+    if (depot_id) {
+      query += ` AND p.depot_id = $${paramIndex++}`;
+      params.push(depot_id);
+    }
+
+    query += ` ORDER BY p.created_at DESC`;
+
+    const { rows } = await db.query(query, params);
+
+    res.json({ ok: true, data: rows });
+  } catch (error) {
+    console.error("[Personnel] Get error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Get personnel by ID
+app.get("/api/manager/personnel/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const { rows } = await db.query(
+      `SELECT 
+        p.id,
+        p.name,
+        p.role,
+        p.phone,
+        p.email,
+        p.status,
+        p.depot_id,
+        p.certifications,
+        p.hired_at,
+        p.created_at,
+        p.updated_at,
+        d.name as depot_name
+      FROM personnel p
+      LEFT JOIN depots d ON p.depot_id = d.id
+      WHERE p.id = $1`,
+      [id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "Personnel not found" });
+    }
+
+    res.json({ ok: true, data: rows[0] });
+  } catch (error) {
+    console.error("[Personnel] Get by ID error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Create new personnel
+app.post("/api/manager/personnel", async (req, res) => {
+  try {
+    const { name, role, phone, email, status, depot_id, certifications } = req.body;
+
+    if (!name || !role) {
+      return res.status(400).json({
+        ok: false,
+        error: "Missing required fields: name, role",
+      });
+    }
+
+    // Validate role
+    const validRoles = ['driver', 'collector', 'manager', 'dispatcher', 'supervisor'];
+    if (!validRoles.includes(role)) {
+      return res.status(400).json({
+        ok: false,
+        error: `Invalid role. Must be one of: ${validRoles.join(", ")}`,
+      });
+    }
+
+    const { v4: uuidv4 } = require("uuid");
+    const personnelId = uuidv4();
+
+    const { rows } = await db.query(
+      `INSERT INTO personnel (
+        id, name, role, phone, email, status, depot_id, certifications, hired_at, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW(), NOW())
+      RETURNING *`,
+      [
+        personnelId,
+        name,
+        role,
+        phone || null,
+        email || null,
+        status || 'active',
+        depot_id || null,
+        certifications || [],
+      ]
+    );
+
+    console.log(`✅ Personnel created: ${personnelId} (${name})`);
+
+    res.status(201).json({
+      ok: true,
+      data: rows[0],
+      message: "Personnel created successfully",
+    });
+  } catch (error) {
+    console.error("[Personnel] Create error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Update personnel
+app.put("/api/manager/personnel/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, role, phone, email, status, depot_id, certifications } = req.body;
+
+    const updates = [];
+    const params = [];
+    let paramIndex = 1;
+
+    if (name !== undefined) {
+      updates.push(`name = $${paramIndex++}`);
+      params.push(name);
+    }
+
+    if (role !== undefined) {
+      updates.push(`role = $${paramIndex++}`);
+      params.push(role);
+    }
+
+    if (phone !== undefined) {
+      updates.push(`phone = $${paramIndex++}`);
+      params.push(phone);
+    }
+
+    if (email !== undefined) {
+      updates.push(`email = $${paramIndex++}`);
+      params.push(email);
+    }
+
+    if (status !== undefined) {
+      updates.push(`status = $${paramIndex++}`);
+      params.push(status);
+    }
+
+    if (depot_id !== undefined) {
+      updates.push(`depot_id = $${paramIndex++}`);
+      params.push(depot_id);
+    }
+
+    if (certifications !== undefined) {
+      updates.push(`certifications = $${paramIndex++}`);
+      params.push(certifications);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ ok: false, error: "No fields to update" });
+    }
+
+    updates.push(`updated_at = NOW()`);
+    params.push(id);
+
+    const query = `UPDATE personnel SET ${updates.join(", ")} WHERE id = $${paramIndex} RETURNING *`;
+    const { rows } = await db.query(query, params);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "Personnel not found" });
+    }
+
+    console.log(`✅ Personnel updated: ${id}`);
+
+    res.json({
+      ok: true,
+      data: rows[0],
+      message: "Personnel updated successfully",
+    });
+  } catch (error) {
+    console.error("[Personnel] Update error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Delete personnel (soft delete by setting status to inactive)
+app.delete("/api/manager/personnel/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { rows } = await db.query(
+      `UPDATE personnel 
+       SET status = 'inactive', updated_at = NOW() 
+       WHERE id = $1 
+       RETURNING *`,
+      [id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "Personnel not found" });
+    }
+
+    console.log(`🗑️ Personnel deactivated: ${id}`);
+
+    res.json({
+      ok: true,
+      message: "Personnel deactivated successfully",
+    });
+  } catch (error) {
+    console.error("[Personnel] Delete error:", error);
     res.status(500).json({ ok: false, error: error.message });
   }
 });

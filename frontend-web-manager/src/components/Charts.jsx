@@ -25,7 +25,13 @@ export function AreaChart({
   }, [])
   const shouldShowLabels = showLabels && windowWidth >= 480
 
-  if (!data || data.length === 0) return <div className="skeleton" style={{height}}/>
+  if (!data || data.length === 0) {
+    return (
+      <div style={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888', fontSize: 12 }}>
+        Đang tải dữ liệu...
+      </div>
+    )
+  }
 
   const w = width, h = height, pad=16
   const xs = data.map((d,i)=>i)
@@ -85,8 +91,20 @@ export function DonutChart({
   minAngleForLabel=0.15, // radians (~8.6 degrees)
   numberFormatter=(value) => value.toLocaleString('vi-VN', { maximumFractionDigits: 1 }) + 't'
 }){
-  const entries = Object.entries(segments)
-  const total = entries.reduce((s,[,v])=>s+v,0)
+  const entries = Object.entries(segments).filter(([k, v]) => v != null && (typeof v === 'number' ? v > 0 : parseFloat(v) > 0))
+  const total = entries.reduce((s,[,v])=>s+(typeof v === 'number' ? v : parseFloat(v) || 0),0)
+  
+  // If no data, show empty state
+  if (total === 0 || entries.length === 0) {
+    return (
+      <div style={{ width: size, height: size, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888', fontSize: 12 }}>
+        <div style={{ textAlign: 'center' }}>
+          <div>Tổng 0t</div>
+        </div>
+      </div>
+    )
+  }
+  
   const r = size/2 - 10
   const labelRadius = labelPosition === 'outside' ? r + 20 : r - 15
   let acc = 0

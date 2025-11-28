@@ -20,8 +20,11 @@ export default function DynamicDispatch() {
 
   async function loadAlerts() {
     const res = await api.getAlerts();
-    if (res.ok && Array.isArray(res.data.data)) {
-      setAlerts(res.data.data);
+    if (res.ok && Array.isArray(res.data)) {
+      setAlerts(res.data);
+    } else {
+      console.warn('Failed to load alerts:', res);
+      setAlerts([]);
     }
   }
 
@@ -30,8 +33,8 @@ export default function DynamicDispatch() {
     setCurrentAlert(alert);
     const res = await api.dispatchAlert(alert.alert_id);
     setLoading(false);
-    if (res.ok && Array.isArray(res.data.data)) {
-      setSuggestedVehicles(res.data.data);
+    if (res.ok && Array.isArray(res.data)) {
+      setSuggestedVehicles(res.data);
       setIsModalOpen(true);
     } else {
       setToast({ message: 'Không tìm thấy xe phù hợp.', type: 'error' });
@@ -39,12 +42,75 @@ export default function DynamicDispatch() {
   }
 
   const columns = [
-    { key: 'created_at', label: 'Thời gian', render: (r) => new Date(r.created_at).toLocaleString('vi-VN') },
-    { key: 'point_name', label: 'Điểm', render: (r) => r.point_name || `ID: ${r.point_id}` },
-    { key: 'license_plate', label: 'Phương tiện gốc', render: (r) => r.license_plate || `ID: ${r.vehicle_id}` },
-    { key: 'alert_type', label: 'Loại sự cố', render: (r) => r.alert_type === 'missed_point' ? 'Bỏ sót điểm' : 'Check-in muộn' },
-    { key: 'severity', label: 'Mức độ', render: (r) => <span style={{ color: r.severity === 'critical' ? '#ef4444' : '#f59e0b' }}>{r.severity === 'critical' ? 'Nghiêm trọng' : 'Cảnh báo'}</span> },
-    { key: 'status', label: 'Trạng thái' },
+    { 
+      key: 'created_at', 
+      label: 'Thời gian', 
+      render: (r) => {
+        if (!r.created_at) return '-'
+        const date = new Date(r.created_at)
+        return date.toLocaleString('vi-VN', { 
+          day: '2-digit', 
+          month: '2-digit', 
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        })
+      }
+    },
+    { 
+      key: 'point_name', 
+      label: 'Điểm', 
+      render: (r) => {
+        // Try to get address from point_name or details
+        const address = r.point_name || r.details?.address || r.location_address || `ID: ${r.point_id}`
+        return address
+      }
+    },
+    { 
+      key: 'license_plate', 
+      label: 'Phương tiện gốc', 
+      render: (r) => r.license_plate || r.vehicle_plate || `ID: ${r.vehicle_id || '-'}` 
+    },
+    { 
+      key: 'alert_type', 
+      label: 'Loại sự cố', 
+      render: (r) => {
+        const typeMap = {
+          missed_point: 'Bỏ sót điểm',
+          late_checkin: 'Check-in muộn'
+        }
+        return typeMap[r.alert_type] || r.alert_type
+      }
+    },
+    { 
+      key: 'severity', 
+      label: 'Mức độ', 
+      render: (r) => {
+        const isCritical = r.severity === 'critical'
+        return (
+          <span style={{ 
+            color: isCritical ? '#ef4444' : '#f59e0b',
+            fontWeight: 500
+          }}>
+            {isCritical ? 'Nghiêm trọng' : 'Cảnh báo'}
+          </span>
+        )
+      }
+    },
+    { 
+      key: 'status', 
+      label: 'Trạng thái',
+      render: (r) => {
+        const statusMap = {
+          open: 'open',
+          acknowledged: 'Đã xác nhận',
+          resolved: 'Đã xử lý',
+          closed: 'Đã đóng'
+        }
+        return statusMap[r.status] || r.status
+      }
+    },
     {
       key: 'action',
       label: 'Hành động',
@@ -83,8 +149,9 @@ export default function DynamicDispatch() {
           setLoading(false);
 
           if (res.ok) {
+            const routeId = res.data?.data?.route_id || res.data?.route_id || 'N/A';
             setToast({
-              message: `Đã giao việc cho xe ${vehicleId} để xử lý sự cố. Tuyến mới: ${res.data.data.route_id}`,
+              message: `Đã giao việc cho xe ${vehicleId} để xử lý sự cố. Tuyến mới: ${routeId}`,
               type: 'success'
             });
             setIsModalOpen(false);

@@ -33,25 +33,69 @@ function App() {
         fetch('/api/analytics/summary')
       ])
 
-      const statusData = await statusRes.json()
-      setSystemStatus(statusData.message || 'OK')
+      if (statusRes.ok) {
+        try {
+          const statusData = await statusRes.json()
+          setSystemStatus(statusData.message || 'OK')
+        } catch (e) {
+          console.warn('Failed to parse status response:', e)
+        }
+      }
 
-      const fw = await fiwareRes.json()
-      if (fw.ok) {
-        setFiwareInfo({ status: 'Đã kết nối', version: fw.data['orionld version'], uptime: fw.data.uptime })
+      if (fiwareRes.ok) {
+        try {
+          const fw = await fiwareRes.json()
+          if (fw.ok) {
+            setFiwareInfo({ status: 'Đã kết nối', version: fw.data?.['orionld version'] || '', uptime: fw.data?.uptime || '' })
+          } else {
+            setFiwareInfo({ status: 'Ngoại tuyến', version: '', uptime: '' })
+          }
+        } catch (e) {
+          console.warn('Failed to parse fiware response:', e)
+          setFiwareInfo({ status: 'Ngoại tuyến', version: '', uptime: '' })
+        }
       } else {
         setFiwareInfo({ status: 'Ngoại tuyến', version: '', uptime: '' })
       }
 
-      const ts = await tsRes.json()
-      if (ts.ok) {
-        setTimeseries(ts.series || [])
-        setByType(ts.byType || {})
+      if (tsRes.ok) {
+        try {
+          const ts = await tsRes.json()
+          if (ts.ok) {
+            // Backend returns both 'series' and 'data' for compatibility
+            const seriesData = ts.series || ts.data || []
+            console.log('📊 Timeseries data:', seriesData.length, 'points')
+            setTimeseries(seriesData)
+            if (ts.byType) {
+              console.log('📊 ByType data:', ts.byType)
+              setByType(ts.byType)
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to parse timeseries response:', e)
+        }
       }
 
-      const sm = await sumRes.json()
-      if (sm.ok) setKpis(sm)
-    } catch {
+      if (sumRes.ok) {
+        try {
+          const sm = await sumRes.json()
+          if (sm.ok) {
+            // Handle both {ok: true, data: {...}} and {ok: true, ...} formats
+            const summaryData = sm.data || sm
+            console.log('📊 Summary data:', summaryData)
+            setKpis(summaryData)
+            // Also set byType from summary if available
+            if (summaryData.byType) {
+              console.log('📊 ByType from summary:', summaryData.byType)
+              setByType(summaryData.byType)
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to parse summary response:', e)
+        }
+      }
+    } catch (error) {
+      console.error('Error refreshing data:', error)
       setSystemStatus('Backend ngoại tuyến')
       setFiwareInfo({ status: 'Ngoại tuyến', version: '', uptime: '' })
     } finally {
@@ -136,17 +180,43 @@ function App() {
 
               <section className="card col-8 fade-up delay-1">
                 <h2>Khối lượng thu gom (12 giờ qua)</h2>
-                <AreaChart data={timeseries} color="var(--primary)" stroke={3} />
+                {timeseries.length > 0 ? (
+                  <AreaChart 
+                    data={timeseries} 
+                    color="var(--primary)" 
+                    stroke={3}
+                    width={520}
+                    height={140}
+                  />
+                ) : (
+                  <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>
+                    Đang tải dữ liệu...
+                  </div>
+                )}
               </section>
 
               <section className="card col-4 fade-up delay-2">
                 <h2>Rác theo loại</h2>
-                <DonutChart segments={byType} colors={['var(--success)','var(--accent)','var(--danger)']} />
-                <Legend items={[
-                  { label: 'Sinh hoạt', color: 'var(--success)' },
-                  { label: 'Tái chế', color: 'var(--accent)' },
-                  { label: 'Cồng kềnh', color: 'var(--danger)' },
-                ]} />
+                {Object.keys(byType).length > 0 ? (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+                      <DonutChart 
+                        segments={byType} 
+                        colors={['#4caf50', '#2196f3', '#f44336']}
+                        size={140}
+                      />
+                    </div>
+                    <Legend items={[
+                      { label: 'Sinh hoạt', color: '#4caf50' },
+                      { label: 'Tái chế', color: '#2196f3' },
+                      { label: 'Cồng kềnh', color: '#f44336' },
+                    ]} />
+                  </>
+                ) : (
+                  <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>
+                    Chưa có dữ liệu
+                  </div>
+                )}
               </section>
 
               <section className="card col-12 fade-up delay-3">
