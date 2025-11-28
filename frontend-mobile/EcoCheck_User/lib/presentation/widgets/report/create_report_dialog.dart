@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:intl/intl.dart';
 import 'dart:io';
 import '../../../data/services/image_upload_service.dart';
 import '../../../data/repositories/ecocheck_repository.dart';
@@ -10,6 +11,21 @@ import '../../../core/di/injection_container.dart' as di;
 import '../../blocs/auth/auth_bloc.dart';
 import '../../blocs/auth/auth_state.dart';
 import '../../../core/constants/color_constants.dart';
+
+// Class to store photo metadata
+class PhotoWithMetadata {
+  final XFile photo;
+  final DateTime capturedAt;
+  final double? latitude;
+  final double? longitude;
+
+  PhotoWithMetadata({
+    required this.photo,
+    required this.capturedAt,
+    this.latitude,
+    this.longitude,
+  });
+}
 
 class CreateReportDialog extends StatefulWidget {
   final String category; // 'violation' or 'damage'
@@ -27,7 +43,7 @@ class _CreateReportDialogState extends State<CreateReportDialog> {
   final _repository = di.sl<EcoCheckRepository>();
 
   String? _selectedType;
-  late List<File> _images;
+  List<PhotoWithMetadata> _photos = [];
   Position? _currentPosition;
   String? _currentAddress;
   bool _isLoadingLocation = false;
@@ -37,7 +53,6 @@ class _CreateReportDialogState extends State<CreateReportDialog> {
   @override
   void initState() {
     super.initState();
-    _images = [];
     // Auto fetch GPS location when dialog opens
     _getCurrentLocation();
     print('🖼️ CreateReportDialog initialized - Category: ${widget.category}');
@@ -139,59 +154,81 @@ class _CreateReportDialogState extends State<CreateReportDialog> {
     }
   }
 
-  Future<void> _pickImages() async {
-    print('🖼️ _pickImages called - Current images count: ${_images.length}');
-    print('🖼️ Images paths: ${_images.map((f) => f.path).toList()}');
+  Future<void> _takePhoto() async {
+    print('📸 _takePhoto called - Current photos count: ${_photos.length}');
 
-    if (_images.length >= 5) {
+    if (_photos.length >= 3) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Tối đa 5 ảnh')));
+      ).showSnackBar(const SnackBar(content: Text('Tối đa 3 ảnh')));
       return;
     }
 
-    // Show dialog to choose camera or gallery
-    final source = await showDialog<ImageSource>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Chọn nguồn ảnh'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.camera_alt),
-              title: const Text('Chụp ảnh'),
-              onTap: () => Navigator.pop(context, ImageSource.camera),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: const Text('Chọn từ thư viện'),
-              onTap: () => Navigator.pop(context, ImageSource.gallery),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (source == null) {
-      print('🖼️ User cancelled source selection');
-      return;
-    }
-
-    print('🖼️ User selected source: $source');
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: source);
-
-    if (pickedFile != null) {
-      print('🖼️ Picked file: ${pickedFile.path}');
-      _images.add(File(pickedFile.path));
-      print('🖼️ Image added - Total count: ${_images.length}');
-      if (mounted) {
-        setState(() {});
+    try {
+      // Get GPS location for this photo
+      Position? photoLocation;
+      try {
+        photoLocation = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+        );
+        print(
+          '📍 GPS captured: ${photoLocation.latitude}, ${photoLocation.longitude}',
+        );
+      } catch (e) {
+        print('⚠️ Could not get GPS for photo: $e');
       }
-    } else {
-      print('🖼️ No file picked');
+
+      final picker = ImagePicker();
+      final pickedFile = await picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 85,
+      );
+
+      if (pickedFile != null) {
+        final photoWithMetadata = PhotoWithMetadata(
+          photo: pickedFile,
+          capturedAt: DateTime.now(),
+          latitude: photoLocation?.latitude,
+          longitude: photoLocation?.longitude,
+        );
+
+        setState(() {
+          _photos.add(photoWithMetadata);
+        });
+
+        print('✅ Photo added with metadata - Total: ${_photos.length}');
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Đã chụp ảnh ${_photos.length}/3${photoLocation != null ? " (có vị trí GPS)" : ""}',
+              ),
+              backgroundColor: AppColors.success,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        print('📸 No photo taken');
+      }
+    } catch (e) {
+      print('❌ Error taking photo: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi khi chụp ảnh: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
     }
+  }
+
+  void _removePhoto(int index) {
+    setState(() {
+      _photos.removeAt(index);
+    });
   }
 
   Future<void> _submitReport() async {
@@ -206,11 +243,13 @@ class _CreateReportDialogState extends State<CreateReportDialog> {
       return;
     }
 
-    // Validate that at least one image is uploaded
-    if (_images.isEmpty) {
+    // Validate that at least one photo is required
+    if (_photos.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Vui lòng chụp ít nhất 1 ảnh để xác nhận'),
+          content: Text('Vui lòng chụp ít nhất 1 ảnh hiện trường'),
+          backgroundColor: AppColors.error,
+          duration: Duration(seconds: 3),
         ),
       );
       return;
@@ -227,7 +266,7 @@ class _CreateReportDialogState extends State<CreateReportDialog> {
           children: [
             Text('Loại: ${_getTypeLabel(_selectedType!)}'),
             const SizedBox(height: 8),
-            Text('Số ảnh: ${_images.length}'),
+            Text('Số ảnh: ${_photos.length}'),
             if (_currentAddress != null) ...[
               const SizedBox(height: 8),
               Text('Vị trí: $_currentAddress'),
@@ -263,9 +302,23 @@ class _CreateReportDialogState extends State<CreateReportDialog> {
     });
 
     try {
-      print('📝 [Submit] Starting image upload...');
+      print('📝 [Submit] Starting image upload with metadata...');
+      // Convert PhotoWithMetadata to File list
+      final imageFiles = _photos
+          .map((photoData) => File(photoData.photo.path))
+          .toList();
+
+      // Log metadata for debugging
+      for (var i = 0; i < _photos.length; i++) {
+        print(
+          '  Photo $i: ${_photos[i].capturedAt} @ (${_photos[i].latitude}, ${_photos[i].longitude})',
+        );
+      }
+
       // Upload images to server
-      final imageUrls = await _imageUploadService.uploadMultipleImages(_images);
+      final imageUrls = await _imageUploadService.uploadMultipleImages(
+        imageFiles,
+      );
 
       if (mounted) {
         setState(() => _isUploadingImages = false);
@@ -550,11 +603,11 @@ class _CreateReportDialogState extends State<CreateReportDialog> {
 
                       const SizedBox(height: 16),
 
-                      // Images section with better UI
+                      // Photos section with metadata
                       Row(
                         children: [
                           const Text(
-                            'Hình ảnh *',
+                            'Hình ảnh hiện trường *',
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 14,
@@ -567,16 +620,16 @@ class _CreateReportDialogState extends State<CreateReportDialog> {
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: _images.isEmpty
+                              color: _photos.isEmpty
                                   ? Colors.red[50]
                                   : Colors.green[50],
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
-                              '${_images.length}/5',
+                              '${_photos.length}/3',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: _images.isEmpty
+                                color: _photos.isEmpty
                                     ? Colors.red[700]
                                     : Colors.green[700],
                                 fontWeight: FontWeight.bold,
@@ -587,71 +640,218 @@ class _CreateReportDialogState extends State<CreateReportDialog> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Chụp ảnh hiện trường để minh chứng',
-                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Vui lòng chụp ảnh hiện trường để xác nhận',
-                        style: TextStyle(fontSize: 12, color: Colors.grey),
+                        _photos.isEmpty
+                            ? 'Bắt buộc: Chụp từ 1-3 ảnh hiện trường'
+                            : 'Đã chụp ${_photos.length}/3 ảnh',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _photos.isEmpty
+                              ? Colors.red[700]
+                              : Colors.green[700],
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       const SizedBox(height: 8),
-                      if (_images.isNotEmpty) ...[
+
+                      // Display photos with metadata
+                      if (_photos.isNotEmpty) ...[
                         SizedBox(
-                          height: 100,
+                          height: 180,
                           child: ListView.builder(
                             scrollDirection: Axis.horizontal,
-                            itemCount: _images.length,
+                            itemCount: _photos.length,
                             itemBuilder: (context, index) {
-                              return Stack(
-                                children: [
-                                  Container(
-                                    margin: const EdgeInsets.only(right: 8),
-                                    width: 100,
-                                    decoration: BoxDecoration(
+                              final photoData = _photos[index];
+                              final dateFormat = DateFormat('dd/MM/yyyy HH:mm');
+
+                              return Container(
+                                width: 140,
+                                margin: const EdgeInsets.only(right: 8),
+                                child: Stack(
+                                  children: [
+                                    // Photo
+                                    ClipRRect(
                                       borderRadius: BorderRadius.circular(8),
-                                      image: DecorationImage(
-                                        image: FileImage(_images[index]),
+                                      child: Image.file(
+                                        File(photoData.photo.path),
+                                        width: 140,
+                                        height: 180,
                                         fit: BoxFit.cover,
                                       ),
                                     ),
-                                  ),
-                                  Positioned(
-                                    top: 4,
-                                    right: 12,
-                                    child: InkWell(
-                                      onTap: () {
-                                        _images.removeAt(index);
-                                        if (mounted) {
-                                          setState(() {});
-                                        }
-                                      },
+
+                                    // Dark overlay for metadata
+                                    Positioned(
+                                      bottom: 0,
+                                      left: 0,
+                                      right: 0,
                                       child: Container(
-                                        padding: const EdgeInsets.all(4),
-                                        decoration: const BoxDecoration(
-                                          color: Colors.red,
-                                          shape: BoxShape.circle,
+                                        padding: const EdgeInsets.all(6),
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            begin: Alignment.topCenter,
+                                            end: Alignment.bottomCenter,
+                                            colors: [
+                                              Colors.transparent,
+                                              Colors.black.withOpacity(0.8),
+                                            ],
+                                          ),
+                                          borderRadius: const BorderRadius.only(
+                                            bottomLeft: Radius.circular(8),
+                                            bottomRight: Radius.circular(8),
+                                          ),
                                         ),
-                                        child: const Icon(
-                                          Icons.close,
-                                          size: 16,
-                                          color: Colors.white,
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            // Time
+                                            Row(
+                                              children: [
+                                                const Icon(
+                                                  Icons.access_time,
+                                                  size: 10,
+                                                  color: Colors.white,
+                                                ),
+                                                const SizedBox(width: 3),
+                                                Expanded(
+                                                  child: Text(
+                                                    dateFormat.format(
+                                                      photoData.capturedAt,
+                                                    ),
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 8,
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                    ),
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 2),
+                                            // GPS Location
+                                            Row(
+                                              children: [
+                                                Icon(
+                                                  photoData.latitude != null
+                                                      ? Icons.location_on
+                                                      : Icons.location_off,
+                                                  size: 10,
+                                                  color:
+                                                      photoData.latitude != null
+                                                      ? Colors.greenAccent
+                                                      : Colors.grey,
+                                                ),
+                                                const SizedBox(width: 3),
+                                                Expanded(
+                                                  child: Text(
+                                                    photoData.latitude != null
+                                                        ? '${photoData.latitude!.toStringAsFixed(4)}, ${photoData.longitude!.toStringAsFixed(4)}'
+                                                        : 'Không có GPS',
+                                                    style: TextStyle(
+                                                      color:
+                                                          photoData.latitude !=
+                                                              null
+                                                          ? Colors.greenAccent
+                                                          : Colors.grey,
+                                                      fontSize: 7,
+                                                    ),
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
                                         ),
                                       ),
                                     ),
-                                  ),
-                                ],
+
+                                    // Delete button
+                                    Positioned(
+                                      top: 4,
+                                      right: 4,
+                                      child: GestureDetector(
+                                        onTap: () => _removePhoto(index),
+                                        child: Container(
+                                          padding: const EdgeInsets.all(4),
+                                          decoration: BoxDecoration(
+                                            color: Colors.red.withOpacity(0.8),
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: const Icon(
+                                            Icons.close,
+                                            size: 14,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+
+                                    // Photo counter
+                                    Positioned(
+                                      top: 4,
+                                      left: 4,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 3,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.primary.withOpacity(
+                                            0.9,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            6,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          '${index + 1}/${_photos.length}',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               );
                             },
                           ),
                         ),
                         const SizedBox(height: 8),
                       ],
-                      if (_images.length < 5)
-                        OutlinedButton.icon(
-                          onPressed: _pickImages,
-                          icon: const Icon(Icons.add_photo_alternate),
-                          label: const Text('Thêm hình ảnh'),
+
+                      // Camera button only (no gallery option)
+                      if (_photos.length < 3)
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _takePhoto,
+                            icon: const Icon(Icons.camera_alt, size: 20),
+                            label: Text(
+                              _photos.isEmpty
+                                  ? 'Chụp ảnh hiện trường (Bắt buộc)'
+                                  : 'Chụp thêm ảnh (${_photos.length}/3)',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              backgroundColor: _photos.isEmpty
+                                  ? AppColors.error
+                                  : AppColors.primary,
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
                         ),
                     ],
                   ),

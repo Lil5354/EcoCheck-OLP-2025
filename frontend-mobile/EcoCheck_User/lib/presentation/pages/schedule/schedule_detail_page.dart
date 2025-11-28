@@ -7,29 +7,31 @@ import 'package:eco_check/presentation/widgets/buttons/primary_button.dart';
 import 'package:eco_check/presentation/widgets/dialogs/dialogs.dart';
 
 class ScheduleDetailPage extends StatelessWidget {
-  final String scheduleId;
+  final ScheduleModel? schedule;
+  final String? scheduleId;
 
-  const ScheduleDetailPage({super.key, required this.scheduleId});
+  const ScheduleDetailPage({super.key, this.schedule, this.scheduleId});
 
-  // Mock data
-  ScheduleModel get _mockSchedule => ScheduleModel(
-    id: scheduleId,
-    citizenId: 'user123',
-    scheduledDate: DateTime.now().add(const Duration(days: 2)),
-    timeSlot: AppConstants.timeSlotMorning,
-    wasteType: AppConstants.wasteTypeRecyclable,
-    estimatedWeight: 5.5,
-    latitude: 10.762622,
-    longitude: 106.660172,
-    address: '123 Nguyễn Huệ, Quận 1, TP.HCM',
-    status: AppConstants.statusConfirmed,
-    createdAt: DateTime.now().subtract(const Duration(days: 3)),
-    updatedAt: DateTime.now(),
-  );
+  ScheduleModel get _schedule =>
+      schedule ??
+      ScheduleModel(
+        id: scheduleId ?? 'unknown',
+        citizenId: 'user123',
+        scheduledDate: DateTime.now().add(const Duration(days: 2)),
+        timeSlot: AppConstants.timeSlotMorning,
+        wasteType: AppConstants.wasteTypeRecyclable,
+        estimatedWeight: 5.5,
+        latitude: 10.762622,
+        longitude: 106.660172,
+        address: '123 Nguyễn Huệ, Quận 1, TP.HCM',
+        status: AppConstants.statusConfirmed,
+        createdAt: DateTime.now().subtract(const Duration(days: 3)),
+        updatedAt: DateTime.now(),
+      );
 
   @override
   Widget build(BuildContext context) {
-    final schedule = _mockSchedule;
+    final schedule = _schedule;
     final canEdit = schedule.isEditable;
     final canCancel =
         schedule.status == AppConstants.statusPending ||

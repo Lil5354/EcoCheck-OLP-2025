@@ -14,6 +14,7 @@ class ScheduleModel extends Equatable {
   final String address;
   final String? specialInstructions;
   final String? notes;
+  final List<String>? photoUrls; // URLs of waste photos
   final String
   status; // pending, confirmed, assigned, in_progress, completed, cancelled
   final int priority; // 0: normal, 1: high, 2: urgent
@@ -35,6 +36,7 @@ class ScheduleModel extends Equatable {
     required this.address,
     this.specialInstructions,
     this.notes,
+    this.photoUrls,
     required this.status,
     this.priority = 0,
     this.employeeId,
@@ -57,6 +59,7 @@ class ScheduleModel extends Equatable {
     address,
     specialInstructions,
     notes,
+    photoUrls,
     status,
     priority,
     employeeId,
@@ -128,6 +131,9 @@ class ScheduleModel extends Equatable {
         address: json['address']?.toString() ?? '',
         specialInstructions: json['special_instructions']?.toString(),
         notes: json['notes']?.toString(),
+        photoUrls: json['photo_urls'] != null
+            ? List<String>.from(json['photo_urls'] as List)
+            : null,
         status: json['status']?.toString() ?? 'pending',
         priority: int.tryParse(json['priority']?.toString() ?? '0') ?? 0,
         employeeId: json['employee_id']?.toString(),
@@ -154,6 +160,7 @@ class ScheduleModel extends Equatable {
       'location': {'latitude': latitude, 'longitude': longitude},
       'address': address,
       'special_instructions': specialInstructions,
+      if (photoUrls != null && photoUrls!.isNotEmpty) 'photo_urls': photoUrls,
       'status': status,
       'priority': priority,
       'created_at': createdAt.toIso8601String(),

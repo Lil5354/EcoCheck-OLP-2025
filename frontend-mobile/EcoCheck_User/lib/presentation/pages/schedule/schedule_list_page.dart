@@ -8,7 +8,7 @@ import 'package:eco_check/core/di/injection_container.dart';
 import 'package:eco_check/presentation/blocs/schedule/schedule_bloc.dart';
 import 'package:eco_check/presentation/blocs/schedule/schedule_event.dart';
 import 'package:eco_check/presentation/blocs/schedule/schedule_state.dart';
-import '../checkin/create_request_page.dart';
+import 'create_schedule_page.dart';
 import 'schedule_detail_page.dart';
 
 class ScheduleListPage extends StatelessWidget {
@@ -56,13 +56,35 @@ class _ScheduleListViewState extends State<_ScheduleListView>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text(AppStrings.schedule),
+        elevation: 0,
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [AppColors.primary, AppColors.primaryDark],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () {
+              context.read<ScheduleBloc>().add(const SchedulesLoaded());
+            },
+            tooltip: 'Làm mới',
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
+          indicatorColor: AppColors.white,
+          indicatorWeight: 3,
           tabs: const [
-            Tab(text: 'Đã xác nhận'),
-            Tab(text: 'Hoàn thành'),
+            Tab(icon: Icon(Icons.schedule), text: 'Chờ thu gom'),
+            Tab(icon: Icon(Icons.check_circle), text: 'Hoàn thành'),
           ],
         ),
       ),
@@ -130,17 +152,12 @@ class _ScheduleListViewState extends State<_ScheduleListView>
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => BlocProvider(
-                create: (_) => sl<ScheduleBloc>(),
-                child: const CreateRequestPage(),
-              ),
-            ),
-          );
+          Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const CreateSchedulePage()));
         },
         icon: const Icon(Icons.add),
-        label: const Text('Yêu cầu thu gom'),
+        label: const Text('Đặt lịch thu gom'),
       ),
     );
   }
@@ -155,31 +172,66 @@ class _ScheduleList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (schedules.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.calendar_today_outlined,
-              size: 64,
-              color: AppColors.grey.withOpacity(0.5),
+      return RefreshIndicator(
+        onRefresh: () async {
+          context.read<ScheduleBloc>().add(const SchedulesLoaded());
+          await Future.delayed(const Duration(seconds: 1));
+        },
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: SizedBox(
+            height: MediaQuery.of(context).size.height - 200,
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.event_busy,
+                      size: 64,
+                      color: AppColors.primary.withOpacity(0.5),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    emptyMessage,
+                    style: AppTextStyles.h5.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Kéo xuống để làm mới',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.grey,
+                    ),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 16),
-            Text(
-              emptyMessage,
-              style: AppTextStyles.bodyLarge.copyWith(color: AppColors.grey),
-            ),
-          ],
+          ),
         ),
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: schedules.length,
-      itemBuilder: (context, index) {
-        return _ScheduleCard(schedule: schedules[index]);
+    return RefreshIndicator(
+      onRefresh: () async {
+        context.read<ScheduleBloc>().add(const SchedulesLoaded());
+        await Future.delayed(const Duration(seconds: 1));
       },
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        physics: const AlwaysScrollableScrollPhysics(),
+        itemCount: schedules.length,
+        itemBuilder: (context, index) {
+          return _ScheduleCard(schedule: schedules[index]);
+        },
+      ),
     );
   }
 }
@@ -191,118 +243,265 @@ class _ScheduleCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: InkWell(
-        onTap: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => ScheduleDetailPage(scheduleId: schedule.id),
-            ),
-          );
-        },
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppColors.getWasteTypeColor(
-                        schedule.wasteType,
-                      ).withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      Icons.delete_outline,
-                      color: AppColors.getWasteTypeColor(schedule.wasteType),
-                      size: 24,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          schedule.wasteTypeDisplay,
-                          style: AppTextStyles.h5,
+    final wasteColor = AppColors.getWasteTypeColor(schedule.wasteType);
+    final statusColor = AppColors.getStatusColor(schedule.status);
+    final hasPhotos =
+        schedule.photoUrls != null && schedule.photoUrls!.isNotEmpty;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.black.withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => ScheduleDetailPage(scheduleId: schedule.id),
+              ),
+            );
+          },
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header Row
+                Row(
+                  children: [
+                    // Waste Type Icon
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [wasteColor, wasteColor.withOpacity(0.7)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
                         ),
-                        Text(
-                          '${schedule.estimatedWeight?.toStringAsFixed(1)}kg',
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            color: AppColors.grey,
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: [
+                          BoxShadow(
+                            color: wasteColor.withOpacity(0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.getStatusColor(
-                        schedule.status,
-                      ).withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      schedule.statusDisplay,
-                      style: AppTextStyles.caption.copyWith(
-                        color: AppColors.getStatusColor(schedule.status),
-                        fontWeight: FontWeight.bold,
+                        ],
+                      ),
+                      child: Icon(
+                        _getWasteIcon(schedule.wasteType),
+                        color: AppColors.white,
+                        size: 28,
                       ),
                     ),
+                    const SizedBox(width: 14),
+                    // Title & Weight
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  schedule.wasteTypeDisplay,
+                                  style: AppTextStyles.h5.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              if (hasPhotos)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.info.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.photo_camera,
+                                        size: 14,
+                                        color: AppColors.info,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        '${schedule.photoUrls!.length}',
+                                        style: AppTextStyles.caption.copyWith(
+                                          color: AppColors.info,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(Icons.scale, size: 14, color: wasteColor),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${schedule.estimatedWeight?.toStringAsFixed(1) ?? '0.0'}kg',
+                                style: AppTextStyles.bodyMedium.copyWith(
+                                  color: wasteColor,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                // Status Badge
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              const Divider(height: 1),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  const Icon(
-                    Icons.calendar_today,
-                    size: 16,
-                    color: AppColors.grey,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${_formatDate(schedule.scheduledDate)} - ${schedule.timeSlotDisplay}',
-                    style: AppTextStyles.bodyMedium,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Icon(
-                    Icons.location_on,
-                    size: 16,
-                    color: AppColors.grey,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      schedule.address,
-                      style: AppTextStyles.bodyMedium,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                  decoration: BoxDecoration(
+                    color: statusColor.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: statusColor.withOpacity(0.3),
+                      width: 1,
                     ),
                   ),
-                ],
-              ),
-            ],
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _getStatusIcon(schedule.status),
+                        size: 16,
+                        color: statusColor,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        schedule.statusDisplay,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: statusColor,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                // Date & Time
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.calendar_today,
+                        size: 18,
+                        color: AppColors.primary,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _formatDate(schedule.scheduledDate),
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              schedule.timeSlotDisplay,
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                // Address
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.location_on, size: 18, color: AppColors.error),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        schedule.address,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.textSecondary,
+                          height: 1.4,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
+  }
+
+  IconData _getWasteIcon(String wasteType) {
+    switch (wasteType.toLowerCase()) {
+      case 'organic':
+        return Icons.eco;
+      case 'recyclable':
+        return Icons.recycling;
+      case 'hazardous':
+        return Icons.warning;
+      case 'electronic':
+        return Icons.phone_android;
+      default:
+        return Icons.delete;
+    }
+  }
+
+  IconData _getStatusIcon(String status) {
+    switch (status.toLowerCase()) {
+      case 'scheduled':
+      case 'confirmed':
+        return Icons.check_circle;
+      case 'assigned':
+        return Icons.person;
+      case 'in_progress':
+        return Icons.local_shipping;
+      case 'completed':
+        return Icons.done_all;
+      case 'cancelled':
+        return Icons.cancel;
+      default:
+        return Icons.schedule;
+    }
   }
 
   String _formatDate(DateTime date) {

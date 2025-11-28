@@ -638,71 +638,6 @@ class EcoCheckRepository {
     }
   }
 
-  /// Create new schedule
-  Future<ScheduleModel> createSchedule({
-    required String citizenId,
-    required DateTime scheduledDate,
-    required String timeSlot,
-    required String wasteType,
-    required double estimatedWeight,
-    double? latitude,
-    double? longitude,
-    String? address,
-  }) async {
-    try {
-      final requestData = {
-        'citizen_id': citizenId,
-        'scheduled_date': scheduledDate.toIso8601String(),
-        'time_slot': timeSlot,
-        'waste_type': wasteType,
-        'estimated_weight': estimatedWeight,
-        if (latitude != null) 'latitude': latitude,
-        if (longitude != null) 'longitude': longitude,
-        if (address != null) 'address': address,
-      };
-
-      print('📤 Creating schedule with data: $requestData');
-
-      final response = await _apiClient.post(
-        '${ApiConstants.apiPrefix}/schedules',
-        data: requestData,
-      );
-
-      print('📥 Response status: ${response.statusCode}');
-      print('📥 Response data type: ${response.data.runtimeType}');
-      print('📥 Response data: ${response.data}');
-
-      final data = response.data;
-
-      // Handle error string response
-      if (data is String) {
-        print('❌ Error creating schedule: $data');
-        throw ApiException(message: data);
-      }
-
-      // Backend returns {ok: true, data: {...}, message: "..."}
-      if (data is Map<String, dynamic>) {
-        print('✅ Response is Map');
-
-        if (data['data'] != null) {
-          print('✅ Has data field, parsing...');
-          return ScheduleModel.fromJson(data['data'] as Map<String, dynamic>);
-        } else {
-          print('✅ No data field, using response directly');
-          return ScheduleModel.fromJson(data);
-        }
-      }
-
-      throw Exception('Invalid response format: ${data.runtimeType}');
-    } catch (e) {
-      print('❌ Error in createSchedule: $e');
-      if (e is Error) {
-        print('❌ Stack trace: ${e.stackTrace}');
-      }
-      throw _handleError(e);
-    }
-  }
-
   /// Update schedule status
   Future<ScheduleModel> updateSchedule({
     required String scheduleId,
@@ -796,6 +731,76 @@ class EcoCheckRepository {
           monthlyData: [],
           wasteDistribution: [],
         );
+      }
+      throw _handleError(e);
+    }
+  }
+
+  // ==================== Schedules ====================
+
+  /// Create collection schedule
+  Future<ScheduleModel> createSchedule({
+    required String citizenId,
+    required DateTime scheduledDate,
+    required String timeSlot,
+    required String wasteType,
+    required double estimatedWeight,
+    required String address,
+    required double latitude,
+    required double longitude,
+    String? notes,
+    List<String>? photoUrls,
+  }) async {
+    try {
+      final response = await _apiClient.post(
+        '${ApiConstants.apiPrefix}/schedules',
+        data: {
+          'citizen_id': citizenId,
+          'scheduled_date': scheduledDate.toIso8601String(),
+          'time_slot': timeSlot,
+          'waste_type': wasteType,
+          'estimated_weight': estimatedWeight,
+          'address': address,
+          'latitude': latitude,
+          'longitude': longitude,
+          if (notes != null && notes.isNotEmpty) 'notes': notes,
+          if (photoUrls != null && photoUrls.isNotEmpty)
+            'photo_urls': photoUrls,
+          'status': 'pending',
+        },
+      );
+
+      final data = response.data as Map<String, dynamic>;
+      if (data['ok'] == true) {
+        return ScheduleModel.fromJson(data['data'] as Map<String, dynamic>);
+      } else {
+        throw ApiException(
+          message: data['error'] ?? 'Failed to create schedule',
+        );
+      }
+    } catch (e) {
+      throw _handleError(e);
+    }
+  }
+
+  /// Get user's schedules
+  Future<List<ScheduleModel>> getUserSchedules(String userId) async {
+    try {
+      final response = await _apiClient.get(
+        '${ApiConstants.apiPrefix}/schedules/citizen/$userId',
+      );
+
+      final data = response.data as Map<String, dynamic>;
+      if (data['ok'] == true && data['data'] is List) {
+        return (data['data'] as List)
+            .map((item) => ScheduleModel.fromJson(item as Map<String, dynamic>))
+            .toList();
+      } else {
+        return [];
+      }
+    } catch (e) {
+      if (e.toString().contains('404')) {
+        return [];
       }
       throw _handleError(e);
     }

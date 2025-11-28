@@ -202,13 +202,13 @@ app.get("/api/fiware/version", async (req, res) => {
     res.json({ ok: true, data: response.data });
   } catch (e) {
     // Return success with offline status instead of error
-    res.json({ 
-      ok: false, 
+    res.json({
+      ok: false,
       error: e.message || "Orion-LD không khả dụng",
-      data: { 
-        'orionld version': 'N/A',
-        uptime: 'N/A'
-      }
+      data: {
+        "orionld version": "N/A",
+        uptime: "N/A",
+      },
     });
   }
 });
@@ -418,35 +418,97 @@ setInterval(() => {
   io.emit("fleet", store.getVehicles());
 }, 1000);
 
-app.get("/api/analytics/summary", (req, res) => {
-  res.json({
-    ok: true,
-    data: {
-    routesActive: 12,
-    collectionRate: 0.85,
-    todayTons: 3.2,
-      totalTons: 122.3,
-      completed: 934,
+app.get("/api/analytics/summary", async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Count active routes
+    const activeRoutesResult = await db.query(
+      `SELECT COUNT(*) as count FROM routes WHERE status IN ('in_progress', 'assigned')`
+    );
+    const routesActive = parseInt(activeRoutesResult.rows[0].count) || 0;
+
+    // Calculate collection rate (completed schedules vs total schedules today)
+    const scheduleStats = await db.query(
+      `SELECT 
+        COUNT(*) FILTER (WHERE status = 'completed') as completed,
+        COUNT(*) as total
+      FROM schedules 
+      WHERE DATE(scheduled_date) = DATE($1)`,
+      [today]
+    );
+    const collectionRate =
+      scheduleStats.rows[0].total > 0
+        ? parseFloat(scheduleStats.rows[0].completed) /
+          parseFloat(scheduleStats.rows[0].total)
+        : 0;
+
+    // Calculate total weight collected today
+    const todayWeight = await db.query(
+      `SELECT COALESCE(SUM(actual_weight), 0) as total
+      FROM schedules
+      WHERE DATE(completed_at) = DATE($1) AND status = 'completed'`,
+      [today]
+    );
+    const todayTons = parseFloat(todayWeight.rows[0].total) / 1000 || 0;
+
+    // Calculate total weight all time
+    const totalWeight = await db.query(
+      `SELECT COALESCE(SUM(actual_weight), 0) as total
+      FROM schedules WHERE status = 'completed'`
+    );
+    const totalTons = parseFloat(totalWeight.rows[0].total) / 1000 || 0;
+
+    // Count completed check-ins
+    const completedCheckins = await db.query(
+      `SELECT COUNT(*) as count FROM checkins`
+    );
+    const completed = parseInt(completedCheckins.rows[0].count) || 0;
+
+    // Calculate waste by type (percentage)
+    const wasteByType = await db.query(
+      `SELECT 
+        waste_type,
+        COUNT(*) as count
+      FROM schedules
+      WHERE status = 'completed'
+      GROUP BY waste_type`
+    );
+    const total = wasteByType.rows.reduce(
+      (sum, row) => sum + parseInt(row.count),
+      0
+    );
+    const byType = {};
+    wasteByType.rows.forEach((row) => {
+      byType[row.waste_type] =
+        total > 0 ? Math.round((parseInt(row.count) / total) * 100) : 0;
+    });
+
+    res.json({
+      ok: true,
+      data: {
+        routesActive,
+        collectionRate: parseFloat(collectionRate.toFixed(2)),
+        todayTons: parseFloat(todayTons.toFixed(1)),
+        totalTons: parseFloat(totalTons.toFixed(1)),
+        completed,
+        fuelSaving: 0.09,
+        byType: byType,
+      },
+      // Also return flat for backward compatibility
+      routesActive,
+      collectionRate: parseFloat(collectionRate.toFixed(2)),
+      todayTons: parseFloat(todayTons.toFixed(1)),
+      totalTons: parseFloat(totalTons.toFixed(1)),
+      completed,
       fuelSaving: 0.09,
-      byType: {
-        household: 62,
-        recyclable: 31,
-        bulky: 7
-      }
-    },
-    // Also return flat for backward compatibility
-    routesActive: 12,
-    collectionRate: 0.85,
-    todayTons: 3.2,
-    totalTons: 122.3,
-    completed: 934,
-    fuelSaving: 0.09,
-    byType: {
-      household: 62,
-      recyclable: 31,
-      bulky: 7
-    }
-  });
+      byType: byType,
+    });
+  } catch (error) {
+    console.error("[Analytics] Summary error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
 });
 
 // ==================== MASTER DATA - FLEET API ====================
@@ -454,7 +516,7 @@ app.get("/api/analytics/summary", (req, res) => {
 app.get("/api/master/fleet", async (req, res) => {
   try {
     const { status, type, depot_id } = req.query;
-    
+
     let query = `
       SELECT 
         v.id,
@@ -503,7 +565,12 @@ app.get("/api/master/fleet", async (req, res) => {
       type: row.type,
       capacity: row.capacity,
       types: row.types || [],
-      status: row.status === 'available' ? 'ready' : row.status === 'in_use' ? 'in_use' : row.status,
+      status:
+        row.status === "available"
+          ? "ready"
+          : row.status === "in_use"
+          ? "in_use"
+          : row.status,
       depot_id: row.depot_id,
       depot_name: row.depot_name,
       fuel_type: row.fuel_type,
@@ -523,7 +590,8 @@ app.get("/api/master/fleet", async (req, res) => {
 // Create new vehicle
 app.post("/api/master/fleet", async (req, res) => {
   try {
-    const { plate, type, capacity, types, status, depot_id, fuel_type } = req.body;
+    const { plate, type, capacity, types, status, depot_id, fuel_type } =
+      req.body;
 
     if (!plate || !type || !capacity) {
       return res.status(400).json({
@@ -533,7 +601,12 @@ app.post("/api/master/fleet", async (req, res) => {
     }
 
     // Validate vehicle type
-    const validTypes = ['compactor', 'mini-truck', 'electric-trike', 'specialized'];
+    const validTypes = [
+      "compactor",
+      "mini-truck",
+      "electric-trike",
+      "specialized",
+    ];
     if (!validTypes.includes(type)) {
       return res.status(400).json({
         ok: false,
@@ -542,7 +615,10 @@ app.post("/api/master/fleet", async (req, res) => {
     }
 
     // Check if plate already exists
-    const existing = await db.query("SELECT id FROM vehicles WHERE plate = $1", [plate]);
+    const existing = await db.query(
+      "SELECT id FROM vehicles WHERE plate = $1",
+      [plate]
+    );
     if (existing.rows.length > 0) {
       return res.status(409).json({
         ok: false,
@@ -564,9 +640,9 @@ app.post("/api/master/fleet", async (req, res) => {
         type,
         capacity,
         types || [],
-        status || 'available',
+        status || "available",
         depot_id || null,
-        fuel_type || 'diesel',
+        fuel_type || "diesel",
       ]
     );
 
@@ -596,7 +672,8 @@ app.post("/api/master/fleet", async (req, res) => {
 app.patch("/api/master/fleet/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { plate, type, capacity, types, status, depot_id, fuel_type } = req.body;
+    const { plate, type, capacity, types, status, depot_id, fuel_type } =
+      req.body;
 
     const updates = [];
     const params = [];
@@ -655,7 +732,9 @@ app.patch("/api/master/fleet/:id", async (req, res) => {
     updates.push(`updated_at = NOW()`);
     params.push(id);
 
-    const query = `UPDATE vehicles SET ${updates.join(", ")} WHERE id = $${paramIndex} RETURNING *`;
+    const query = `UPDATE vehicles SET ${updates.join(
+      ", "
+    )} WHERE id = $${paramIndex} RETURNING *`;
     const { rows } = await db.query(query, params);
 
     if (rows.length === 0) {
@@ -689,7 +768,10 @@ app.delete("/api/master/fleet/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
-    const { rows } = await db.query("DELETE FROM vehicles WHERE id = $1 RETURNING *", [id]);
+    const { rows } = await db.query(
+      "DELETE FROM vehicles WHERE id = $1 RETURNING *",
+      [id]
+    );
 
     if (rows.length === 0) {
       return res.status(404).json({ ok: false, error: "Vehicle not found" });
@@ -712,7 +794,7 @@ app.delete("/api/master/fleet/:id", async (req, res) => {
 app.get("/api/master/depots", async (req, res) => {
   try {
     const { status } = req.query;
-    
+
     let query = `
       SELECT 
         id,
@@ -751,7 +833,15 @@ app.get("/api/master/depots", async (req, res) => {
 // Create new depot
 app.post("/api/master/depots", async (req, res) => {
   try {
-    const { name, lon, lat, address, capacity_vehicles, opening_hours, status } = req.body;
+    const {
+      name,
+      lon,
+      lat,
+      address,
+      capacity_vehicles,
+      opening_hours,
+      status,
+    } = req.body;
 
     if (!name || lon === undefined || lat === undefined) {
       return res.status(400).json({
@@ -785,8 +875,8 @@ app.post("/api/master/depots", async (req, res) => {
         lat,
         address || null,
         capacity_vehicles || 10,
-        opening_hours || '18:00-06:00',
-        status || 'active',
+        opening_hours || "18:00-06:00",
+        status || "active",
       ]
     );
 
@@ -807,7 +897,15 @@ app.post("/api/master/depots", async (req, res) => {
 app.patch("/api/master/depots/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, lon, lat, address, capacity_vehicles, opening_hours, status } = req.body;
+    const {
+      name,
+      lon,
+      lat,
+      address,
+      capacity_vehicles,
+      opening_hours,
+      status,
+    } = req.body;
 
     const updates = [];
     const params = [];
@@ -819,7 +917,11 @@ app.patch("/api/master/depots/:id", async (req, res) => {
     }
 
     if (lon !== undefined && lat !== undefined) {
-      updates.push(`geom = ST_SetSRID(ST_MakePoint($${paramIndex}, $${paramIndex + 1}), 4326)`);
+      updates.push(
+        `geom = ST_SetSRID(ST_MakePoint($${paramIndex}, $${
+          paramIndex + 1
+        }), 4326)`
+      );
       params.push(lon, lat);
       paramIndex += 2;
     }
@@ -851,7 +953,9 @@ app.patch("/api/master/depots/:id", async (req, res) => {
     updates.push(`updated_at = NOW()`);
     params.push(id);
 
-    const query = `UPDATE depots SET ${updates.join(", ")} WHERE id = $${paramIndex} 
+    const query = `UPDATE depots SET ${updates.join(
+      ", "
+    )} WHERE id = $${paramIndex} 
       RETURNING 
         id,
         name,
@@ -887,7 +991,10 @@ app.delete("/api/master/depots/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
-    const { rows } = await db.query("DELETE FROM depots WHERE id = $1 RETURNING *", [id]);
+    const { rows } = await db.query(
+      "DELETE FROM depots WHERE id = $1 RETURNING *",
+      [id]
+    );
 
     if (rows.length === 0) {
       return res.status(404).json({ ok: false, error: "Depot not found" });
@@ -910,7 +1017,7 @@ app.delete("/api/master/depots/:id", async (req, res) => {
 app.get("/api/master/dumps", async (req, res) => {
   try {
     const { status } = req.query;
-    
+
     let query = `
       SELECT 
         id,
@@ -950,7 +1057,16 @@ app.get("/api/master/dumps", async (req, res) => {
 // Create new dump
 app.post("/api/master/dumps", async (req, res) => {
   try {
-    const { name, lon, lat, address, accepted_waste_types, capacity_tons, opening_hours, status } = req.body;
+    const {
+      name,
+      lon,
+      lat,
+      address,
+      accepted_waste_types,
+      capacity_tons,
+      opening_hours,
+      status,
+    } = req.body;
 
     if (!name || lon === undefined || lat === undefined) {
       return res.status(400).json({
@@ -984,10 +1100,10 @@ app.post("/api/master/dumps", async (req, res) => {
         lon,
         lat,
         address || null,
-        accepted_waste_types || ['household', 'recyclable', 'bulky'],
+        accepted_waste_types || ["household", "recyclable", "bulky"],
         capacity_tons || null,
-        opening_hours || '18:00-06:00',
-        status || 'active',
+        opening_hours || "18:00-06:00",
+        status || "active",
       ]
     );
 
@@ -1008,7 +1124,16 @@ app.post("/api/master/dumps", async (req, res) => {
 app.patch("/api/master/dumps/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, lon, lat, address, accepted_waste_types, capacity_tons, opening_hours, status } = req.body;
+    const {
+      name,
+      lon,
+      lat,
+      address,
+      accepted_waste_types,
+      capacity_tons,
+      opening_hours,
+      status,
+    } = req.body;
 
     const updates = [];
     const params = [];
@@ -1020,7 +1145,11 @@ app.patch("/api/master/dumps/:id", async (req, res) => {
     }
 
     if (lon !== undefined && lat !== undefined) {
-      updates.push(`geom = ST_SetSRID(ST_MakePoint($${paramIndex}, $${paramIndex + 1}), 4326)`);
+      updates.push(
+        `geom = ST_SetSRID(ST_MakePoint($${paramIndex}, $${
+          paramIndex + 1
+        }), 4326)`
+      );
       params.push(lon, lat);
       paramIndex += 2;
     }
@@ -1057,7 +1186,9 @@ app.patch("/api/master/dumps/:id", async (req, res) => {
     updates.push(`updated_at = NOW()`);
     params.push(id);
 
-    const query = `UPDATE dumps SET ${updates.join(", ")} WHERE id = $${paramIndex} 
+    const query = `UPDATE dumps SET ${updates.join(
+      ", "
+    )} WHERE id = $${paramIndex} 
       RETURNING 
         id,
         name,
@@ -1094,7 +1225,10 @@ app.delete("/api/master/dumps/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
-    const { rows } = await db.query("DELETE FROM dumps WHERE id = $1 RETURNING *", [id]);
+    const { rows } = await db.query(
+      "DELETE FROM dumps WHERE id = $1 RETURNING *",
+      [id]
+    );
 
     if (rows.length === 0) {
       return res.status(404).json({ ok: false, error: "Dump not found" });
@@ -1113,18 +1247,62 @@ app.delete("/api/master/dumps/:id", async (req, res) => {
 });
 
 // Collection points endpoint
-app.get("/api/points", (req, res) => {
-  const center = { lat: 10.78, lon: 106.7 };
-  const n = 120;
-  const points = Array.from({ length: n }).map((_, i) => {
-    const type = TYPES[Math.floor(Math.random() * TYPES.length)];
-    const lat = center.lat + randomInRange(-0.08, 0.08);
-    const lon = center.lon + randomInRange(-0.08, 0.08);
-    const demand = Math.floor(randomInRange(20, 120));
-    const status = Math.random() < 0.1 ? "grey" : "active";
-    return { id: `P${i + 1}`, type, lat, lon, demand, status };
-  });
-  res.json({ ok: true, data: points });
+app.get("/api/points", async (req, res) => {
+  try {
+    const { type, status } = req.query;
+
+    let query = `
+      SELECT 
+        p.id,
+        COALESCE(p.last_waste_type, 'household') as type,
+        ST_Y(p.geom::geometry) as lat,
+        ST_X(p.geom::geometry) as lon,
+        CASE WHEN p.ghost THEN 'grey' ELSE 'active' END as status,
+        p.address_id,
+        ua.address_text as address,
+        ua.label,
+        COALESCE(p.total_checkins, 0) as demand
+      FROM points p
+      LEFT JOIN user_addresses ua ON p.address_id = ua.id
+      WHERE 1=1
+    `;
+    const params = [];
+    let paramIndex = 1;
+
+    if (type) {
+      query += ` AND p.last_waste_type = $${paramIndex++}`;
+      params.push(type);
+    }
+
+    if (status) {
+      if (status === "grey") {
+        query += ` AND p.ghost = true`;
+      } else if (status === "active") {
+        query += ` AND p.ghost = false`;
+      }
+    }
+
+    query += ` ORDER BY p.last_checkin_at DESC NULLS LAST
+              LIMIT 500`;
+
+    const { rows } = await db.query(query, params);
+
+    const points = rows.map((row) => ({
+      id: row.id,
+      type: row.type,
+      lat: parseFloat(row.lat),
+      lon: parseFloat(row.lon),
+      demand: parseInt(row.demand) || 0,
+      status: row.status,
+      address: row.address,
+      label: row.label,
+    }));
+
+    res.json({ ok: true, data: points });
+  } catch (error) {
+    console.error("[Points] Get error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
 });
 
 // Helper function to get route from OSRM (Open Source Routing Machine)
@@ -1136,23 +1314,28 @@ async function getOSRMRoute(waypoints) {
 
     // Build OSRM API URL
     // Using public OSRM demo server (for production, use your own OSRM instance)
-    const coordinates = waypoints.map(wp => `${wp[0]},${wp[1]}`).join(';');
+    const coordinates = waypoints.map((wp) => `${wp[0]},${wp[1]}`).join(";");
     const url = `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson`;
-    
-    const axios = require('axios');
-    const response = await axios.get(url, { 
+
+    const axios = require("axios");
+    const response = await axios.get(url, {
       timeout: 10000,
       headers: {
-        'User-Agent': 'EcoCheck-Backend/1.0'
-      }
+        "User-Agent": "EcoCheck-Backend/1.0",
+      },
     });
-    
-    if (response.data && response.data.code === 'Ok' && response.data.routes && response.data.routes.length > 0) {
+
+    if (
+      response.data &&
+      response.data.code === "Ok" &&
+      response.data.routes &&
+      response.data.routes.length > 0
+    ) {
       const route = response.data.routes[0];
       return {
         geometry: route.geometry,
         distance: route.distance,
-        duration: route.duration
+        duration: route.duration,
       };
     }
     return null;
@@ -1200,7 +1383,7 @@ app.post("/api/vrp/optimize", async (req, res) => {
       if (depot) {
         waypoints.push([depot.lon, depot.lat]);
       }
-      vehiclePoints.forEach(p => {
+      vehiclePoints.forEach((p) => {
         waypoints.push([p.lon, p.lat]);
       });
       if (dump) {
@@ -1220,15 +1403,17 @@ app.post("/api/vrp/optimize", async (req, res) => {
           totalDuration = Math.round(osrmRoute.duration);
         } else {
           // Fallback to straight line if OSRM fails
-          console.warn(`[VRP] OSRM failed for vehicle ${vehicle.id}, using straight line`);
+          console.warn(
+            `[VRP] OSRM failed for vehicle ${vehicle.id}, using straight line`
+          );
           routeGeometry = {
             type: "LineString",
-            coordinates: waypoints
+            coordinates: waypoints,
           };
           // Calculate haversine distance as fallback
           for (let j = 1; j < waypoints.length; j++) {
             totalDistance += getHaversineDistance(
-              { lat: waypoints[j-1][1], lon: waypoints[j-1][0] },
+              { lat: waypoints[j - 1][1], lon: waypoints[j - 1][0] },
               { lat: waypoints[j][1], lon: waypoints[j][0] }
             );
           }
@@ -1236,15 +1421,18 @@ app.post("/api/vrp/optimize", async (req, res) => {
           totalDuration = Math.round(totalDistance / 8.33); // Assume 30 km/h = 8.33 m/s
         }
       } catch (error) {
-        console.warn(`[VRP] Route calculation error for vehicle ${vehicle.id}:`, error.message);
+        console.warn(
+          `[VRP] Route calculation error for vehicle ${vehicle.id}:`,
+          error.message
+        );
         // Fallback to straight line
         routeGeometry = {
           type: "LineString",
-          coordinates: waypoints
+          coordinates: waypoints,
         };
         for (let j = 1; j < waypoints.length; j++) {
           totalDistance += getHaversineDistance(
-            { lat: waypoints[j-1][1], lon: waypoints[j-1][0] },
+            { lat: waypoints[j - 1][1], lon: waypoints[j - 1][0] },
             { lat: waypoints[j][1], lon: waypoints[j][0] }
           );
         }
@@ -1255,26 +1443,26 @@ app.post("/api/vrp/optimize", async (req, res) => {
       // Estimate ETA from duration (in seconds)
       const hours = Math.floor(totalDuration / 3600);
       const minutes = Math.round((totalDuration % 3600) / 60);
-      const eta = `${hours}:${minutes.toString().padStart(2, '0')}`;
+      const eta = `${hours}:${minutes.toString().padStart(2, "0")}`;
 
       routes.push({
         vehicleId: vehicle.id,
         vehiclePlate: vehicle.plate,
         distance: totalDistance,
         eta: eta,
-    geojson: {
-      type: "FeatureCollection",
-      features: [
-        {
-          type: "Feature",
+        geojson: {
+          type: "FeatureCollection",
+          features: [
+            {
+              type: "Feature",
               geometry: routeGeometry,
               properties: {
                 vehicleId: vehicle.id,
                 vehiclePlate: vehicle.plate,
               },
+            },
+          ],
         },
-      ],
-    },
         stops: vehiclePoints.map((p, idx) => ({
           id: p.id,
           seq: idx + 1,
@@ -1286,9 +1474,11 @@ app.post("/api/vrp/optimize", async (req, res) => {
       });
     }
 
-    console.log(`✅ VRP optimization completed: ${routes.length} routes for ${vehicles.length} vehicles`);
+    console.log(
+      `✅ VRP optimization completed: ${routes.length} routes for ${vehicles.length} vehicles`
+    );
 
-  res.json({ ok: true, data: { routes } });
+    res.json({ ok: true, data: { routes } });
   } catch (error) {
     console.error("[VRP] Optimize error:", error);
     res.status(500).json({ ok: false, error: error.message });
@@ -1322,7 +1512,7 @@ app.post("/api/vrp/save-routes", async (req, res) => {
           routeId,
           routeData.vehicleId,
           now,
-          'pending',
+          "pending",
           JSON.stringify({
             optimized: true,
             distance: routeData.distance,
@@ -1343,14 +1533,7 @@ app.post("/api/vrp/save-routes", async (req, res) => {
           await db.query(
             `INSERT INTO route_stops (id, route_id, point_id, seq, status, planned_eta)
              VALUES ($1, $2, $3, $4, $5, $6)`,
-            [
-              stopId,
-              routeId,
-              stop.id,
-              stop.seq || i + 1,
-              'pending',
-              now,
-            ]
+            [stopId, routeId, stop.id, stop.seq || i + 1, "pending", now]
           );
         }
       }
@@ -1555,10 +1738,11 @@ app.post("/api/alerts/:alertId/assign", async (req, res) => {
       "SELECT id FROM vehicles WHERE id = $1",
       [vehicle_id]
     );
-    
+
     // If vehicle doesn't exist in DB but is a mock vehicle (V01-V99), create it
-    const isMockVehicle = vehicleCheck.rows.length === 0 && /^V\d{2}$/.test(vehicle_id);
-    
+    const isMockVehicle =
+      vehicleCheck.rows.length === 0 && /^V\d{2}$/.test(vehicle_id);
+
     if (isMockVehicle) {
       // Create mock vehicle in database to satisfy foreign key constraint
       try {
@@ -1570,25 +1754,29 @@ app.post("/api/alerts/:alertId/assign", async (req, res) => {
           [
             vehicle_id,
             vehicle_id, // Use ID as plate for mock vehicles
-            'compactor',
+            "compactor",
             5000,
-            ARRAY['household', 'recyclable'],
-            'in_use'
+            ARRAY[("household", "recyclable")],
+            "in_use",
           ]
         );
         if (insertResult.rows.length > 0) {
-          console.log(`✅ Created/updated mock vehicle ${vehicle_id} in database`);
+          console.log(
+            `✅ Created/updated mock vehicle ${vehicle_id} in database`
+          );
         }
       } catch (err) {
         console.error(`❌ Failed to create mock vehicle ${vehicle_id}:`, err);
-        return res
-          .status(500)
-          .json({ ok: false, error: `Failed to create vehicle: ${err.message}` });
+        return res.status(500).json({
+          ok: false,
+          error: `Failed to create vehicle: ${err.message}`,
+        });
       }
     } else if (vehicleCheck.rows.length === 0) {
-      return res
-        .status(400)
-        .json({ ok: false, error: `Vehicle ${vehicle_id} not found in database` });
+      return res.status(400).json({
+        ok: false,
+        error: `Vehicle ${vehicle_id} not found in database`,
+      });
     }
 
     // 3. Create a new route in the database for the re-routing
@@ -1662,48 +1850,129 @@ app.post("/api/alerts/:alertId/assign", async (req, res) => {
     });
   } catch (err) {
     console.error(`Error assigning vehicle to alert ${alertId}:`, err);
-    res.status(500).json({ ok: false, error: err.message || "Failed to assign vehicle" });
+    res
+      .status(500)
+      .json({ ok: false, error: err.message || "Failed to assign vehicle" });
   }
 });
 
 // Analytics endpoints
-app.get("/api/analytics/timeseries", (req, res) => {
-  const now = Date.now();
-  const series = Array.from({ length: 24 }).map((_, i) => ({
-    t: new Date(now - (23 - i) * 3600e3).toISOString(),
-    value: Math.round(60 + 30 * Math.sin(i / 4) + Math.random() * 10),
-  }));
+app.get("/api/analytics/timeseries", async (req, res) => {
+  try {
+    const now = new Date();
 
-  // Mock data for waste by type (donut chart)
-  const byType = {
-    household: Math.round(40 + Math.random() * 20),
-    recyclable: Math.round(25 + Math.random() * 15),
-    bulky: Math.round(15 + Math.random() * 10),
-  };
+    // Get weight collected per hour for last 24 hours
+    const timeseries = await db.query(
+      `SELECT 
+        DATE_TRUNC('hour', completed_at) as hour,
+        COALESCE(SUM(actual_weight), 0) as total_weight
+      FROM schedules
+      WHERE completed_at >= NOW() - INTERVAL '24 hours'
+        AND status = 'completed'
+      GROUP BY hour
+      ORDER BY hour ASC`
+    );
 
-  res.json({ ok: true, series, byType, data: series }); // Keep 'data' for backward compatibility
+    // Fill in missing hours with 0
+    const series = [];
+    for (let i = 23; i >= 0; i--) {
+      const hourTime = new Date(now.getTime() - i * 3600000);
+      hourTime.setMinutes(0, 0, 0);
+
+      const dataPoint = timeseries.rows.find((row) => {
+        const rowHour = new Date(row.hour);
+        return rowHour.getTime() === hourTime.getTime();
+      });
+
+      series.push({
+        t: hourTime.toISOString(),
+        value: dataPoint ? Math.round(parseFloat(dataPoint.total_weight)) : 0,
+      });
+    }
+
+    // Get waste distribution by type
+    const wasteByType = await db.query(
+      `SELECT 
+        waste_type,
+        COUNT(*) as count
+      FROM schedules
+      WHERE status = 'completed'
+      GROUP BY waste_type`
+    );
+    const total = wasteByType.rows.reduce(
+      (sum, row) => sum + parseInt(row.count),
+      0
+    );
+    const byType = {};
+    wasteByType.rows.forEach((row) => {
+      byType[row.waste_type] =
+        total > 0 ? Math.round((parseInt(row.count) / total) * 100) : 0;
+    });
+
+    res.json({ ok: true, series, byType, data: series });
+  } catch (error) {
+    console.error("[Analytics] Timeseries error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
 });
 
-app.get("/api/analytics/predict", (req, res) => {
-  const days = Number(req.query.days || 7);
-  const today = new Date();
-  const actual = Array.from({ length: days }).map((_, i) => ({
-    d: new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      today.getDate() - days + i
-    )
-      .toISOString()
-      .slice(0, 10),
-    v: Math.round(50 + Math.random() * 10),
-  }));
-  const forecast = Array.from({ length: days }).map((_, i) => ({
-    d: new Date(today.getFullYear(), today.getMonth(), today.getDate() + i)
-      .toISOString()
-      .slice(0, 10),
-    v: Math.round(55 + Math.random() * 12),
-  }));
-  res.json({ ok: true, data: { actual, forecast } });
+app.get("/api/analytics/predict", async (req, res) => {
+  try {
+    const days = Number(req.query.days || 7);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Get actual data for past N days
+    const actualData = await db.query(
+      `SELECT 
+        DATE(completed_at) as day,
+        COALESCE(SUM(actual_weight), 0) / 1000.0 as total_tons
+      FROM schedules
+      WHERE completed_at >= NOW() - INTERVAL '1 day' * $1
+        AND status = 'completed'
+      GROUP BY day
+      ORDER BY day ASC`,
+      [days]
+    );
+
+    // Create actual array with all days
+    const actual = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const dayDate = new Date(today.getTime() - i * 86400000);
+      const dateStr = dayDate.toISOString().slice(0, 10);
+
+      const dataPoint = actualData.rows.find((row) => {
+        const rowDate = new Date(row.day);
+        return rowDate.toISOString().slice(0, 10) === dateStr;
+      });
+
+      actual.push({
+        d: dateStr,
+        v: dataPoint ? parseFloat(dataPoint.total_tons).toFixed(1) : 0,
+      });
+    }
+
+    // Simple forecast: calculate average and add slight growth
+    const avgWeight =
+      actual.reduce((sum, d) => sum + parseFloat(d.v), 0) / actual.length || 50;
+    const forecast = [];
+    for (let i = 0; i < days; i++) {
+      const dayDate = new Date(today.getTime() + i * 86400000);
+      const dateStr = dayDate.toISOString().slice(0, 10);
+
+      // Add 2% growth trend
+      const forecastValue = avgWeight * (1 + (i * 0.02) / days);
+      forecast.push({
+        d: dateStr,
+        v: parseFloat(forecastValue.toFixed(1)),
+      });
+    }
+
+    res.json({ ok: true, data: { actual, forecast } });
+  } catch (error) {
+    console.error("[Analytics] Predict error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
 });
 
 // ==================== EXCEPTIONS API ====================
@@ -1711,7 +1980,7 @@ app.get("/api/analytics/predict", (req, res) => {
 app.get("/api/exceptions", async (req, res) => {
   try {
     const { status, type, route_id } = req.query;
-    
+
     let query = `
       SELECT 
         e.id,
@@ -1758,9 +2027,9 @@ app.get("/api/exceptions", async (req, res) => {
     // Format for frontend
     const exceptions = rows.map((row) => ({
       id: row.id,
-      time: row.created_at ? new Date(row.created_at).toLocaleString() : '',
-      location: row.point_id || 'N/A',
-      type: row.type || 'other',
+      time: row.created_at ? new Date(row.created_at).toLocaleString() : "",
+      location: row.point_id || "N/A",
+      type: row.type || "other",
       status: row.status,
       route_id: row.route_id,
       reason: row.reason,
@@ -1792,7 +2061,7 @@ app.post("/api/exceptions/:id/approve", async (req, res) => {
     let paramIndex = 1;
 
     updates.push(`status = $${paramIndex++}`);
-    params.push('approved');
+    params.push("approved");
 
     updates.push(`approved_by = $${paramIndex++}`);
     params.push(approved_by);
@@ -1811,7 +2080,9 @@ app.post("/api/exceptions/:id/approve", async (req, res) => {
 
     params.push(id);
 
-    const query = `UPDATE exceptions SET ${updates.join(", ")} WHERE id = $${paramIndex} RETURNING *`;
+    const query = `UPDATE exceptions SET ${updates.join(
+      ", "
+    )} WHERE id = $${paramIndex} RETURNING *`;
     const { rows } = await db.query(query, params);
 
     if (rows.length === 0) {
@@ -1850,7 +2121,7 @@ app.post("/api/exceptions/:id/reject", async (req, res) => {
     let paramIndex = 1;
 
     updates.push(`status = $${paramIndex++}`);
-    params.push('rejected');
+    params.push("rejected");
 
     updates.push(`approved_by = $${paramIndex++}`);
     params.push(approved_by);
@@ -1864,7 +2135,9 @@ app.post("/api/exceptions/:id/reject", async (req, res) => {
 
     params.push(id);
 
-    const query = `UPDATE exceptions SET ${updates.join(", ")} WHERE id = $${paramIndex} RETURNING *`;
+    const query = `UPDATE exceptions SET ${updates.join(
+      ", "
+    )} WHERE id = $${paramIndex} RETURNING *`;
     const { rows } = await db.query(query, params);
 
     if (rows.length === 0) {
@@ -1993,30 +2266,134 @@ app.post("/api/test/start-route", async (req, res) => {
   }
 });
 
-app.get("/api/exceptions", (req, res) => {
-  const exceptions = Array.from({ length: 12 }).map((_, i) => ({
-    id: `E${i + 1}`,
-    time: new Date(Date.now() - i * 5e5).toLocaleString(),
-    location: `10.${78 + i}, 106.${70 + i}`,
-    type: ["oversize", "blocked", "other"][i % 3],
-    status: ["pending", "approved", "rejected"][i % 3],
-  }));
-  res.json({ ok: true, data: exceptions });
+app.get("/api/exceptions", async (req, res) => {
+  try {
+    const { status, type } = req.query;
+
+    let query = `
+      SELECT 
+        e.id,
+        e.created_at as time,
+        e.exception_type as type,
+        e.status,
+        e.description,
+        e.photo_url,
+        ST_Y(e.location::geometry) as lat,
+        ST_X(e.location::geometry) as lon,
+        e.approved_by,
+        e.approved_at,
+        e.meta
+      FROM exceptions e
+      WHERE 1=1
+    `;
+    const params = [];
+    let paramIndex = 1;
+
+    if (status) {
+      query += ` AND e.status = $${paramIndex++}`;
+      params.push(status);
+    }
+
+    if (type) {
+      query += ` AND e.exception_type = $${paramIndex++}`;
+      params.push(type);
+    }
+
+    query += ` ORDER BY e.created_at DESC LIMIT 50`;
+
+    const { rows } = await db.query(query, params);
+
+    // Format for frontend
+    const exceptions = rows.map((row) => ({
+      id: row.id,
+      time: new Date(row.time).toLocaleString("vi-VN"),
+      location: `${row.lat}, ${row.lon}`,
+      lat: row.lat,
+      lon: row.lon,
+      type: row.type,
+      status: row.status,
+      description: row.description,
+      photo_url: row.photo_url,
+      approved_by: row.approved_by,
+      approved_at: row.approved_at,
+      meta: row.meta,
+    }));
+
+    res.json({ ok: true, data: exceptions });
+  } catch (error) {
+    console.error("[Exceptions] Get error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
 });
 
-app.post("/api/exceptions/:id/approve", (req, res) => {
-  res.json({ ok: true, data: { message: "Approved" } });
+app.post("/api/exceptions/:id/approve", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { approved_by } = req.body;
+
+    const { rows } = await db.query(
+      `UPDATE exceptions 
+       SET status = 'approved', 
+           approved_by = $1, 
+           approved_at = NOW(),
+           updated_at = NOW()
+       WHERE id = $2
+       RETURNING *`,
+      [approved_by || "admin", id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "Exception not found" });
+    }
+
+    console.log(`✅ Exception approved: ${id}`);
+    res.json({ ok: true, data: { message: "Approved", exception: rows[0] } });
+  } catch (error) {
+    console.error("[Exceptions] Approve error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
 });
 
-app.post("/api/exceptions/:id/reject", (req, res) => {
-  res.json({ ok: true, data: { message: "Rejected" } });
+app.post("/api/exceptions/:id/reject", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { approved_by, reason } = req.body;
+
+    const { rows } = await db.query(
+      `UPDATE exceptions 
+       SET status = 'rejected', 
+           approved_by = $1, 
+           approved_at = NOW(),
+           meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object('rejection_reason', $2),
+           updated_at = NOW()
+       WHERE id = $3
+       RETURNING *`,
+      [approved_by || "admin", reason || "No reason provided", id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "Exception not found" });
+    }
+
+    console.log(`✅ Exception rejected: ${id}`);
+    res.json({ ok: true, data: { message: "Rejected", exception: rows[0] } });
+  } catch (error) {
+    console.error("[Exceptions] Reject error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
 });
 
 // ==================== SCHEDULE API ====================
 // Get schedules (with optional filters)
 app.get("/api/schedules", async (req, res) => {
   try {
-    const { citizen_id, status, scheduled_date, limit = 50, offset = 0 } = req.query;
+    const {
+      citizen_id,
+      status,
+      scheduled_date,
+      limit = 50,
+      offset = 0,
+    } = req.query;
 
     let query = `
       SELECT 
@@ -2027,7 +2404,7 @@ app.get("/api/schedules", async (req, res) => {
         p.role as employee_role,
         d.name as depot_name
       FROM schedules s
-      LEFT JOIN users u ON s.citizen_id::uuid = u.id
+      LEFT JOIN users u ON s.citizen_id = u.id::text
       LEFT JOIN personnel p ON s.employee_id = p.id
       LEFT JOIN depots d ON p.depot_id = d.id
       WHERE 1=1
@@ -2147,6 +2524,8 @@ app.post("/api/schedules", async (req, res) => {
       latitude,
       longitude,
       address,
+      photo_urls, // Add photo_urls field
+      notes,
     } = req.body;
 
     // Validation
@@ -2164,12 +2543,13 @@ app.post("/api/schedules", async (req, res) => {
       });
     }
 
-    const { rows } = await db.query(
+    // Insert new schedule with photo_urls
+    const { rows: insertRows } = await db.query(
       `INSERT INTO schedules (
         citizen_id, scheduled_date, time_slot, waste_type, estimated_weight,
-        latitude, longitude, address, status, priority
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      RETURNING *`,
+        latitude, longitude, address, photo_urls, notes, status, priority
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      RETURNING schedule_id`,
       [
         citizen_id,
         scheduled_date,
@@ -2179,37 +2559,65 @@ app.post("/api/schedules", async (req, res) => {
         latitude || null,
         longitude || null,
         address || null,
+        photo_urls || null, // Store photo URLs array
+        notes || null,
         "scheduled", // Default status - Đã lên lịch thành công
         0, // Default priority
       ]
     );
 
+    const newScheduleId = insertRows[0].schedule_id;
+
+    // Fetch complete schedule with joined data (same as GET /api/schedules)
+    const { rows } = await db.query(
+      `SELECT 
+        s.*,
+        u.profile->>'name' as citizen_name,
+        u.phone as citizen_phone,
+        p.name as employee_name,
+        p.role as employee_role,
+        d.name as depot_name
+      FROM schedules s
+      LEFT JOIN users u ON s.citizen_id = u.id::text
+      LEFT JOIN personnel p ON s.employee_id = p.id
+      LEFT JOIN depots d ON p.depot_id = d.id
+      WHERE s.schedule_id = $1`,
+      [newScheduleId]
+    );
+
+    const newSchedule = rows[0];
+
     console.log(
-      `✅ Schedule created: ${rows[0].schedule_id} for citizen ${citizen_id} - Status: scheduled`
+      `✅ Schedule created: ${newScheduleId} for citizen ${citizen_id} (${
+        newSchedule.citizen_name
+      }) - Status: scheduled - Photos: ${photo_urls ? photo_urls.length : 0}`
     );
 
     // Emit event to Socket.IO for real-time updates (for web manager & worker apps)
     io.emit("schedule:created", {
-      schedule_id: rows[0].schedule_id,
-      citizen_id: rows[0].citizen_id,
-      scheduled_date: rows[0].scheduled_date,
-      time_slot: rows[0].time_slot,
-      waste_type: rows[0].waste_type,
-      estimated_weight: rows[0].estimated_weight,
-      latitude: rows[0].latitude,
-      longitude: rows[0].longitude,
-      address: rows[0].address,
-      status: rows[0].status,
-      created_at: rows[0].created_at,
+      schedule_id: newSchedule.schedule_id,
+      citizen_id: newSchedule.citizen_id,
+      citizen_name: newSchedule.citizen_name,
+      citizen_phone: newSchedule.citizen_phone,
+      scheduled_date: newSchedule.scheduled_date,
+      time_slot: newSchedule.time_slot,
+      waste_type: newSchedule.waste_type,
+      estimated_weight: newSchedule.estimated_weight,
+      latitude: newSchedule.latitude,
+      longitude: newSchedule.longitude,
+      address: newSchedule.address,
+      photo_urls: newSchedule.photo_urls,
+      status: newSchedule.status,
+      created_at: newSchedule.created_at,
     });
 
     console.log(
-      `📡 Emitted schedule:created event for schedule ${rows[0].schedule_id}`
+      `📡 Emitted schedule:created event for schedule ${newScheduleId}`
     );
 
     res.status(201).json({
       ok: true,
-      data: rows[0],
+      data: newSchedule,
       message: "Schedule created successfully",
     });
   } catch (error) {
@@ -2265,20 +2673,44 @@ app.patch("/api/schedules/:id", async (req, res) => {
 
     const query = `UPDATE schedules SET ${updates.join(
       ", "
-    )} WHERE schedule_id = $${paramIndex} RETURNING *`;
-    const { rows } = await db.query(query, params);
+    )} WHERE schedule_id = $${paramIndex} RETURNING schedule_id`;
+    const { rows: updateRows } = await db.query(query, params);
 
-    if (rows.length === 0) {
+    if (updateRows.length === 0) {
       return res.status(404).json({ ok: false, error: "Schedule not found" });
     }
 
-    console.log(
-      `✅ Schedule updated: ${id} -> status: ${status || "unchanged"}`
+    // Fetch complete schedule with joined data (same as GET /api/schedules)
+    const { rows } = await db.query(
+      `SELECT 
+        s.*,
+        u.profile->>'name' as citizen_name,
+        u.phone as citizen_phone,
+        p.name as employee_name,
+        p.role as employee_role,
+        d.name as depot_name
+      FROM schedules s
+      LEFT JOIN users u ON s.citizen_id = u.id::text
+      LEFT JOIN personnel p ON s.employee_id = p.id
+      LEFT JOIN depots d ON p.depot_id = d.id
+      WHERE s.schedule_id = $1`,
+      [id]
     );
+
+    const updatedSchedule = rows[0];
+
+    console.log(
+      `✅ Schedule updated: ${id} -> status: ${
+        updatedSchedule.status
+      }, employee: ${updatedSchedule.employee_name || "none"}`
+    );
+
+    // Emit event to Socket.IO for real-time updates
+    io.emit("schedule:updated", updatedSchedule);
 
     res.json({
       ok: true,
-      data: rows[0],
+      data: updatedSchedule,
       message: "Schedule updated successfully",
     });
   } catch (error) {
@@ -2352,7 +2784,7 @@ app.delete("/api/schedules/:id", async (req, res) => {
 app.get("/api/manager/personnel", async (req, res) => {
   try {
     const { role, status, depot_id } = req.query;
-    
+
     let query = `
       SELECT 
         p.id,
@@ -2362,7 +2794,6 @@ app.get("/api/manager/personnel", async (req, res) => {
         p.email,
         p.status,
         p.depot_id,
-        p.certifications,
         p.hired_at,
         p.created_at,
         p.updated_at,
@@ -2404,7 +2835,7 @@ app.get("/api/manager/personnel", async (req, res) => {
 app.get("/api/manager/personnel/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const { rows } = await db.query(
       `SELECT 
         p.id,
@@ -2414,7 +2845,6 @@ app.get("/api/manager/personnel/:id", async (req, res) => {
         p.email,
         p.status,
         p.depot_id,
-        p.certifications,
         p.hired_at,
         p.created_at,
         p.updated_at,
@@ -2439,17 +2869,26 @@ app.get("/api/manager/personnel/:id", async (req, res) => {
 // Create new personnel
 app.post("/api/manager/personnel", async (req, res) => {
   try {
-    const { name, role, phone, email, status, depot_id, certifications } = req.body;
+    const {
+      name,
+      role,
+      phone,
+      email,
+      password, // New: password for user account
+      status,
+      depot_id,
+      address, // New: address for user profile
+    } = req.body;
 
-    if (!name || !role) {
+    if (!name || !role || !phone || !email) {
       return res.status(400).json({
         ok: false,
-        error: "Missing required fields: name, role",
+        error: "Missing required fields: name, role, phone, email",
       });
     }
 
     // Validate role
-    const validRoles = ['driver', 'collector', 'manager', 'dispatcher', 'supervisor'];
+    const validRoles = ["driver", "collector"];
     if (!validRoles.includes(role)) {
       return res.status(400).json({
         ok: false,
@@ -2457,33 +2896,91 @@ app.post("/api/manager/personnel", async (req, res) => {
       });
     }
 
-    const { v4: uuidv4 } = require("uuid");
-    const personnelId = uuidv4();
-
-    const { rows } = await db.query(
-      `INSERT INTO personnel (
-        id, name, role, phone, email, status, depot_id, certifications, hired_at, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW(), NOW())
-      RETURNING *`,
-      [
-        personnelId,
-        name,
-        role,
-        phone || null,
-        email || null,
-        status || 'active',
-        depot_id || null,
-        certifications || [],
-      ]
+    // Check if user already exists with this phone or email
+    const existingUser = await db.query(
+      `SELECT id FROM users WHERE phone = $1 OR email = $2`,
+      [phone, email]
     );
 
-    console.log(`✅ Personnel created: ${personnelId} (${name})`);
+    if (existingUser.rows.length > 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "User with this phone or email already exists",
+      });
+    }
 
-    res.status(201).json({
-      ok: true,
-      data: rows[0],
-      message: "Personnel created successfully",
-    });
+    const { v4: uuidv4 } = require("uuid");
+    const bcrypt = require("bcrypt");
+
+    // Hash password (default: "123456" if not provided)
+    const defaultPassword = password || "123456";
+    const passwordHash = await bcrypt.hash(defaultPassword, 10);
+
+    // Start transaction
+    try {
+      await db.query("BEGIN");
+
+      // 1. Create user account
+      const userId = uuidv4();
+      const userResult = await db.query(
+        `INSERT INTO users (
+          id, phone, email, password_hash, role, status, profile, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+        RETURNING id`,
+        [
+          userId,
+          phone,
+          email,
+          passwordHash,
+          "worker", // Always set role as "worker" for personnel
+          status || "active",
+          JSON.stringify({
+            fullName: name,
+            address: address || "",
+            latitude: null,
+            longitude: null,
+            avatarUrl: null,
+            isVerified: true,
+          }),
+        ]
+      );
+
+      // 2. Create personnel record
+      const personnelId = uuidv4();
+      const personnelResult = await db.query(
+        `INSERT INTO personnel (
+          id, name, role, phone, email, status, depot_id, hired_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+        RETURNING *`,
+        [
+          personnelId,
+          name,
+          role,
+          phone,
+          email,
+          status || "active",
+          depot_id || null,
+        ]
+      );
+
+      await db.query("COMMIT");
+
+      console.log(
+        `✅ Worker account created: User ID=${userId}, Personnel ID=${personnelId} (${name})`
+      );
+
+      res.status(201).json({
+        ok: true,
+        data: {
+          ...personnelResult.rows[0],
+          user_id: userId,
+        },
+        message: `Personnel created successfully. Login credentials - Email: ${email}, Password: ${defaultPassword}`,
+      });
+    } catch (error) {
+      await db.query("ROLLBACK");
+      throw error;
+    }
   } catch (error) {
     console.error("[Personnel] Create error:", error);
     res.status(500).json({ ok: false, error: error.message });
@@ -2494,7 +2991,7 @@ app.post("/api/manager/personnel", async (req, res) => {
 app.put("/api/manager/personnel/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, role, phone, email, status, depot_id, certifications } = req.body;
+    const { name, role, phone, email, status, depot_id } = req.body;
 
     const updates = [];
     const params = [];
@@ -2530,11 +3027,6 @@ app.put("/api/manager/personnel/:id", async (req, res) => {
       params.push(depot_id);
     }
 
-    if (certifications !== undefined) {
-      updates.push(`certifications = $${paramIndex++}`);
-      params.push(certifications);
-    }
-
     if (updates.length === 0) {
       return res.status(400).json({ ok: false, error: "No fields to update" });
     }
@@ -2542,7 +3034,9 @@ app.put("/api/manager/personnel/:id", async (req, res) => {
     updates.push(`updated_at = NOW()`);
     params.push(id);
 
-    const query = `UPDATE personnel SET ${updates.join(", ")} WHERE id = $${paramIndex} RETURNING *`;
+    const query = `UPDATE personnel SET ${updates.join(
+      ", "
+    )} WHERE id = $${paramIndex} RETURNING *`;
     const { rows } = await db.query(query, params);
 
     if (rows.length === 0) {
@@ -3188,48 +3682,26 @@ app.post("/api/incidents", async (req, res) => {
     const { rows } = await db.query(
       `INSERT INTO incidents (
         reporter_id, reporter_name, reporter_phone, report_category, type,
-        description, geom, location_address, image_urls, priority, status, created_at, updated_at
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6,
-        ${
-          latitude && longitude
-            ? `ST_SetSRID(ST_MakePoint($7, $8), 4326)`
-            : "NULL"
-        },
-        ${latitude && longitude ? "$9" : "$7"},
-        ${latitude && longitude ? "$10" : "$8"},
-        ${latitude && longitude ? "$11" : "$9"},
-        'pending', NOW(), NOW()
-      ) RETURNING *`,
-      latitude && longitude
-        ? [
-            reporter_id,
-            reporter_name,
-            reporter_phone,
-            report_category,
-            type,
-            description,
-            longitude,
-            latitude,
-            location_address,
-            image_urls,
-            priority,
-          ]
-        : [
-            reporter_id,
-            reporter_name,
-            reporter_phone,
-            report_category,
-            type,
-            description,
-            location_address,
-            image_urls,
-            priority,
-          ]
+        description, latitude, longitude, location_address, image_urls, priority, status
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending')
+      RETURNING *`,
+      [
+        reporter_id,
+        reporter_name,
+        reporter_phone,
+        report_category,
+        type,
+        description,
+        latitude || null,
+        longitude || null,
+        location_address || null,
+        image_urls,
+        priority,
+      ]
     );
 
     console.log(
-      `📝 New incident report created: ${rows[0].id} (${report_category})`
+      `📝 New incident report created: ${rows[0].id} (${report_category}/${type}) - ${image_urls.length} photos`
     );
 
     res.status(201).json({

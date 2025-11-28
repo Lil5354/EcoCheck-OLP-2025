@@ -57,18 +57,11 @@ class EcoCheckApp extends StatelessWidget {
             return true;
           },
           builder: (context, state) {
-            print('🏠 [NAVIGATION] Current auth state: ${state.runtimeType}');
-
             if (state is Authenticated) {
-              print('🏠 [NAVIGATION] Navigating to HomePage');
               return const HomePage();
             } else if (state is Unauthenticated || state is AuthError) {
-              print('🏠 [NAVIGATION] Showing LoginPage');
               return const LoginPage();
             } else {
-              print(
-                '🏠 [NAVIGATION] Showing SplashPage (${state.runtimeType})',
-              );
               // AuthLoading or AuthInitial
               return const SplashPage();
             }

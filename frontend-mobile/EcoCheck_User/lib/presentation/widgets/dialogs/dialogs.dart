@@ -7,31 +7,27 @@ void showLoadingDialog(BuildContext context, {String? message}) {
   showDialog(
     context: context,
     barrierDismissible: false,
+    barrierColor: Colors.black54,
     builder: (context) => WillPopScope(
       onWillPop: () async => false,
       child: Dialog(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
+        backgroundColor: AppColors.white,
+        elevation: 8,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: Container(
           padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: AppColors.white,
-            borderRadius: BorderRadius.circular(16),
-          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               const CircularProgressIndicator(
                 valueColor: AlwaysStoppedAnimation<Color>(AppColors.primary),
               ),
-              if (message != null) ...[
-                const SizedBox(height: 16),
-                Text(
-                  message,
-                  style: AppTextStyles.bodyMedium,
-                  textAlign: TextAlign.center,
-                ),
-              ],
+              const SizedBox(height: 16),
+              Text(
+                message ?? 'Đang xử lý...',
+                style: AppTextStyles.bodyMedium,
+                textAlign: TextAlign.center,
+              ),
             ],
           ),
         ),

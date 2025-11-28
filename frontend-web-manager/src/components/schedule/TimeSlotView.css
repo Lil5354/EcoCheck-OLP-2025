@@ -1,0 +1,263 @@
+.timeslot-container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 20px 0;
+}
+
+.timeslot-section {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.timeslot-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, var(--primary-light) 0%, var(--primary) 100%);
+  color: white;
+  border-bottom: 2px solid var(--primary-dark);
+}
+
+.timeslot-icon {
+  font-size: 28px;
+  line-height: 1;
+}
+
+.timeslot-info {
+  flex: 1;
+}
+
+.timeslot-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 4px 0;
+}
+
+.timeslot-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  margin: 0;
+  opacity: 0.95;
+}
+
+.timeslot-count {
+  background: rgba(255, 255, 255, 0.25);
+  color: white;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-weight: 600;
+  font-size: 14px;
+  min-width: 40px;
+  text-align: center;
+}
+
+.timeslot-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+  padding: 20px;
+}
+
+.empty-slot {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+/* Schedule Card */
+.schedule-card {
+  background: var(--surface-variant);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--light-grey);
+  overflow: hidden;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.schedule-card:hover {
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-2px);
+  border-color: var(--primary);
+}
+
+.schedule-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: white;
+  border-bottom: 1px solid var(--light-grey);
+}
+
+.waste-type-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.waste-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.waste-label {
+  line-height: 1;
+}
+
+.status-badge {
+  padding: 4px 10px;
+  border-radius: 12px;
+  color: white;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.schedule-card-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.schedule-info-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.schedule-info-row.assigned {
+  background: var(--primary-light);
+  color: white;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  margin: 4px -4px 0;
+}
+
+.schedule-info-row.assigned .info-icon {
+  color: white;
+  opacity: 0.9;
+}
+
+.info-icon {
+  color: var(--primary);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.info-text {
+  flex: 1;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.schedule-weight {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: white;
+  border-radius: var(--radius-sm);
+  margin-top: 4px;
+}
+
+.weight-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.weight-value {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.schedule-card-footer {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  background: white;
+  border-top: 1px solid var(--light-grey);
+}
+
+.btn-action {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-assign {
+  background: var(--primary);
+  color: white;
+}
+
+.btn-assign:hover {
+  background: var(--primary-dark);
+  transform: scale(1.02);
+}
+
+.btn-delete {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+}
+
+.btn-delete:hover {
+  background: var(--danger);
+  color: white;
+  transform: scale(1.02);
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+  .timeslot-cards {
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .timeslot-cards {
+    grid-template-columns: 1fr;
+    padding: 16px;
+  }
+  
+  .timeslot-header {
+    padding: 14px 16px;
+  }
+  
+  .timeslot-title {
+    font-size: 16px;
+  }
+  
+  .schedule-card-footer {
+    flex-direction: column;
+  }
+  
+  .btn-action {
+    width: 100%;
+  }
+}

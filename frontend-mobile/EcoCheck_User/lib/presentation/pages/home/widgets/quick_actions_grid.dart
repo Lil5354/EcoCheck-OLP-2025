@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:eco_check/core/constants/color_constants.dart';
 import 'package:eco_check/core/constants/text_constants.dart';
-import 'package:eco_check/core/di/injection_container.dart';
-import 'package:eco_check/presentation/blocs/schedule/schedule_bloc.dart';
-import '../../checkin/create_request_page.dart';
+import '../../schedule/create_schedule_page.dart';
 import '../../report/report_screen.dart';
 import '../../statistics/statistics_page.dart';
 import '../../gamification/gamification_page_bloc.dart';
@@ -28,10 +25,7 @@ class QuickActionsGrid extends StatelessWidget {
                 onTap: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(
-                      builder: (_) => BlocProvider(
-                        create: (_) => sl<ScheduleBloc>(),
-                        child: const CreateRequestPage(),
-                      ),
+                      builder: (_) => const CreateSchedulePage(),
                     ),
                   );
                 },
