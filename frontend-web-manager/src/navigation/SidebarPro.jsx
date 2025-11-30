@@ -1,3 +1,11 @@
+/*
+ * MIT License
+ * Copyright (c) 2025 Lil5354
+ *
+ * EcoCheck Frontend Web Manager
+ * Sidebar Navigation Component
+ */
+
 import React from "react";
 import { NavLink } from "react-router-dom";
 import logo from "../assets/ecocheck-logo.svg";

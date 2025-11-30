@@ -375,6 +375,7 @@ a:hover { text-decoration: underline; }
 .marker.grey { background:#9aa0a6; } /* Điểm ma (không rác) */
 .marker.green { background:var(--success); } /* Rác ít/vừa */
 .marker.yellow { background:var(--warning); } /* Rác nhiều */
+.marker.orange { background:var(--warning); } /* Rác nhiều (alias) */
 .marker.red { background:var(--danger); } /* Cồng kềnh / Sự cố */
 /* Vehicle markers */
 .marker.vehicle { width:12px; height:12px; border-radius:3px; background: var(--primary); border:2px solid #fff; box-shadow:0 2px 8px rgba(0,0,0,.35); }

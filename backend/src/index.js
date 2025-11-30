@@ -12,6 +12,7 @@ const compression = require("compression");
 const dotenv = require("dotenv");
 const cron = require("node-cron");
 const http = require("http");
+const ARIMA = require("arima");
 
 // Load environment variables
 dotenv.config();
@@ -480,64 +481,269 @@ app.post("/api/rt/checkin", async (req, res) => {
   res.json({ ok: true, ...result });
 });
 
-// Realtime mock endpoints for demo UI
-const randomInRange = (min, max) => Math.random() * (max - min) + min;
-const TYPES = ["household", "recyclable", "bulky"];
-const LEVELS = ["low", "medium", "high"];
-
-app.get("/api/rt/checkins", (req, res) => {
-  // Generate random check-ins around HCMC with CN5-compliant status mapping
-  const center = { lat: 10.78, lon: 106.7 };
+// Realtime endpoints - Query from database
+app.get("/api/rt/checkins", async (req, res) => {
+  try {
   const n = Number(req.query.n || 30);
-  const points = Array.from({ length: n }).map(() => {
-    const isGhost = Math.random() < 0.12; // ~12% ghost (no trash)
-    const type = isGhost
-      ? "ghost"
-      : TYPES[Math.floor(Math.random() * TYPES.length)];
-    const level = isGhost
-      ? "none"
-      : LEVELS[Math.floor(Math.random() * LEVELS.length)];
-    const lat = center.lat + randomInRange(-0.08, 0.08);
-    const lon = center.lon + randomInRange(-0.08, 0.08);
-    // Occasionally mark as incident (bulky or issue)
-    const incident = !isGhost && Math.random() < 0.05;
-    return {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      type,
-      level,
-      incident,
-      lat,
-      lon,
-      ts: Date.now(),
-    };
-  });
+    
+    // Query recent checkins from database (last 24 hours)
+    const query = `
+      SELECT 
+        c.id,
+        COALESCE(c.waste_type, 'household') as type,
+        CASE 
+          WHEN c.filling_level < 0.3 THEN 'low'
+          WHEN c.filling_level < 0.7 THEN 'medium'
+          ELSE 'high'
+        END as level,
+        CASE 
+          WHEN c.waste_type = 'bulky' OR c.waste_type = 'hazardous' THEN true
+          ELSE false
+        END as incident,
+        ST_Y(c.geom::geometry) as lat,
+        ST_X(c.geom::geometry) as lon,
+        EXTRACT(EPOCH FROM c.created_at) * 1000 as ts
+      FROM checkins c
+      WHERE c.created_at >= NOW() - INTERVAL '24 hours'
+        AND c.geom IS NOT NULL
+      ORDER BY c.created_at DESC
+      LIMIT $1
+    `;
+    
+    const { rows } = await db.query(query, [n]);
+    
+    // Transform to match frontend format
+    const points = rows.map(row => ({
+      id: row.id,
+      type: row.type === 'ghost' ? 'ghost' : row.type,
+      level: row.level,
+      incident: row.incident,
+      lat: parseFloat(row.lat),
+      lon: parseFloat(row.lon),
+      ts: parseInt(row.ts),
+    }));
+    
   res.set("Cache-Control", "no-store").json({ ok: true, data: points });
+  } catch (error) {
+    console.error("[API] Error fetching realtime checkins:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
 });
 
-// Realtime endpoints (viewport + delta)
-app.get("/api/rt/points", (req, res) => {
+// Realtime endpoints (viewport + delta) - Query from database
+app.get("/api/rt/points", async (req, res) => {
+  try {
   const bbox = (req.query.bbox || "").split(",").map(parseFloat);
-  const since = req.query.since ? Number(req.query.since) : undefined;
-  const data = store.getPoints({
-    bbox: bbox.length === 4 ? bbox : undefined,
-    since,
-  });
-  res.set("Cache-Control", "no-store").json({ ok: true, ...data });
+    const since = req.query.since ? new Date(Number(req.query.since)) : undefined;
+    
+    let query = `
+      SELECT 
+        p.id,
+        p.lon,
+        p.lat,
+        COALESCE(p.last_waste_type, 'household') as type,
+        COALESCE(p.last_level, 0.5) as level,
+        p.ghost,
+        EXTRACT(EPOCH FROM COALESCE(p.last_checkin_at, NOW())) * 1000 as ts
+      FROM (
+        SELECT 
+          id,
+          ST_X(geom::geometry) as lon,
+          ST_Y(geom::geometry) as lat,
+          last_waste_type,
+          last_level,
+          ghost,
+          last_checkin_at
+        FROM points
+        WHERE geom IS NOT NULL
+    `;
+    
+    const params = [];
+    let paramIndex = 1;
+    
+    // Apply bbox filter if provided
+    if (bbox.length === 4) {
+      const [minLng, minLat, maxLng, maxLat] = bbox;
+      query += ` AND ST_X(geom::geometry) >= $${paramIndex++} 
+                 AND ST_X(geom::geometry) <= $${paramIndex++}
+                 AND ST_Y(geom::geometry) >= $${paramIndex++}
+                 AND ST_Y(geom::geometry) <= $${paramIndex++}`;
+      params.push(minLng, maxLng, minLat, maxLat);
+    }
+    
+    // Apply since filter if provided
+    if (since) {
+      query += ` AND COALESCE(last_checkin_at, NOW()) >= $${paramIndex++}`;
+      params.push(since);
+    }
+    
+    query += ` ORDER BY COALESCE(last_checkin_at, NOW()) DESC LIMIT 1500
+      ) p
+    `;
+    
+    const { rows } = await db.query(query, params);
+    
+    // Transform to match frontend format
+    const added = rows.map(row => ({
+      id: row.id,
+      lon: parseFloat(row.lon),
+      lat: parseFloat(row.lat),
+      type: row.ghost ? 'ghost' : row.type, // Set type to 'ghost' if ghost point
+      level: parseFloat(row.level) || 0,
+      ghost: row.ghost || false,
+      ts: parseInt(row.ts),
+    }));
+    
+    res.set("Cache-Control", "no-store").json({ 
+      ok: true, 
+      serverTime: Date.now(),
+      added,
+      updated: [],
+      removed: []
+    });
+  } catch (error) {
+    console.error("[API] Error fetching realtime points:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
 });
 
-app.get("/api/rt/vehicles", (req, res) => {
+app.get("/api/rt/vehicles", async (req, res) => {
+  try {
+    // Query latest vehicle tracking data for active vehicles
+    // If no tracking data, fallback to depot location
+    const query = `
+      SELECT DISTINCT ON (v.id)
+        v.id,
+        COALESCE(ST_X(vt.geom::geometry), ST_X(d.geom::geometry)) as lon,
+        COALESCE(ST_Y(vt.geom::geometry), ST_Y(d.geom::geometry)) as lat,
+        COALESCE(vt.speed_kmh, 0) as speed,
+        COALESCE(vt.heading, 0) as heading,
+        EXTRACT(EPOCH FROM COALESCE(vt.recorded_at, NOW())) * 1000 as ts
+      FROM vehicles v
+      LEFT JOIN depots d ON v.depot_id = d.id
+      LEFT JOIN LATERAL (
+        SELECT geom, speed_kmh, heading, recorded_at
+        FROM vehicle_tracking
+        WHERE vehicle_id = v.id
+          AND recorded_at >= NOW() - INTERVAL '1 hour'
+        ORDER BY recorded_at DESC
+        LIMIT 1
+      ) vt ON true
+      WHERE v.status IN ('available', 'in_use')
+        AND (vt.geom IS NOT NULL OR d.geom IS NOT NULL)
+      ORDER BY v.id, COALESCE(vt.recorded_at, '1970-01-01'::timestamptz) DESC NULLS LAST
+    `;
+    
+    const { rows } = await db.query(query);
+    
+    // Transform to match frontend format
+    const vehicles = rows.map(row => {
+      const lon = row.lon ? parseFloat(row.lon) : 106.7; // Default HCMC center
+      const lat = row.lat ? parseFloat(row.lat) : 10.78;
+      
+      return {
+        id: row.id,
+        lon: lon,
+        lat: lat,
+        speed: parseFloat(row.speed) || 0,
+        heading: parseFloat(row.heading) || 0,
+        ts: parseInt(row.ts) || Date.now(),
+      };
+    });
+    
   res
     .set("Cache-Control", "no-store")
-    .json({ ok: true, data: store.getVehicles(), serverTime: Date.now() });
+      .json({ ok: true, data: vehicles, serverTime: Date.now() });
+  } catch (error) {
+    console.error("[API] Error fetching realtime vehicles:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
 });
 
-// Socket.IO for fleet broadcast
-io.on("connection", (socket) => {
-  socket.emit("fleet:init", store.getVehicles());
+// Socket.IO for fleet broadcast - Query from database
+io.on("connection", async (socket) => {
+  try {
+    // Query vehicles on connection
+    const query = `
+      SELECT DISTINCT ON (v.id)
+        v.id,
+        COALESCE(ST_X(vt.geom::geometry), ST_X(d.geom::geometry)) as lon,
+        COALESCE(ST_Y(vt.geom::geometry), ST_Y(d.geom::geometry)) as lat,
+        COALESCE(vt.speed_kmh, 0) as speed,
+        COALESCE(vt.heading, 0) as heading,
+        EXTRACT(EPOCH FROM COALESCE(vt.recorded_at, NOW())) * 1000 as ts
+      FROM vehicles v
+      LEFT JOIN depots d ON v.depot_id = d.id
+      LEFT JOIN LATERAL (
+        SELECT geom, speed_kmh, heading, recorded_at
+        FROM vehicle_tracking
+        WHERE vehicle_id = v.id
+          AND recorded_at >= NOW() - INTERVAL '1 hour'
+        ORDER BY recorded_at DESC
+        LIMIT 1
+      ) vt ON true
+      WHERE v.status IN ('available', 'in_use')
+        AND (vt.geom IS NOT NULL OR d.geom IS NOT NULL)
+      ORDER BY v.id, COALESCE(vt.recorded_at, '1970-01-01'::timestamptz) DESC NULLS LAST
+    `;
+    
+    const { rows } = await db.query(query);
+    const vehicles = rows.map(row => ({
+      id: row.id,
+      lon: parseFloat(row.lon) || 106.7,
+      lat: parseFloat(row.lat) || 10.78,
+      speed: parseFloat(row.speed) || 0,
+      heading: parseFloat(row.heading) || 0,
+      ts: parseInt(row.ts) || Date.now(),
+    }));
+    
+    socket.emit("fleet:init", vehicles);
+  } catch (error) {
+    console.error("[Socket.IO] Error fetching vehicles on connection:", error);
+    socket.emit("fleet:init", []);
+  }
 });
-setInterval(() => {
-  store.tickVehicles();
-  io.emit("fleet", store.getVehicles());
+
+// Broadcast fleet updates every second
+setInterval(async () => {
+  try {
+    const query = `
+      SELECT DISTINCT ON (v.id)
+        v.id,
+        COALESCE(ST_X(vt.geom::geometry), ST_X(d.geom::geometry)) as lon,
+        COALESCE(ST_Y(vt.geom::geometry), ST_Y(d.geom::geometry)) as lat,
+        COALESCE(vt.speed_kmh, 0) as speed,
+        COALESCE(vt.heading, 0) as heading,
+        EXTRACT(EPOCH FROM COALESCE(vt.recorded_at, NOW())) * 1000 as ts
+      FROM vehicles v
+      LEFT JOIN depots d ON v.depot_id = d.id
+      LEFT JOIN LATERAL (
+        SELECT geom, speed_kmh, heading, recorded_at
+        FROM vehicle_tracking
+        WHERE vehicle_id = v.id
+          AND recorded_at >= NOW() - INTERVAL '1 hour'
+        ORDER BY recorded_at DESC
+        LIMIT 1
+      ) vt ON true
+      WHERE v.status IN ('available', 'in_use')
+        AND (vt.geom IS NOT NULL OR d.geom IS NOT NULL)
+      ORDER BY v.id, COALESCE(vt.recorded_at, '1970-01-01'::timestamptz) DESC NULLS LAST
+    `;
+    
+    const { rows } = await db.query(query);
+    const vehicles = rows.map(row => ({
+      id: row.id,
+      lon: parseFloat(row.lon) || 106.7,
+      lat: parseFloat(row.lat) || 10.78,
+      speed: parseFloat(row.speed) || 0,
+      heading: parseFloat(row.heading) || 0,
+      ts: parseInt(row.ts) || Date.now(),
+    }));
+    
+    io.emit("fleet", vehicles);
+  } catch (error) {
+    console.error("[Socket.IO] Error broadcasting fleet:", error);
+  }
 }, 1000);
 
 app.get("/api/analytics/summary", async (req, res) => {
@@ -2707,8 +2913,8 @@ app.post("/api/vrp/optimize", async (req, res) => {
         const sortedPoints = [...points].sort((a, b) => {
           const distA = getHaversineDistance(depot, a);
           const distB = getHaversineDistance(depot, b);
-          return distA - distB;
-        });
+      return distA - distB;
+    });
         const chunkSize = Math.ceil(sortedPoints.length / numClusters);
         for (let i = 0; i < sortedPoints.length; i += chunkSize) {
           clusteredPoints.push(sortedPoints.slice(i, i + chunkSize));
@@ -2744,26 +2950,26 @@ app.post("/api/vrp/optimize", async (req, res) => {
       
       while (remainingPoints.length > 0) {
         // Tạo route mới cho phần cụm này
-        const route = {
-          vehicleId: vehicle.id,
-          vehiclePlate: vehicle.plate,
-          stops: [],
+      const route = {
+        vehicleId: vehicle.id,
+        vehiclePlate: vehicle.plate,
+        stops: [],
           currentLoad: 0,
           currentLocation: depot,
           clusterIndex: clusterIdx
-        };
+      };
 
         // Thêm điểm vào route theo capacity (trong cùng cụm)
         const unassignedInCluster = remainingPoints.map(p => ({ ...p, assigned: false }));
-        let pointsAdded = 0;
-        
+      let pointsAdded = 0;
+      
         while (unassignedInCluster.some(p => !p.assigned)) {
           const availablePoints = unassignedInCluster.filter(p => !p.assigned);
           if (availablePoints.length === 0) break;
           
           // Tìm điểm gần nhất từ vị trí hiện tại (trong cụm)
-          let nearestPoint = null;
-          let minDistance = Infinity;
+        let nearestPoint = null;
+        let minDistance = Infinity;
           let nearestIdx = -1;
           
           for (let i = 0; i < unassignedInCluster.length; i++) {
@@ -2771,9 +2977,9 @@ app.post("/api/vrp/optimize", async (req, res) => {
             if (point.assigned) continue;
             
             const distance = getHaversineDistance(route.currentLocation, point);
-            if (distance < minDistance) {
-              minDistance = distance;
-              nearestPoint = point;
+          if (distance < minDistance) {
+            minDistance = distance;
+            nearestPoint = point;
               nearestIdx = i;
             }
           }
@@ -2781,17 +2987,17 @@ app.post("/api/vrp/optimize", async (req, res) => {
           if (!nearestPoint) break;
           
           // Kiểm tra capacity
-          const demand = parseFloat(nearestPoint.demand) || 0;
-          const currentLoad = parseFloat(route.currentLoad) || 0;
-          const totalLoad = currentLoad + demand;
+        const demand = parseFloat(nearestPoint.demand) || 0;
+        const currentLoad = parseFloat(route.currentLoad) || 0;
+        const totalLoad = currentLoad + demand;
           
           if (totalLoad <= vehicleCapacity || demand === 0 || !nearestPoint.demand) {
-            route.stops.push(nearestPoint);
+          route.stops.push(nearestPoint);
             route.currentLoad = totalLoad;
-            route.currentLocation = nearestPoint;
+          route.currentLocation = nearestPoint;
             unassignedInCluster[nearestIdx].assigned = true;
-            pointsAdded++;
-          } else {
+          pointsAdded++;
+        } else {
             // Không thể thêm điểm này, dừng route này
             break;
           }
@@ -2799,9 +3005,9 @@ app.post("/api/vrp/optimize", async (req, res) => {
 
         // Chỉ thêm route nếu có ít nhất 1 điểm
         if (route.stops.length > 0) {
-          routes.push(route);
-          routeIndex++;
-          
+      routes.push(route);
+      routeIndex++;
+      
           // Cập nhật remainingPoints (loại bỏ các điểm đã được gán)
           remainingPoints = unassignedInCluster.filter(p => !p.assigned).map(p => {
             const { assigned, ...point } = p;
@@ -3294,6 +3500,15 @@ app.post("/api/alerts/:alertId/dispatch", async (req, res) => {
   const { alertId } = req.params;
 
   try {
+    // FIX: Parse alertId to integer (alert_id is SERIAL/INTEGER in database)
+    const alertIdInt = parseInt(alertId, 10);
+    if (isNaN(alertIdInt)) {
+      return res.status(400).json({
+        ok: false,
+        error: "Invalid alert ID format. Expected integer."
+      });
+    }
+
     // 1. Get the alert details to find the missed point's location
     // Fixed: Use correct table name 'points' and extract lat/lon from geography type
     const alertResult = await db.query(
@@ -3304,19 +3519,45 @@ app.post("/api/alerts/:alertId/dispatch", async (req, res) => {
          ST_X(p.geom::geometry) as lon
        FROM alerts a
        JOIN points p ON a.point_id = p.id
-       WHERE a.alert_id = $1`,
-      [alertId]
+       WHERE a.alert_id = $1 AND p.geom IS NOT NULL`,
+      [alertIdInt]
     );
 
     if (alertResult.rows.length === 0) {
-      return res
-        .status(404)
-        .json({ ok: false, error: "Alert or associated point not found" });
+      return res.status(404).json({
+        ok: false,
+        error: "Alert not found, point not found, or point has no location data"
+      });
     }
     const alertData = alertResult.rows[0];
 
-    // 2. Get all currently active vehicles from the in-memory store
-    const activeVehicles = store.getVehicles();
+    // 2. Get all currently active vehicles from database
+    const vehiclesQuery = `
+      SELECT DISTINCT ON (v.id)
+        v.id,
+        COALESCE(ST_X(vt.geom::geometry), ST_X(d.geom::geometry)) as lon,
+        COALESCE(ST_Y(vt.geom::geometry), ST_Y(d.geom::geometry)) as lat
+      FROM vehicles v
+      LEFT JOIN depots d ON v.depot_id = d.id
+      LEFT JOIN LATERAL (
+        SELECT geom, recorded_at
+        FROM vehicle_tracking
+        WHERE vehicle_id = v.id
+          AND recorded_at >= NOW() - INTERVAL '1 hour'
+        ORDER BY recorded_at DESC
+        LIMIT 1
+      ) vt ON true
+      WHERE v.status IN ('available', 'in_use')
+        AND (vt.geom IS NOT NULL OR d.geom IS NOT NULL)
+      ORDER BY v.id, COALESCE(vt.recorded_at, '1970-01-01'::timestamptz) DESC NULLS LAST
+    `;
+    
+    const vehiclesResult = await db.query(vehiclesQuery);
+    const activeVehicles = vehiclesResult.rows.map(row => ({
+      id: row.id,
+      lat: parseFloat(row.lat) || 10.78,
+      lon: parseFloat(row.lon) || 106.7,
+    }));
 
     if (activeVehicles.length === 0) {
       return res.json({
@@ -3342,10 +3583,16 @@ app.post("/api/alerts/:alertId/dispatch", async (req, res) => {
 
     res.json({ ok: true, data: suggestedVehicles });
   } catch (err) {
-    console.error(`Error processing dispatch for alert ${alertId}:`, err);
-    res
-      .status(500)
-      .json({ ok: false, error: "Failed to process dispatch request" });
+    console.error(`[Dispatch] Error processing dispatch for alert ${alertId}:`, err);
+    console.error(`[Dispatch] Error details:`, {
+      message: err.message,
+      stack: err.stack,
+      alertId: alertId
+    });
+    res.status(500).json({
+      ok: false,
+      error: err.message || "Failed to process dispatch request"
+    });
   }
 });
 
@@ -3575,24 +3822,79 @@ app.get("/api/analytics/timeseries", async (req, res) => {
   }
 });
 
+// Simple Linear Regression helper for time series forecasting
+function simpleLinearRegression(x, y) {
+  const n = x.length;
+  if (n < 2) return null;
+  
+  const sumX = x.reduce((a, b) => a + b, 0);
+  const sumY = y.reduce((a, b) => a + b, 0);
+  const sumXY = x.reduce((sum, xi, i) => sum + xi * y[i], 0);
+  const sumXX = x.reduce((sum, xi) => sum + xi * xi, 0);
+  
+  const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+  const intercept = (sumY - slope * sumX) / n;
+  
+  return { slope, intercept, predict: (xValue) => slope * xValue + intercept };
+}
+
 app.get("/api/analytics/predict", async (req, res) => {
   try {
   const days = Number(req.query.days || 7);
+    const point_id = req.query.point_id || null;
+    const waste_type = req.query.waste_type || null;
   const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Get actual data for past N days
-    const actualData = await db.query(
-      `SELECT 
+    // Get historical data (60 days for better trend analysis)
+    let query = `
+      SELECT 
         DATE(completed_at) as day,
         COALESCE(SUM(actual_weight), 0) / 1000.0 as total_tons
       FROM schedules
-      WHERE completed_at >= NOW() - INTERVAL '1 day' * $1
+      WHERE completed_at >= NOW() - INTERVAL '60 days'
         AND status = 'completed'
-      GROUP BY day
-      ORDER BY day ASC`,
-      [days]
-    );
+    `;
+    const params = [];
+    let paramIndex = 1;
+    
+    if (point_id) {
+      query += ` AND point_id = $${paramIndex++}`;
+      params.push(point_id);
+    }
+    
+    if (waste_type) {
+      query += ` AND waste_type = $${paramIndex++}`;
+      params.push(waste_type);
+    }
+    
+    query += ` GROUP BY day ORDER BY day ASC`;
+    
+    const historyData = await db.query(query, params);
+
+    // Get actual data for past N days (for display)
+    let actualQuery = `
+      SELECT 
+        DATE(completed_at) as day,
+        COALESCE(SUM(actual_weight), 0) / 1000.0 as total_tons
+      FROM schedules
+      WHERE completed_at >= NOW() - INTERVAL '1 day' * $${paramIndex++}
+        AND status = 'completed'
+    `;
+    
+    if (point_id) {
+      actualQuery += ` AND point_id = $${paramIndex++}`;
+      params.push(point_id);
+    }
+    
+    if (waste_type) {
+      actualQuery += ` AND waste_type = $${paramIndex++}`;
+      params.push(waste_type);
+    }
+    
+    actualQuery += ` GROUP BY day ORDER BY day ASC`;
+    
+    const actualData = await db.query(actualQuery, [days, ...params.slice(params.length - (point_id ? 1 : 0) - (waste_type ? 1 : 0))]);
 
     // Create actual array with all days
     const actual = [];
@@ -3611,23 +3913,188 @@ app.get("/api/analytics/predict", async (req, res) => {
       });
     }
 
-    // Simple forecast: calculate average and add slight growth
-    const avgWeight =
-      actual.reduce((sum, d) => sum + parseFloat(d.v), 0) / actual.length || 50;
-    const forecast = [];
-    for (let i = 0; i < days; i++) {
-      const dayDate = new Date(today.getTime() + i * 86400000);
-      const dateStr = dayDate.toISOString().slice(0, 10);
-
-      // Add 2% growth trend
-      const forecastValue = avgWeight * (1 + (i * 0.02) / days);
-      forecast.push({
-        d: dateStr,
-        v: parseFloat(forecastValue.toFixed(1)),
+    // Use ARIMA AI model if we have enough historical data
+    let forecast = [];
+    let modelInfo = { model: "simple_average", reason: "insufficient_data" };
+    
+    if (historyData.rows.length >= 14) {
+      // Prepare time series data for ARIMA
+      const Y = historyData.rows.map(row => parseFloat(row.total_tons) || 0);
+      
+      try {
+        // Initialize ARIMA model with auto parameter selection
+        const arima = new ARIMA({
+          auto: true,        // Auto-select best (p,d,q) parameters
+          method: 0,         // Maximum likelihood estimation
+          optimizer: 6,      // Use Nelder-Mead optimizer
+          verbose: false    // Disable verbose output
+        });
+        
+        // Train ARIMA model on historical data
+        arima.train(Y);
+        
+        // Predict future values
+        const [predictions, errors] = arima.predict(days);
+        
+        if (predictions && predictions.length > 0 && !predictions.some(v => isNaN(v) || !isFinite(v))) {
+          // Generate forecast using ARIMA predictions
+          for (let i = 0; i < days; i++) {
+            const dayDate = new Date(today.getTime() + i * 86400000);
+            const dateStr = dayDate.toISOString().slice(0, 10);
+            
+            // Get predicted value (ensure it's valid)
+            let predictedValue = predictions[i] || predictions[predictions.length - 1];
+            
+            // Ensure non-negative values and reasonable range
+            const forecastValue = Math.max(0, Math.min(predictedValue, 1000)); // Cap at 1000 tons
+            
+            forecast.push({
+              d: dateStr,
+              v: parseFloat(forecastValue.toFixed(1)),
+            });
+          }
+          
+          // Calculate model metrics
+          const avgError = errors && errors.length > 0 
+            ? errors.reduce((sum, e) => sum + Math.abs(e), 0) / errors.length 
+            : null;
+          
+          modelInfo = {
+            model: "arima",
+            training_days: historyData.rows.length,
+            forecast_days: days,
+            avg_error: avgError ? parseFloat(avgError.toFixed(4)) : null,
+            parameters: arima.params || "auto-selected"
+          };
+        } else {
+          throw new Error("ARIMA predictions invalid");
+        }
+      } catch (arimaError) {
+        console.warn("[Analytics] ARIMA failed, falling back to linear regression:", arimaError.message);
+        
+        // Fallback to Linear Regression if ARIMA fails
+        const startDate = new Date(historyData.rows[0].day);
+        startDate.setHours(0, 0, 0, 0);
+        
+        const X = historyData.rows.map((row) => {
+          const rowDate = new Date(row.day);
+          rowDate.setHours(0, 0, 0, 0);
+          return Math.floor((rowDate - startDate) / (1000 * 60 * 60 * 24));
+        });
+        
+        const regression = simpleLinearRegression(X, Y);
+        
+        if (regression && !isNaN(regression.slope) && !isNaN(regression.intercept)) {
+          const lastX = X[X.length - 1];
+          
+          for (let i = 0; i < days; i++) {
+            const dayDate = new Date(today.getTime() + i * 86400000);
+            const dateStr = dayDate.toISOString().slice(0, 10);
+            const futureX = lastX + 1 + i;
+            const predictedValue = regression.predict(futureX);
+            const forecastValue = Math.max(0, Math.min(predictedValue, 1000));
+            
+            forecast.push({
+              d: dateStr,
+              v: parseFloat(forecastValue.toFixed(1)),
+            });
+          }
+          
+          modelInfo = {
+            model: "linear_regression",
+            reason: "arima_fallback",
+            training_days: historyData.rows.length,
+            slope: parseFloat(regression.slope.toFixed(4)),
+            intercept: parseFloat(regression.intercept.toFixed(2))
+          };
+        } else {
+          // Final fallback to simple average
+          const avgWeight = Y.reduce((sum, val) => sum + val, 0) / Y.length || 50;
+          const lastValue = Y[Y.length - 1] || avgWeight;
+          
+          for (let i = 0; i < days; i++) {
+            const dayDate = new Date(today.getTime() + i * 86400000);
+            const dateStr = dayDate.toISOString().slice(0, 10);
+            const forecastValue = lastValue * (1 + (i * 0.01));
+            forecast.push({
+              d: dateStr,
+              v: parseFloat(forecastValue.toFixed(1)),
+            });
+          }
+          modelInfo = { model: "simple_average", reason: "arima_and_regression_failed" };
+        }
+      }
+    } else if (historyData.rows.length >= 7) {
+      // Not enough data for ARIMA (need 14+ days), use Linear Regression
+      const startDate = new Date(historyData.rows[0].day);
+      startDate.setHours(0, 0, 0, 0);
+      
+      const X = historyData.rows.map((row) => {
+        const rowDate = new Date(row.day);
+        rowDate.setHours(0, 0, 0, 0);
+        return Math.floor((rowDate - startDate) / (1000 * 60 * 60 * 24));
       });
+      const Y = historyData.rows.map(row => parseFloat(row.total_tons) || 0);
+      
+      const regression = simpleLinearRegression(X, Y);
+      
+      if (regression && !isNaN(regression.slope) && !isNaN(regression.intercept)) {
+        const lastX = X[X.length - 1];
+        
+        for (let i = 0; i < days; i++) {
+          const dayDate = new Date(today.getTime() + i * 86400000);
+          const dateStr = dayDate.toISOString().slice(0, 10);
+          const futureX = lastX + 1 + i;
+          const predictedValue = regression.predict(futureX);
+          const forecastValue = Math.max(0, Math.min(predictedValue, 1000));
+          
+          forecast.push({
+            d: dateStr,
+            v: parseFloat(forecastValue.toFixed(1)),
+          });
+        }
+        
+        modelInfo = {
+          model: "linear_regression",
+          reason: "insufficient_data_for_arima",
+          training_days: historyData.rows.length,
+          slope: parseFloat(regression.slope.toFixed(4)),
+          intercept: parseFloat(regression.intercept.toFixed(2))
+        };
+      } else {
+        // Fallback to simple average
+        const avgWeight = Y.reduce((sum, val) => sum + val, 0) / Y.length || 50;
+        for (let i = 0; i < days; i++) {
+          const dayDate = new Date(today.getTime() + i * 86400000);
+          const dateStr = dayDate.toISOString().slice(0, 10);
+          const forecastValue = avgWeight * (1 + (i * 0.02) / days);
+          forecast.push({
+            d: dateStr,
+            v: parseFloat(forecastValue.toFixed(1)),
+          });
+        }
+        modelInfo = { model: "simple_average", reason: "regression_failed", data_points: historyData.rows.length };
+      }
+    } else {
+      // Not enough data, use simple average with growth
+      const avgWeight = actual.reduce((sum, d) => sum + parseFloat(d.v), 0) / actual.length || 50;
+      for (let i = 0; i < days; i++) {
+        const dayDate = new Date(today.getTime() + i * 86400000);
+        const dateStr = dayDate.toISOString().slice(0, 10);
+        const forecastValue = avgWeight * (1 + (i * 0.02) / days);
+        forecast.push({
+          d: dateStr,
+          v: parseFloat(forecastValue.toFixed(1)),
+        });
+      }
+      modelInfo = { model: "simple_average", reason: "insufficient_data", data_points: historyData.rows.length };
     }
 
-  res.json({ ok: true, data: { actual, forecast } });
+    res.json({ 
+      ok: true, 
+      data: { actual, forecast },
+      model_info: modelInfo
+    });
   } catch (error) {
     console.error("[Analytics] Predict error:", error);
     res.status(500).json({ ok: false, error: error.message });
@@ -3826,13 +4293,88 @@ const MISSED_POINT_DISTANCE_THRESHOLD = 500; // meters
 
 cron.schedule("*/15 * * * * *", async () => {
   console.log("🛰️  Running Missed Point Detection...");
-  const activeRoutes = store.getActiveRoutes();
+  
+  try {
+    // Get active routes from database and in-memory store
+    const activeRoutesFromStore = store.getActiveRoutes();
+    
+    // Also get active routes from database
+    const routesResult = await db.query(
+      `SELECT r.id as route_id, r.vehicle_id, r.status
+       FROM routes r
+       WHERE r.status IN ('in_progress', 'assigned')
+       ORDER BY r.start_at DESC`
+    );
+    
+    // Combine routes from store and database
+    const allActiveRoutes = new Map();
+    activeRoutesFromStore.forEach(route => {
+      allActiveRoutes.set(route.route_id, route);
+    });
+    routesResult.rows.forEach(row => {
+      if (!allActiveRoutes.has(row.route_id)) {
+        allActiveRoutes.set(row.route_id, {
+          route_id: row.route_id,
+          vehicle_id: row.vehicle_id,
+          status: row.status,
+          points: new Map() // Will be populated from route_stops
+        });
+      }
+    });
 
-  for (const route of activeRoutes) {
-    if (route.status !== "inprogress") continue;
+    for (const route of allActiveRoutes.values()) {
+      if (route.status !== "inprogress" && route.status !== "in_progress") continue;
 
-    const vehicle = store.getVehicle(route.vehicle_id);
-    if (!vehicle) continue;
+      // Get vehicle location from database
+      const vehicleResult = await db.query(
+        `SELECT DISTINCT ON (v.id)
+          v.id,
+          COALESCE(ST_Y(vt.geom::geometry), ST_Y(d.geom::geometry)) as lat,
+          COALESCE(ST_X(vt.geom::geometry), ST_X(d.geom::geometry)) as lon
+        FROM vehicles v
+        LEFT JOIN depots d ON v.depot_id = d.id
+        LEFT JOIN LATERAL (
+          SELECT geom, recorded_at
+          FROM vehicle_tracking
+          WHERE vehicle_id = v.id
+            AND recorded_at >= NOW() - INTERVAL '1 hour'
+          ORDER BY recorded_at DESC
+          LIMIT 1
+        ) vt ON true
+        WHERE v.id = $1
+        ORDER BY v.id, COALESCE(vt.recorded_at, '1970-01-01'::timestamptz) DESC NULLS LAST`,
+        [route.vehicle_id]
+      );
+
+      if (vehicleResult.rows.length === 0) continue;
+      const vehicle = {
+        lat: parseFloat(vehicleResult.rows[0].lat) || 10.78,
+        lon: parseFloat(vehicleResult.rows[0].lon) || 106.7,
+      };
+
+      // Get route points from database if not in store
+      if (!route.points || route.points.size === 0) {
+        const stopsResult = await db.query(
+          `SELECT rs.point_id, rs.status, 
+                  ST_Y(p.geom::geometry) as lat,
+                  ST_X(p.geom::geometry) as lon
+           FROM route_stops rs
+           JOIN points p ON rs.point_id = p.id
+           WHERE rs.route_id = $1 AND rs.status != 'completed'
+           ORDER BY rs.seq`,
+          [route.route_id]
+        );
+        
+        route.points = new Map();
+        stopsResult.rows.forEach(row => {
+          route.points.set(row.point_id, {
+            point_id: row.point_id,
+            lat: parseFloat(row.lat),
+            lon: parseFloat(row.lon),
+            checked: row.status === 'completed',
+          });
+        });
+      }
 
     for (const point of route.points.values()) {
       if (point.checked) continue;
@@ -3843,7 +4385,6 @@ cron.schedule("*/15 * * * * *", async () => {
       );
 
       // Basic check: if vehicle is far past the point, it's likely missed.
-      // A more advanced implementation would check if the point is 'behind' the vehicle's direction of travel.
       if (distance > MISSED_POINT_DISTANCE_THRESHOLD) {
         try {
           // Check if an open alert for this point on this route already exists
@@ -3857,7 +4398,6 @@ cron.schedule("*/15 * * * * *", async () => {
               `🚨 MISSED POINT DETECTED! Route: ${route.route_id}, Point: ${point.point_id}`
             );
             // Create a new alert in the database
-            // Ensure FK safety: if route_id is not a UUID, store NULL; vehicle_id may not exist in DB (mock IDs), also store NULL
             const routeIdForInsert =
               typeof route.route_id === "string" &&
               /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
@@ -3865,16 +4405,15 @@ cron.schedule("*/15 * * * * *", async () => {
               )
                 ? route.route_id
                 : null;
-            const vehicleIdForInsert = null;
             await db.query(
               `INSERT INTO alerts (alert_type, point_id, vehicle_id, route_id, severity, status, details)
                VALUES ($1, $2, $3, $4, $5, $6, $7)`,
               [
                 "missed_point",
                 point.point_id,
-                vehicleIdForInsert,
+                  route.vehicle_id,
                 routeIdForInsert,
-                "critical", // Missed points are considered critical
+                  "critical",
                 "open",
                 JSON.stringify({
                   detected_at: new Date().toISOString(),
@@ -3888,6 +4427,9 @@ cron.schedule("*/15 * * * * *", async () => {
         }
       }
     }
+    }
+  } catch (err) {
+    console.error("Error in missed point detection cron:", err);
   }
 });
 
@@ -3895,26 +4437,36 @@ cron.schedule("*/15 * * * * *", async () => {
 // Start a mock route so the cron can detect missed points
 app.post("/api/test/start-route", async (req, res) => {
   try {
-    const { route_id = 1, vehicle_id = "V01" } = req.body || {};
-    // Take first 5 points from the in-memory store
-    const points = Array.from(store.points.values())
-      .slice(0, 5)
-      .map((p) => ({
-        point_id: p.id,
-        lat: p.lat,
-        lon: p.lon,
-      }));
+    const { route_id, vehicle_id = "V01" } = req.body || {};
+    const testRouteId = route_id || require("uuid").v4();
+    
+    // Get first 5 points from database
+    const pointsResult = await db.query(
+      `SELECT id as point_id, 
+              ST_Y(geom::geometry) as lat,
+              ST_X(geom::geometry) as lon
+       FROM points
+       WHERE geom IS NOT NULL AND ghost = false
+       ORDER BY last_checkin_at DESC NULLS LAST, created_at DESC
+       LIMIT 5`
+    );
 
-    if (points.length === 0) {
+    if (pointsResult.rows.length === 0) {
       return res
         .status(500)
-        .json({ ok: false, error: "No points available in store" });
+        .json({ ok: false, error: "No points available in database" });
     }
 
-    store.startRoute(route_id, vehicle_id, points);
+    const points = pointsResult.rows.map(row => ({
+      point_id: row.point_id,
+      lat: parseFloat(row.lat),
+      lon: parseFloat(row.lon),
+    }));
+
+    store.startRoute(testRouteId, vehicle_id, points);
     return res.json({
       ok: true,
-      message: `Test route ${route_id} started for vehicle ${vehicle_id}`,
+      message: `Test route ${testRouteId} started for vehicle ${vehicle_id}`,
       points: points.map((p) => p.point_id),
     });
   } catch (err) {

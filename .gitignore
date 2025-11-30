@@ -235,3 +235,23 @@ build/
 # Các thư mục nền tảng được tạo ra bởi Flutter
 android/app/build/
 ios/.symlinks/
+
+# --- EcoCheck Specific ---
+# Test images và uploads
+backend/public/uploads/*.jpg
+backend/public/uploads/*.png
+backend/public/uploads/*.jpeg
+
+# Backup files
+*.backup
+*.bak
+*.tmp
+
+# Log files
+*.log
+flutter_*.log
+
+# Temporary files
+*.swp
+*.swo
+*~

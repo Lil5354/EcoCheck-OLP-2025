@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "arima": "^0.2.5"
+  }
+}

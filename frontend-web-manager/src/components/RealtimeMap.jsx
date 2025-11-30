@@ -1,4 +1,11 @@
-/* Realtime Map using MapLibre GL */
+/*
+ * MIT License
+ * Copyright (c) 2025 Lil5354
+ *
+ * EcoCheck Frontend Web Manager
+ * Realtime Map Component using MapLibre GL
+ */
+
 import React, { useEffect, useRef } from 'react'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
@@ -19,11 +26,19 @@ export default function RealtimeMap() {
 
     // Classify check-in point into color-coded status
     const classify = (p) => {
-      const level = p.level
+      const level = typeof p.level === 'number' ? p.level : parseFloat(p.level) || 0
+      
+      // Ghost points (không rác) - Grey
+      if (p.ghost === true || p.type === 'ghost' || level === 0) return 'grey'
+      
+      // Bulky waste or incidents - Red
       if (p.type === 'bulky' || p.incident) return 'red'
-      if (level === 'high' || (typeof level === 'number' && level >= 0.8)) return 'yellow'
-      if (p.type === 'ghost' || level === 'none' || level === 0) return 'grey'
-      return 'green' // low/medium
+      
+      // High waste level (>= 0.7) - Orange/Yellow
+      if (level >= 0.7) return 'orange'
+      
+      // Low/Medium waste - Green
+      return 'green'
     }
 
     const loadPoints = async () => {
@@ -32,13 +47,14 @@ export default function RealtimeMap() {
         return
       }
       try {
-        const res = await fetch('/api/rt/checkins?n=60')
+        // Use /api/rt/points instead of /api/rt/checkins for better data
+        const res = await fetch('/api/rt/points')
         if (!res.ok) {
-          console.warn('[RealtimeMap] Failed to load checkins:', res.status)
+          console.warn('[RealtimeMap] Failed to load points:', res.status)
           return
         }
         const json = await res.json()
-        const pts = json.data || []
+        const pts = json.added || json.data || []
         console.log('[RealtimeMap] Loaded', pts.length, 'points')
         
         // cleanup old point markers

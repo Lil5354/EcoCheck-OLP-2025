@@ -386,6 +386,128 @@ docker compose up -d --build
 - **Database Access**: `docker compose exec postgres psql -U ecocheck_user -d ecocheck`
 - **Service Status**: `docker compose ps`
 
+## 📚 Documentation
+
+- [CHANGELOG.md](CHANGELOG.md) - Lịch sử thay đổi của dự án
+- [CONTRIBUTING.md](CONTRIBUTING.md) - Hướng dẫn đóng góp cho dự án
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - Tài liệu kiến trúc hệ thống
+- [docs/postman/](docs/postman/) - Postman collection cho API testing
+
+## 🚀 Future Development & Roadmap
+
+### AI/ML Capabilities
+
+Dự án hiện tại đã tích hợp **Predictive Analytics** với Linear Regression cho dự đoán nhu cầu thu gom. Để nâng cao độ chính xác và tính năng, có thể mở rộng với các giải pháp sau:
+
+#### Option 1: Python Microservice với Prophet (Khuyến nghị cho Production)
+
+**Mô tả:**
+- Tạo Python microservice riêng (FastAPI) với Facebook Prophet cho time series forecasting
+- Độ chính xác cao hơn (90-95% vs 60-70% của simple regression)
+- Xử lý seasonality (tuần, tháng, năm), trends, và changepoints tự động
+- Cung cấp confidence intervals (upper/lower bounds)
+
+**Kiến trúc đề xuất:**
+```
+backend/
+  ├── src/index.js (Node.js - main API)
+  └── ai-service/ (Python microservice)
+      ├── app.py (FastAPI)
+      ├── models/
+      │   ├── prophet_model.py
+      │   └── demand_predictor.py
+      ├── requirements.txt
+      └── Dockerfile
+```
+
+**Tính năng:**
+- Multi-variate forecasting (weather, events, holidays)
+- Point-level prediction (dự đoán theo từng điểm thu gom)
+- Anomaly detection tích hợp
+- Model retraining tự động
+- Model versioning và A/B testing
+
+**Triển khai:**
+1. Tạo Python service với FastAPI
+2. Sử dụng Prophet library cho time series forecasting
+3. Kết nối với PostgreSQL để lấy dữ liệu lịch sử
+4. Node.js backend gọi Python service qua HTTP
+5. Fallback về simple regression nếu Python service không khả dụng
+
+**Lợi ích:**
+- ✅ Độ chính xác cao (MAPE 10-20% vs 30-50%)
+- ✅ Xử lý seasonality và trends tự động
+- ✅ Confidence intervals cho uncertainty
+- ✅ Dễ mở rộng với LSTM, ARIMA, XGBoost
+- ✅ Tách biệt logic ML khỏi API chính
+- ✅ Có thể scale độc lập
+
+**Nhược điểm:**
+- ⚠️ Cần setup Python environment
+- ⚠️ Tăng độ phức tạp (2 services)
+- ⚠️ Latency cao hơn (2-5s training time)
+- ⚠️ Cần thêm server/container
+
+**Khi nào nên triển khai:**
+- Khi có đủ dữ liệu lịch sử (60+ ngày)
+- Khi cần độ chính xác cao cho production
+- Khi cần mở rộng với các tính năng AI khác
+- Khi có team biết Python hoặc sẵn sàng học
+
+**Tài liệu tham khảo:**
+- [Prophet Documentation](https://facebook.github.io/prophet/)
+- [FastAPI Documentation](https://fastapi.tiangolo.com/)
+- Time Series Forecasting best practices
+
+#### Các tính năng AI khác có thể mở rộng:
+
+1. **Computer Vision**: Tự động phân loại rác từ ảnh check-in
+   - Sử dụng MobileNet/EfficientNet
+   - Tự động nhận diện `waste_type` và `filling_level`
+   - Phát hiện ảnh không hợp lệ
+
+2. **Anomaly Detection**: Phát hiện bất thường trong hoạt động
+   - Isolation Forest hoặc Autoencoder
+   - Phát hiện xe đi lệch route, dừng quá lâu
+   - Phát hiện check-in bất thường
+
+3. **Smart Scheduling**: Đề xuất lịch thu gom tối ưu
+   - Recommendation System
+   - Dựa trên lịch sử, pattern, thời tiết
+
+4. **Route Anomaly Detection**: Phát hiện xe đi lệch route real-time
+   - Geospatial Anomaly Detection
+   - So sánh vị trí thực tế với route đã lên kế hoạch
+
+5. **Fraud Detection**: Phát hiện check-in gian lận
+   - Image similarity detection
+   - Pattern analysis
+
+6. **NLP**: Xử lý feedback tự động
+   - Sentiment Analysis
+   - Text Classification
+
+### Performance Optimization
+
+- [ ] Redis caching cho các queries thường dùng
+- [ ] Database query optimization với indexes
+- [ ] CDN cho static assets
+- [ ] Load balancing cho high traffic
+
+### Mobile App Enhancements
+
+- [ ] Offline mode với local database
+- [ ] Push notifications
+- [ ] Background location tracking
+- [ ] Image compression trước khi upload
+
+### Integration
+
+- [ ] Weather API integration cho route optimization
+- [ ] Payment gateway integration
+- [ ] SMS/Email notification service
+- [ ] Third-party mapping services (Google Maps, Mapbox)
+
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.

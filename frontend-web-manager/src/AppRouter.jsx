@@ -1,3 +1,11 @@
+/*
+ * MIT License
+ * Copyright (c) 2025 Lil5354
+ *
+ * EcoCheck Frontend Web Manager
+ * Application router configuration
+ */
+
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import App from "./App.jsx";

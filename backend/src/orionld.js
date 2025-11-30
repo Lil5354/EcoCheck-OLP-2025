@@ -1,6 +1,9 @@
 /*
  * MIT License
+ * Copyright (c) 2025 Lil5354
+ *
  * EcoCheck Backend - Orion-LD client utilities
+ * FIWARE Orion-LD Context Broker integration
  */
 
 const axios = require('axios');
