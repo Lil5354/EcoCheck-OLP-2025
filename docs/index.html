@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EcoCheck - Dynamic Waste Collection System</title>
+    <meta name="description" content="EcoCheck là một nền tảng quản lý thu gom rác thải động dựa trên FIWARE, được thiết kế cho cuộc thi OLP 2025">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        header {
+            text-align: center;
+            color: white;
+            padding: 3rem 0;
+        }
+        
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .subtitle {
+            font-size: 1.5rem;
+            margin-bottom: 2rem;
+            opacity: 0.9;
+        }
+        
+        .badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.2);
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            margin: 0.5rem;
+            font-size: 0.9rem;
+        }
+        
+        .content {
+            background: white;
+            border-radius: 20px;
+            padding: 3rem;
+            margin-top: 2rem;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin: 2rem 0;
+        }
+        
+        .feature-card {
+            background: #f8f9fa;
+            padding: 2rem;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .feature-card h3 {
+            color: #667eea;
+            margin-bottom: 1rem;
+        }
+        
+        .tech-stack {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            margin: 2rem 0;
+        }
+        
+        .tech-item {
+            background: #e9ecef;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            font-size: 0.9rem;
+        }
+        
+        .links {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            margin: 2rem 0;
+        }
+        
+        .btn {
+            display: inline-block;
+            padding: 1rem 2rem;
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            transition: background 0.3s;
+        }
+        
+        .btn:hover {
+            background: #5568d3;
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+        }
+        
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+        
+        footer {
+            text-align: center;
+            color: white;
+            padding: 2rem 0;
+            margin-top: 2rem;
+        }
+        
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2rem;
+            }
+            
+            .subtitle {
+                font-size: 1.2rem;
+            }
+            
+            .content {
+                padding: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🌱 EcoCheck</h1>
+            <p class="subtitle">Dynamic Waste Collection System</p>
+            <div>
+                <span class="badge">FIWARE-based</span>
+                <span class="badge">OLP 2025</span>
+                <span class="badge">Open Source</span>
+                <span class="badge">MIT License</span>
+            </div>
+        </header>
+        
+        <div class="content">
+            <section>
+                <h2>📖 Giới thiệu</h2>
+                <p>
+                    EcoCheck là một nền tảng quản lý thu gom rác thải động toàn diện, được xây dựng dựa trên 
+                    <strong>FIWARE platform</strong> và sử dụng <strong>NGSI-LD standard</strong>. 
+                    Hệ thống được thiết kế cho cuộc thi <strong>OLP 2025</strong> với mục tiêu tối ưu hóa 
+                    quy trình thu gom rác thải thông qua công nghệ hiện đại.
+                </p>
+            </section>
+            
+            <section>
+                <h2>✨ Tính năng chính</h2>
+                <div class="features">
+                    <div class="feature-card">
+                        <h3>🖥️ Backend API</h3>
+                        <ul>
+                            <li>RESTful API với Node.js/Express</li>
+                            <li>Tích hợp FIWARE Orion-LD</li>
+                            <li>Real-time communication (Socket.IO)</li>
+                            <li>Route optimization algorithm</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="feature-card">
+                        <h3>🌐 Web Manager</h3>
+                        <ul>
+                            <li>Dashboard với real-time map</li>
+                            <li>Quản lý fleet & personnel</li>
+                            <li>Route optimization interface</li>
+                            <li>Analytics & reporting</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="feature-card">
+                        <h3>📱 Mobile Apps</h3>
+                        <ul>
+                            <li>EcoCheck_Worker: App cho nhân viên</li>
+                            <li>EcoCheck_User: App cho người dân</li>
+                            <li>Real-time tracking</li>
+                            <li>Gamification system</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="feature-card">
+                        <h3>🗄️ Database</h3>
+                        <ul>
+                            <li>PostgreSQL với PostGIS</li>
+                            <li>TimescaleDB cho time-series</li>
+                            <li>27+ tables</li>
+                            <li>Spatial indexing</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+            
+            <section>
+                <h2>🛠️ Technology Stack</h2>
+                <div class="tech-stack">
+                    <span class="tech-item">Node.js</span>
+                    <span class="tech-item">Express</span>
+                    <span class="tech-item">React</span>
+                    <span class="tech-item">Flutter</span>
+                    <span class="tech-item">PostgreSQL</span>
+                    <span class="tech-item">PostGIS</span>
+                    <span class="tech-item">TimescaleDB</span>
+                    <span class="tech-item">FIWARE Orion-LD</span>
+                    <span class="tech-item">Docker</span>
+                    <span class="tech-item">Socket.IO</span>
+                </div>
+            </section>
+            
+            <section>
+                <h2>🚀 Quick Start</h2>
+                <pre style="background: #f8f9fa; padding: 1rem; border-radius: 5px; overflow-x: auto;"><code># Windows
+.\setup.ps1
+
+# Linux/Mac
+chmod +x setup.sh
+./setup.sh</code></pre>
+            </section>
+            
+            <section>
+                <h2>🔗 Links</h2>
+                <div class="links">
+                    <a href="https://github.com/Lil5354/EcoCheck-OLP-2025" class="btn" target="_blank">
+                        📦 GitHub Repository
+                    </a>
+                    <a href="https://github.com/Lil5354/EcoCheck-OLP-2025/blob/main/README.md" class="btn btn-secondary" target="_blank">
+                        📖 README
+                    </a>
+                    <a href="https://github.com/Lil5354/EcoCheck-OLP-2025/blob/main/CHANGELOG.md" class="btn btn-secondary" target="_blank">
+                        📝 Changelog
+                    </a>
+                    <a href="https://github.com/Lil5354/EcoCheck-OLP-2025/blob/main/docs/ARCHITECTURE.md" class="btn btn-secondary" target="_blank">
+                        🏗️ Architecture
+                    </a>
+                </div>
+            </section>
+            
+            <section>
+                <h2>📝 License</h2>
+                <p>
+                    Dự án này được cấp phép dưới <strong>MIT License</strong>. 
+                    Xem file <a href="https://github.com/Lil5354/EcoCheck-OLP-2025/blob/main/LICENSE" target="_blank">LICENSE</a> để biết thêm chi tiết.
+                </p>
+            </section>
+        </div>
+        
+        <footer>
+            <p>© 2025 EcoCheck - Dynamic Waste Collection System</p>
+            <p>Built with ❤️ for OLP 2025</p>
+        </footer>
+    </div>
+</body>
+</html>
+
