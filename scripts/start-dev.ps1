@@ -29,17 +29,20 @@ if ($dbCheck.TcpTestSucceeded) {
 }
 Write-Host ""
 
+# Tính đường dẫn root project
+$projectRoot = Split-Path -Parent $PSScriptRoot
+
 # Kiểm tra dependencies
 Write-Host "[3/4] Kiểm tra dependencies..." -ForegroundColor Yellow
-if (-not (Test-Path "backend/node_modules")) {
+if (-not (Test-Path "$projectRoot\backend\node_modules")) {
     Write-Host "📦 Cài đặt backend dependencies..." -ForegroundColor Cyan
-    Push-Location backend
+    Push-Location "$projectRoot\backend"
     npm install
     Pop-Location
 }
-if (-not (Test-Path "frontend-web-manager/node_modules")) {
+if (-not (Test-Path "$projectRoot\frontend-web-manager\node_modules")) {
     Write-Host "📦 Cài đặt frontend dependencies..." -ForegroundColor Cyan
-    Push-Location frontend-web-manager
+    Push-Location "$projectRoot\frontend-web-manager"
     npm install
     Pop-Location
 }
@@ -56,16 +59,19 @@ $env:PORT = "3000"
 $env:DATABASE_URL = "postgresql://ecocheck_user:ecocheck_pass@localhost:5432/ecocheck"
 $env:ORION_LD_URL = "http://localhost:1026"
 
+# Tính đường dẫn root project
+$projectRoot = Split-Path -Parent $PSScriptRoot
+
 # Khởi chạy Backend trong terminal mới
 Write-Host "🚀 Khởi chạy Backend trên http://localhost:3000" -ForegroundColor Green
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PWD\backend'; `$env:NODE_ENV='development'; `$env:PORT='3000'; `$env:DATABASE_URL='postgresql://ecocheck_user:ecocheck_pass@localhost:5432/ecocheck'; npm run dev"
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$projectRoot\backend'; `$env:NODE_ENV='development'; `$env:PORT='3000'; `$env:DATABASE_URL='postgresql://ecocheck_user:ecocheck_pass@localhost:5432/ecocheck'; npm run dev"
 
 # Đợi backend khởi động
 Start-Sleep -Seconds 3
 
 # Khởi chạy Frontend trong terminal mới
 Write-Host "🚀 Khởi chạy Frontend Web trên http://localhost:5173" -ForegroundColor Green
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PWD\frontend-web-manager'; npm run dev"
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$projectRoot\frontend-web-manager'; npm run dev"
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan

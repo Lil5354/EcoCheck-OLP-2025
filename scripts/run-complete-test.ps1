@@ -33,10 +33,13 @@ if ($dbCheck.TcpTestSucceeded) {
 }
 Write-Host ""
 
+# Tính đường dẫn root project
+$projectRoot = Split-Path -Parent $scriptPath
+
 # Khởi động Backend
 Write-Host "[3/4] Khoi dong Backend API..." -ForegroundColor Yellow
 $backendScript = @"
-cd '$scriptPath\backend'
+cd '$projectRoot\backend'
 `$env:NODE_ENV = 'development'
 `$env:PORT = '3000'
 `$env:DATABASE_URL = 'postgresql://ecocheck_user:ecocheck_pass@localhost:5432/ecocheck'

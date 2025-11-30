@@ -1,5 +1,8 @@
 #!/bin/bash
 
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
 echo "🛑 Stopping all existing servers..."
 pkill -9 -f "vite" 2>/dev/null
 pkill -9 -f "node.*index.js" 2>/dev/null
@@ -7,7 +10,7 @@ sleep 2
 
 echo ""
 echo "🚀 Starting Backend Server..."
-cd "/Users/ducdeptrai/Desktop/Workspace/Dynamic Waste Collection/EcoCheck-OLP-2025/backend"
+cd "$PROJECT_ROOT/backend"
 npm start > /tmp/backend.log 2>&1 &
 BACKEND_PID=$!
 echo "   Backend PID: $BACKEND_PID"
@@ -15,7 +18,7 @@ sleep 3
 
 echo ""
 echo "🌐 Starting Frontend Server..."
-cd "/Users/ducdeptrai/Desktop/Workspace/Dynamic Waste Collection/EcoCheck-OLP-2025/frontend-web-manager"
+cd "$PROJECT_ROOT/frontend-web-manager"
 npm run dev > /tmp/frontend.log 2>&1 &
 FRONTEND_PID=$!
 echo "   Frontend PID: $FRONTEND_PID"

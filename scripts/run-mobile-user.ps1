@@ -1,8 +1,8 @@
-# Script chạy Mobile App EcoCheck Worker
+# Script chạy Mobile App EcoCheck User
 # EcoCheck OLP 2025
 
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  CHẠY MOBILE APP - ECOCHECK WORKER" -ForegroundColor Cyan
+Write-Host "  CHẠY MOBILE APP - ECOCHECK USER" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -39,9 +39,12 @@ try {
 }
 Write-Host ""
 
+# Tính đường dẫn root project
+$projectRoot = Split-Path -Parent $PSScriptRoot
+
 # Chuyển đến thư mục mobile app
 Write-Host "[2/3] Chuyen den thu muc mobile app..." -ForegroundColor Yellow
-$mobilePath = "frontend-mobile\EcoCheck_Worker"
+$mobilePath = "$projectRoot\frontend-mobile\EcoCheck_User"
 if (-not (Test-Path $mobilePath)) {
     Write-Host "ERROR: Khong tim thay thu muc: $mobilePath" -ForegroundColor Red
     exit 1

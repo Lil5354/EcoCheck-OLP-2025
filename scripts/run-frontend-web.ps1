@@ -17,9 +17,12 @@ $nodeVersion = node --version
 Write-Host "OK: Node.js $nodeVersion" -ForegroundColor Green
 Write-Host ""
 
+# Tính đường dẫn root project
+$projectRoot = Split-Path -Parent $PSScriptRoot
+
 # Kiểm tra và cài đặt dependencies
 Write-Host "[2/3] Kiểm tra dependencies..." -ForegroundColor Yellow
-$webPath = "frontend-web-manager"
+$webPath = "$projectRoot\frontend-web-manager"
 if (-not (Test-Path $webPath)) {
     Write-Host "ERROR: Khong tim thay thu muc: $webPath" -ForegroundColor Red
     exit 1

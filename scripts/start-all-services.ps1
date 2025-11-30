@@ -22,9 +22,10 @@ Write-Host ""
 
 # Khởi chạy Backend
 Write-Host "[2/4] Khởi chạy Backend..." -ForegroundColor Yellow
+$projectRoot = Split-Path -Parent $PSScriptRoot
 $backendScript = @"
 `$env:NODE_ENV = 'development'
-Set-Location '$PSScriptRoot\backend'
+Set-Location '$projectRoot\backend'
 Write-Host '🚀 EcoCheck Backend đang khởi động...' -ForegroundColor Green
 Write-Host 'Đợi backend kết nối database...' -ForegroundColor Cyan
 npm run dev
@@ -40,8 +41,9 @@ Start-Sleep -Seconds 10
 
 # Khởi chạy Frontend Web
 Write-Host "[3/4] Khởi chạy Frontend Web..." -ForegroundColor Yellow
+$projectRoot = Split-Path -Parent $PSScriptRoot
 $frontendScript = @"
-Set-Location '$PSScriptRoot\frontend-web-manager'
+Set-Location '$projectRoot\frontend-web-manager'
 Write-Host '🌐 EcoCheck Frontend Web đang khởi động...' -ForegroundColor Green
 Write-Host 'URL: http://localhost:5173' -ForegroundColor Cyan
 npm run dev
@@ -57,10 +59,11 @@ Start-Sleep -Seconds 8
 
 # Khởi chạy Mobile Popup
 Write-Host "[4/4] Khởi chạy Mobile App Popup..." -ForegroundColor Yellow
+$projectRoot = Split-Path -Parent $PSScriptRoot
 $popupScript = @"
-Set-Location '$PSScriptRoot'
+Set-Location '$projectRoot'
 Write-Host '📱 EcoCheck Mobile App Popup đang khởi động...' -ForegroundColor Green
-& '.\run-mobile-user-chrome-popup.ps1'
+& '$PSScriptRoot\run-mobile-user-chrome-popup.ps1'
 "@
 $popupScript | Out-File -FilePath "$env:TEMP\start-popup.ps1" -Encoding UTF8
 Start-Process powershell -ArgumentList "-NoExit", "-File", "$env:TEMP\start-popup.ps1"

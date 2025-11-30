@@ -1,5 +1,6 @@
 # Start Frontend Server
+$projectRoot = Split-Path -Parent $PSScriptRoot
 Write-Host "🚀 Starting EcoCheck Frontend..." -ForegroundColor Green
-cd frontend-web-manager
+Set-Location "$projectRoot\frontend-web-manager"
 npm run dev
 

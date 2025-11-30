@@ -23,9 +23,12 @@ try {
 }
 Write-Host ""
 
+# Tính đường dẫn root project
+$projectRoot = Split-Path -Parent $PSScriptRoot
+
 # Kiểm tra devices
 Write-Host "[2/3] Kiểm tra Flutter devices..." -ForegroundColor Yellow
-Push-Location frontend-mobile/EcoCheck_Worker
+Push-Location "$projectRoot\frontend-mobile\EcoCheck_Worker"
 flutter devices
 Write-Host ""
 

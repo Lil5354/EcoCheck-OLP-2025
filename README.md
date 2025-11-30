@@ -21,6 +21,13 @@ chmod +x setup.sh
 ./setup.sh
 ```
 
+**Lưu ý:** Các script khác đã được di chuyển vào folder `scripts/`. Để chạy các script khác:
+```powershell
+.\scripts\start-dev.ps1
+.\scripts\run-all-frontend.ps1
+# ... các script khác
+```
+
 Script này sẽ tự động:
 - ✅ Kiểm tra Docker
 - ✅ Khởi động tất cả services (PostgreSQL, MongoDB, Redis, Orion-LD, Backend, Frontend)
@@ -96,13 +103,13 @@ static String get devBaseUrl {
 
 **Windows:**
 ```powershell
-.\test-web-mobile-integration.ps1
+.\scripts\test-web-mobile-integration.ps1
 ```
 
 **Linux/Mac:**
 ```bash
-chmod +x test-web-mobile-integration.sh
-./test-web-mobile-integration.sh
+chmod +x scripts/test-web-mobile-integration.sh
+./scripts/test-web-mobile-integration.sh
 ```
 
 Script này sẽ:
@@ -159,8 +166,9 @@ Script này sẽ:
   - `/migrations`: SQL scripts for creating schema and seeding data
   - `run_migrations.sh` / `.ps1`: Scripts to run migrations
 - `docker-compose.yml`: Defines all the services, networks, and volumes for the project
-- `setup.ps1` / `setup.sh`: One-command setup scripts
-- `test-web-mobile-integration.ps1` / `.sh`: Scripts to test Web + Mobile together
+- `setup.ps1` / `setup.sh`: One-command setup scripts (ở root)
+- `scripts/test-web-mobile-integration.ps1` / `.sh`: Scripts to test Web + Mobile together
+- `scripts/`: Folder chứa tất cả các script khác (start-dev.ps1, run-*.ps1, etc.)
 
 ## 🗄️ Database
 
@@ -220,6 +228,8 @@ docker compose down -v
 ```
 
 After this, run `.\setup.ps1` or `./setup.sh` again to start fresh.
+
+**Lưu ý:** Các script khác đã được tổ chức trong folder `scripts/` để dễ quản lý.
 
 ### Mobile Connection Issues
 
