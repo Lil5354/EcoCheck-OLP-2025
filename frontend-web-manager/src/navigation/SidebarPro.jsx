@@ -58,7 +58,7 @@ const groups = [
       { to: "/master/personnel", label: "Nhân sự", icon: <MdPeopleAlt /> },
       {
         to: "/master/depots-dumps",
-        label: "Trạm & Bãi rác",
+        label: "Trạm thu gom",
         icon: <MdWarehouse />,
       },
     ],

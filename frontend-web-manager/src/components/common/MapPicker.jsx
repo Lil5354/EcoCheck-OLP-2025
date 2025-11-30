@@ -215,38 +215,38 @@ export default function MapPicker({ center = [106.7, 10.78], zoom = 12, onPick, 
       }
 
       try {
-        mapObj.current = new maplibregl.Map({
-          container: mapRef.current,
-          style: {
-            version: 8,
-            sources: {
-              osm: {
-                type: 'raster',
-                tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-                tileSize: 256,
-                maxzoom: 19
-              }
-            },
-            layers: [
-              { id: 'background', type: 'background', paint: { 'background-color': '#eef2f7' } },
-              { id: 'osm', type: 'raster', source: 'osm', minzoom: 0, maxzoom: 22 }
-            ]
-          },
-          center,
-          zoom,
-          attributionControl: false
-        })
+    mapObj.current = new maplibregl.Map({
+      container: mapRef.current,
+      style: {
+        version: 8,
+        sources: {
+          osm: {
+            type: 'raster',
+            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+            tileSize: 256,
+            maxzoom: 19
+          }
+        },
+        layers: [
+          { id: 'background', type: 'background', paint: { 'background-color': '#eef2f7' } },
+          { id: 'osm', type: 'raster', source: 'osm', minzoom: 0, maxzoom: 22 }
+        ]
+      },
+      center,
+      zoom,
+      attributionControl: false
+    })
 
         mapObj.current.addControl(new maplibregl.NavigationControl(), 'top-right')
 
         // Create draggable marker
-        markerRef.current = new maplibregl.Marker({ draggable: true })
-          .setLngLat(center)
-          .addTo(mapObj.current)
+    markerRef.current = new maplibregl.Marker({ draggable: true })
+      .setLngLat(center)
+      .addTo(mapObj.current)
 
         // Handle marker drag
         markerRef.current.on('dragend', async () => {
-          const lngLat = markerRef.current.getLngLat()
+      const lngLat = markerRef.current.getLngLat()
           const newCoords = [lngLat.lng, lngLat.lat] // [longitude, latitude]
           setCoords(newCoords)
           onPick?.(newCoords)
@@ -256,7 +256,7 @@ export default function MapPicker({ center = [106.7, 10.78], zoom = 12, onPick, 
 
         // Handle map click
         mapObj.current.on('click', async (e) => {
-          const { lng, lat } = e.lngLat
+      const { lng, lat } = e.lngLat
           const newCoords = [lng, lat] // [longitude, latitude]
           markerRef.current.setLngLat(newCoords)
           setCoords(newCoords)

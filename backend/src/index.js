@@ -53,6 +53,128 @@ function getHaversineDistance(coords1, coords2) {
   return R * c; // in metres
 }
 
+// --- Advanced VRP Utility Functions ---
+
+// Lấy ma trận thời gian/khoảng cách từ OSRM (1 lần gọi duy nhất cho N điểm)
+async function getOSRMMatrix(points) {
+  if (points.length < 2) return null;
+  try {
+    // Format: lon,lat;lon,lat...
+    const coordinates = points.map(p => `${p.lon},${p.lat}`).join(';');
+    const url = `https://router.project-osrm.org/table/v1/driving/${coordinates}?annotations=duration,distance`;
+    
+    // Sử dụng axios có sẵn trong project
+    const axios = require("axios");
+    const response = await axios.get(url, { timeout: 5000 }); // Timeout 5s
+
+    if (response.data && response.data.code === 'Ok') {
+      return {
+        durations: response.data.durations, // Giây
+        distances: response.data.distances  // Mét
+      };
+    }
+    return null;
+  } catch (error) {
+    console.warn(`[VRP] OSRM Matrix failed: ${error.message}. Falling back to Haversine.`);
+    return null; // Trả về null để fallback sang Haversine
+  }
+}
+
+// Tính tổng chi phí của một lộ trình cụ thể
+function calculateRouteCost(routeIndices, matrix, points, weightTime = 0.7, weightDist = 0.3) {
+  let cost = 0;
+  for (let i = 0; i < routeIndices.length - 1; i++) {
+    const from = routeIndices[i];
+    const to = routeIndices[i+1];
+    
+    if (matrix) {
+      // Dùng dữ liệu thực tế từ OSRM
+      const time = matrix.durations[from][to];
+      const dist = matrix.distances[from][to];
+      cost += (time * weightTime) + (dist * weightDist);
+    } else {
+      // Fallback: Dùng Haversine (chỉ có khoảng cách)
+      const dist = getHaversineDistance(points[from], points[to]);
+      cost += dist; 
+    }
+  }
+  return cost;
+}
+
+// OSRM Distance Cache to avoid redundant API calls
+// Key format: "lon1,lat1|lon2,lat2" (sorted to ensure bidirectional cache)
+const osrmDistanceCache = new Map();
+const OSRM_CACHE_MAX_SIZE = 1000; // Limit cache size to prevent memory issues
+
+function getCacheKey(point1, point2) {
+  // Sort coordinates to ensure cache works bidirectionally
+  const coords1 = `${point1.lon.toFixed(6)},${point1.lat.toFixed(6)}`;
+  const coords2 = `${point2.lon.toFixed(6)},${point2.lat.toFixed(6)}`;
+  return coords1 < coords2 ? `${coords1}|${coords2}` : `${coords2}|${coords1}`;
+}
+
+// Get OSRM road distance between two points (with caching and retry logic)
+async function getOSRMDistance(point1, point2, retries = 3) {
+  try {
+    // Check cache first
+    const cacheKey = getCacheKey(point1, point2);
+    if (osrmDistanceCache.has(cacheKey)) {
+      return osrmDistanceCache.get(cacheKey);
+    }
+
+    const axios = require("axios");
+    const coords = `${point1.lon},${point1.lat};${point2.lon},${point2.lat}`;
+    const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=false&alternatives=false&steps=false`;
+
+    // Retry logic for better reliability
+    let lastError = null;
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        const response = await axios.get(url, {
+          timeout: 10000, // 10 second timeout (increased for reliability)
+          headers: {
+            "User-Agent": "EcoCheck-Backend/1.0",
+          },
+        });
+
+        if (
+          response.data &&
+          response.data.code === "Ok" &&
+          response.data.routes &&
+          response.data.routes.length > 0 &&
+          response.data.routes[0].distance
+        ) {
+          const distance = response.data.routes[0].distance;
+          
+          // Cache the result (but limit cache size)
+          if (osrmDistanceCache.size >= OSRM_CACHE_MAX_SIZE) {
+            // Remove oldest entry (simple FIFO)
+            const firstKey = osrmDistanceCache.keys().next().value;
+            osrmDistanceCache.delete(firstKey);
+          }
+          osrmDistanceCache.set(cacheKey, distance);
+          
+          return distance;
+        }
+      } catch (error) {
+        lastError = error;
+        if (attempt < retries) {
+          // Wait a bit before retry (exponential backoff)
+          await new Promise(resolve => setTimeout(resolve, attempt * 200));
+          continue;
+        }
+      }
+    }
+
+    // If all retries failed, fall back to Haversine (but don't cache)
+    console.warn(`[OSRM] Distance calculation failed after ${retries} attempts, using Haversine fallback: ${lastError?.message || 'Unknown error'}`);
+    return getHaversineDistance(point1, point2);
+  } catch (error) {
+    console.warn(`[OSRM] Distance calculation error: ${error.message}, using Haversine fallback`);
+    return getHaversineDistance(point1, point2);
+  }
+}
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -485,8 +607,8 @@ app.get("/api/analytics/summary", async (req, res) => {
         total > 0 ? Math.round((parseInt(row.count) / total) * 100) : 0;
     });
 
-    res.json({
-      ok: true,
+  res.json({
+    ok: true,
       data: {
         routesActive,
         collectionRate: parseFloat(collectionRate.toFixed(2)),
@@ -515,7 +637,7 @@ app.get("/api/analytics/summary", async (req, res) => {
 // Get all vehicles
 app.get("/api/master/fleet", async (req, res) => {
   try {
-    const { status, type, depot_id } = req.query;
+    const { status, type, depot_id, district } = req.query;
 
     let query = `
       SELECT 
@@ -530,6 +652,7 @@ app.get("/api/master/fleet", async (req, res) => {
         v.current_load_kg,
         v.last_maintenance_at,
         d.name as depot_name,
+        d.address as depot_address,
         v.created_at,
         v.updated_at
       FROM vehicles v
@@ -552,6 +675,17 @@ app.get("/api/master/fleet", async (req, res) => {
     if (depot_id) {
       query += ` AND v.depot_id = $${paramIndex++}`;
       params.push(depot_id);
+    }
+
+    // Filter by district (from depot address)
+    if (district) {
+      query += ` AND (
+        d.address ~ $${paramIndex} OR
+        d.address LIKE $${paramIndex + 1}
+      )`;
+      const districtPattern = district.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      params.push(`.*${districtPattern}.*`, `%${district}%`);
+      paramIndex += 2;
     }
 
     query += ` ORDER BY v.created_at DESC`;
@@ -793,21 +927,35 @@ app.delete("/api/master/fleet/:id", async (req, res) => {
 // Get all depots
 app.get("/api/master/depots", async (req, res) => {
   try {
-    const { status } = req.query;
+    const { status, district } = req.query;
 
     let query = `
       SELECT 
         id,
         name,
-        ST_X(geom::geometry) as lon,
-        ST_Y(geom::geometry) as lat,
+        CASE WHEN geom IS NOT NULL THEN ST_X(geom::geometry)::numeric ELSE NULL END as lon,
+        CASE WHEN geom IS NOT NULL THEN ST_Y(geom::geometry)::numeric ELSE NULL END as lat,
         address,
         capacity_vehicles,
         opening_hours,
         status,
         meta,
         created_at,
-        updated_at
+        updated_at,
+        CASE 
+          WHEN address IS NOT NULL AND address ~ 'Quận\\s*\\d+' THEN 
+            'Quận ' || COALESCE((regexp_match(address, 'Quận\\s*(\\d+)'))[1], '')
+          WHEN address IS NOT NULL AND address ~ 'Q\\.?\\s*\\d+' THEN 
+            'Quận ' || COALESCE((regexp_match(address, 'Q\\.?\\s*(\\d+)'))[1], '')
+          WHEN address IS NOT NULL AND address ~ 'Bình Thạnh' THEN 'Bình Thạnh'
+          WHEN address IS NOT NULL AND address ~ 'Tân Bình' THEN 'Tân Bình'
+          WHEN address IS NOT NULL AND address ~ 'Tân Phú' THEN 'Tân Phú'
+          WHEN address IS NOT NULL AND address ~ 'Phú Nhuận' THEN 'Phú Nhuận'
+          WHEN address IS NOT NULL AND address ~ 'Gò Vấp' THEN 'Gò Vấp'
+          WHEN address IS NOT NULL AND address ~ 'Bình Tân' THEN 'Bình Tân'
+          WHEN address IS NOT NULL AND address ~ 'Thủ Đức' THEN 'Thủ Đức'
+          ELSE NULL
+        END as district
       FROM depots
       WHERE 1=1
     `;
@@ -817,6 +965,17 @@ app.get("/api/master/depots", async (req, res) => {
     if (status) {
       query += ` AND status = $${paramIndex++}`;
       params.push(status);
+    }
+
+    // Filter by district (from depot address)
+    if (district) {
+      query += ` AND (
+        address ~ $${paramIndex} OR
+        address LIKE $${paramIndex + 1}
+      )`;
+      const districtPattern = district.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      params.push(`.*${districtPattern}.*`, `%${district}%`);
+      paramIndex += 2;
     }
 
     query += ` ORDER BY created_at DESC`;
@@ -843,10 +1002,36 @@ app.post("/api/master/depots", async (req, res) => {
       status,
     } = req.body;
 
-    if (!name || lon === undefined || lat === undefined) {
+    // Validate required fields
+    if (!name || (typeof name === 'string' && name.trim().length === 0)) {
       return res.status(400).json({
         ok: false,
-        error: "Missing required fields: name, lon, lat",
+        error: "Missing required field: name",
+      });
+    }
+
+    // Validate coordinates - check for null, undefined, or invalid numbers
+    if (lon === null || lon === undefined || lat === null || lat === undefined) {
+      return res.status(400).json({
+        ok: false,
+        error: "Missing required fields: lon, lat. Please select a location on the map.",
+      });
+    }
+
+    const lonNum = parseFloat(lon);
+    const latNum = parseFloat(lat);
+
+    if (isNaN(lonNum) || isNaN(latNum)) {
+      return res.status(400).json({
+        ok: false,
+        error: "Invalid coordinates: lon and lat must be valid numbers",
+      });
+    }
+
+    if (lonNum < -180 || lonNum > 180 || latNum < -90 || latNum > 90) {
+      return res.status(400).json({
+        ok: false,
+        error: "Invalid coordinates: lon must be between -180 and 180, lat must be between -90 and 90",
       });
     }
 
@@ -860,19 +1045,33 @@ app.post("/api/master/depots", async (req, res) => {
       RETURNING 
         id,
         name,
-        ST_X(geom::geometry) as lon,
-        ST_Y(geom::geometry) as lat,
+        CASE WHEN geom IS NOT NULL THEN ST_X(geom::geometry)::numeric ELSE NULL END as lon,
+        CASE WHEN geom IS NOT NULL THEN ST_Y(geom::geometry)::numeric ELSE NULL END as lat,
         address,
         capacity_vehicles,
         opening_hours,
         status,
         created_at,
-        updated_at`,
+        updated_at,
+        CASE 
+          WHEN address IS NOT NULL AND address ~ 'Quận\\s*\\d+' THEN 
+            'Quận ' || COALESCE((regexp_match(address, 'Quận\\s*(\\d+)'))[1], '')
+          WHEN address IS NOT NULL AND address ~ 'Q\\.?\\s*\\d+' THEN 
+            'Quận ' || COALESCE((regexp_match(address, 'Q\\.?\\s*(\\d+)'))[1], '')
+          WHEN address IS NOT NULL AND address ~ 'Bình Thạnh' THEN 'Bình Thạnh'
+          WHEN address IS NOT NULL AND address ~ 'Tân Bình' THEN 'Tân Bình'
+          WHEN address IS NOT NULL AND address ~ 'Tân Phú' THEN 'Tân Phú'
+          WHEN address IS NOT NULL AND address ~ 'Phú Nhuận' THEN 'Phú Nhuận'
+          WHEN address IS NOT NULL AND address ~ 'Gò Vấp' THEN 'Gò Vấp'
+          WHEN address IS NOT NULL AND address ~ 'Bình Tân' THEN 'Bình Tân'
+          WHEN address IS NOT NULL AND address ~ 'Thủ Đức' THEN 'Thủ Đức'
+          ELSE NULL
+        END as district`,
       [
         depotId,
-        name,
-        lon,
-        lat,
+        typeof name === 'string' ? name.trim() : name,
+        lonNum,
+        latNum,
         address || null,
         capacity_vehicles || 10,
         opening_hours || "18:00-06:00",
@@ -959,14 +1158,28 @@ app.patch("/api/master/depots/:id", async (req, res) => {
       RETURNING 
         id,
         name,
-        ST_X(geom::geometry) as lon,
-        ST_Y(geom::geometry) as lat,
+        CASE WHEN geom IS NOT NULL THEN ST_X(geom::geometry)::numeric ELSE NULL END as lon,
+        CASE WHEN geom IS NOT NULL THEN ST_Y(geom::geometry)::numeric ELSE NULL END as lat,
         address,
         capacity_vehicles,
         opening_hours,
         status,
         created_at,
-        updated_at`;
+        updated_at,
+        CASE 
+          WHEN address IS NOT NULL AND address ~ 'Quận\\s*\\d+' THEN 
+            'Quận ' || COALESCE((regexp_match(address, 'Quận\\s*(\\d+)'))[1], '')
+          WHEN address IS NOT NULL AND address ~ 'Q\\.?\\s*\\d+' THEN 
+            'Quận ' || COALESCE((regexp_match(address, 'Q\\.?\\s*(\\d+)'))[1], '')
+          WHEN address IS NOT NULL AND address ~ 'Bình Thạnh' THEN 'Bình Thạnh'
+          WHEN address IS NOT NULL AND address ~ 'Tân Bình' THEN 'Tân Bình'
+          WHEN address IS NOT NULL AND address ~ 'Tân Phú' THEN 'Tân Phú'
+          WHEN address IS NOT NULL AND address ~ 'Phú Nhuận' THEN 'Phú Nhuận'
+          WHEN address IS NOT NULL AND address ~ 'Gò Vấp' THEN 'Gò Vấp'
+          WHEN address IS NOT NULL AND address ~ 'Bình Tân' THEN 'Bình Tân'
+          WHEN address IS NOT NULL AND address ~ 'Thủ Đức' THEN 'Thủ Đức'
+          ELSE NULL
+        END as district`;
     const { rows } = await db.query(query, params);
 
     if (rows.length === 0) {
@@ -1298,58 +1511,1146 @@ app.get("/api/points", async (req, res) => {
       label: row.label,
     }));
 
-    res.json({ ok: true, data: points });
+  res.json({ ok: true, data: points });
   } catch (error) {
     console.error("[Points] Get error:", error);
     res.status(500).json({ ok: false, error: error.message });
   }
 });
 
+// Helper function to extract district from address
+function extractDistrict(address) {
+  if (!address) return null;
+  const match = address.match(/Quận\s*(\d+)|Q\.?\s*(\d+)/i);
+  if (match) {
+    return `Quận ${match[1] || match[2]}`;
+  }
+  const districts = [
+    'Quận 1', 'Quận 2', 'Quận 3', 'Quận 4', 'Quận 5',
+    'Quận 6', 'Quận 7', 'Quận 8', 'Quận 9', 'Quận 10',
+    'Quận 11', 'Quận 12', 'Bình Thạnh', 'Tân Bình', 'Tân Phú',
+    'Phú Nhuận', 'Gò Vấp', 'Bình Tân', 'Thủ Đức'
+  ];
+  for (const dist of districts) {
+    if (address.includes(dist)) return dist;
+  }
+  return null;
+}
+
+// Helper function to extract ward from address
+function extractWard(address) {
+  if (!address) return null;
+  const match = address.match(/(Phường|Xã)\s*([\w\s\d]+)/i);
+  if (match) {
+    return `${match[1]} ${match[2]}`;
+  }
+  const wards = [
+    'Phường Bến Nghé', 'Phường Phạm Ngũ Lão', 'Phường Thới An Đông',
+    'Xã Phước Kiển', 'Xã Phú Hữu'
+  ];
+  for (const ward of wards) {
+    if (address.includes(ward)) return ward;
+  }
+  return null;
+}
+
+// Helper function to get vehicle current location
+async function getVehicleCurrentLocation(vehicleId) {
+  try {
+    // Option 1: Get from GPS tracking (if available)
+    const tracking = await db.query(
+      `SELECT 
+        ST_X(geom::geometry) as lon,
+        ST_Y(geom::geometry) as lat,
+        recorded_at 
+       FROM vehicle_tracking 
+       WHERE vehicle_id = $1 
+       ORDER BY recorded_at DESC LIMIT 1`,
+      [vehicleId]
+    );
+    
+    if (tracking.rows.length > 0 && tracking.rows[0].lon && tracking.rows[0].lat) {
+      return {
+        lon: parseFloat(tracking.rows[0].lon),
+        lat: parseFloat(tracking.rows[0].lat)
+      };
+    }
+    
+    // Option 2: Get from depot of vehicle (fallback)
+    const vehicle = await db.query(
+      `SELECT 
+        ST_X(d.geom::geometry) as lon,
+        ST_Y(d.geom::geometry) as lat
+       FROM vehicles v
+       JOIN depots d ON v.depot_id = d.id
+       WHERE v.id = $1`,
+      [vehicleId]
+    );
+    
+    if (vehicle.rows.length > 0 && vehicle.rows[0].lon && vehicle.rows[0].lat) {
+      return {
+        lon: parseFloat(vehicle.rows[0].lon),
+        lat: parseFloat(vehicle.rows[0].lat)
+      };
+    }
+    
+    // Option 3: Default location (HCM center)
+    return { lon: 106.7, lat: 10.78 };
+  } catch (error) {
+    console.warn(`[VRP] Error getting vehicle location for ${vehicleId}:`, error.message);
+    // Fallback to default
+    return { lon: 106.7, lat: 10.78 };
+  }
+}
+
+// Helper function: Build distance graph for all points using OSRM for nearest neighbors
+// This creates a more accurate graph using real road distances for optimization
+async function buildDistanceGraph(points, useOSRMForNearest = true, nearestCount = 10) {
+  const graph = {};
+  
+  // First, build graph with Haversine distances (fast, approximate)
+  for (let i = 0; i < points.length; i++) {
+    const nodeId = `p${i}`;
+    graph[nodeId] = {};
+    for (let j = 0; j < points.length; j++) {
+      if (i !== j) {
+        const nodeId2 = `p${j}`;
+        const dist = getHaversineDistance(
+          { lat: points[i].lat, lon: points[i].lon },
+          { lat: points[j].lat, lon: points[j].lon }
+        );
+        graph[nodeId][nodeId2] = dist;
+      }
+    }
+  }
+  
+  // If OSRM is enabled, update distances for nearest neighbors with real road distances
+  // OPTIMIZED: Use batch processing to avoid rate limiting and timeouts
+  if (useOSRMForNearest && points.length > 1) {
+    // Reduce nearestCount for large datasets to avoid too many API calls
+    const actualNearestCount = points.length > 20 ? Math.min(5, nearestCount) : nearestCount;
+    console.log(`[VRP] Building OSRM-enhanced distance graph (updating ${actualNearestCount} nearest neighbors per point, batch processing)...`);
+    
+    // Process points in batches to avoid overwhelming OSRM server
+    const batchSize = 5; // Process 5 points at a time
+    const delayBetweenBatches = 500; // 500ms delay between batches
+    
+    for (let batchStart = 0; batchStart < points.length; batchStart += batchSize) {
+      const batchEnd = Math.min(batchStart + batchSize, points.length);
+      
+      // Process batch of points
+      for (let i = batchStart; i < batchEnd; i++) {
+        const nodeId = `p${i}`;
+        const point1 = points[i];
+        
+        // Get all distances from this point and sort by distance
+        const distances = [];
+        for (const neighborId in graph[nodeId]) {
+          distances.push({
+            neighborId,
+            dist: graph[nodeId][neighborId],
+            pointIndex: parseInt(neighborId.replace('p', ''))
+          });
+        }
+        
+        // Sort by Haversine distance and take nearest N
+        distances.sort((a, b) => a.dist - b.dist);
+        const nearest = distances.slice(0, Math.min(actualNearestCount, distances.length));
+        
+        // Process OSRM requests sequentially (not parallel) to avoid rate limiting
+        for (const { neighborId, pointIndex } of nearest) {
+          const point2 = points[pointIndex];
+          try {
+            const osrmDist = await getOSRMDistance(point1, point2);
+            if (osrmDist) {
+              graph[nodeId][neighborId] = osrmDist;
+              // Also update reverse direction (bidirectional graph)
+              const reverseNodeId = neighborId;
+              const reverseNeighborId = nodeId;
+              if (graph[reverseNodeId]) {
+                graph[reverseNodeId][reverseNeighborId] = osrmDist;
+              }
+            }
+            // Small delay between requests to avoid rate limiting
+            await new Promise(resolve => setTimeout(resolve, 100));
+          } catch (error) {
+            // Keep Haversine distance if OSRM fails
+            console.warn(`[VRP] OSRM distance failed for ${nodeId}->${neighborId}, keeping Haversine: ${error.message}`);
+          }
+        }
+      }
+      
+      // Delay between batches
+      if (batchEnd < points.length) {
+        await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
+      }
+    }
+    
+    console.log(`[VRP] OSRM-enhanced distance graph completed`);
+  }
+  
+  return graph;
+}
+
+// Dijkstra algorithm to find shortest path between two points in graph
+function dijkstraShortestPath(graph, startNode, endNode) {
+  const distances = {};
+  const previous = {};
+  const unvisited = new Set();
+  
+  // Initialize distances
+  for (const node in graph) {
+    distances[node] = Infinity;
+    unvisited.add(node);
+  }
+  distances[startNode] = 0;
+  
+  while (unvisited.size > 0) {
+    // Find unvisited node with smallest distance
+    let current = null;
+    let minDist = Infinity;
+    for (const node of unvisited) {
+      if (distances[node] < minDist) {
+        minDist = distances[node];
+        current = node;
+      }
+    }
+    
+    if (current === null || current === endNode) break;
+    unvisited.delete(current);
+    
+    // Update distances to neighbors
+    if (graph[current]) {
+      for (const neighbor in graph[current]) {
+        if (!unvisited.has(neighbor)) continue;
+        const alt = distances[current] + graph[current][neighbor];
+        if (alt < distances[neighbor]) {
+          distances[neighbor] = alt;
+          previous[neighbor] = current;
+        }
+      }
+    }
+  }
+  
+  // Reconstruct path
+  const path = [];
+  let current = endNode;
+  while (current !== undefined && distances[current] < Infinity) {
+    path.unshift(current);
+    current = previous[current];
+    if (current === startNode) {
+      path.unshift(current);
+      break;
+    }
+  }
+  
+  return { path, distance: distances[endNode] };
+}
+
+// A* algorithm with Haversine heuristic
+function aStarShortestPath(graph, startNode, endNode, points) {
+  const openSet = new Set([startNode]);
+  const closedSet = new Set();
+  const gScore = { [startNode]: 0 };
+  const fScore = {};
+  const cameFrom = {};
+  
+  // Get point indices from node IDs
+  const getPointIndex = (nodeId) => parseInt(nodeId.replace('p', ''));
+  const startIdx = getPointIndex(startNode);
+  const endIdx = getPointIndex(endNode);
+  
+  // Initialize fScore with heuristic (Haversine distance)
+  fScore[startNode] = getHaversineDistance(
+    { lat: points[startIdx].lat, lon: points[startIdx].lon },
+    { lat: points[endIdx].lat, lon: points[endIdx].lon }
+  );
+  
+  while (openSet.size > 0) {
+    // Find node in openSet with lowest fScore
+    let current = null;
+    let minF = Infinity;
+    for (const node of openSet) {
+      if (fScore[node] < minF) {
+        minF = fScore[node];
+        current = node;
+      }
+    }
+    
+    if (current === endNode) {
+      // Reconstruct path
+      const path = [];
+      let node = endNode;
+      while (node !== undefined) {
+        path.unshift(node);
+        node = cameFrom[node];
+      }
+      return { path, distance: gScore[endNode] };
+    }
+    
+    openSet.delete(current);
+    closedSet.add(current);
+    
+    // Check neighbors
+    if (graph[current]) {
+      for (const neighbor in graph[current]) {
+        if (closedSet.has(neighbor)) continue;
+        
+        const tentativeGScore = gScore[current] + graph[current][neighbor];
+        
+        if (!openSet.has(neighbor)) {
+          openSet.add(neighbor);
+        } else if (tentativeGScore >= (gScore[neighbor] || Infinity)) {
+          continue;
+        }
+        
+        cameFrom[neighbor] = current;
+        gScore[neighbor] = tentativeGScore;
+        
+        // Calculate heuristic (Haversine distance to end)
+        const neighborIdx = getPointIndex(neighbor);
+        fScore[neighbor] = gScore[neighbor] + getHaversineDistance(
+          { lat: points[neighborIdx].lat, lon: points[neighborIdx].lon },
+          { lat: points[endIdx].lat, lon: points[endIdx].lon }
+        );
+      }
+    }
+  }
+  
+  return null; // No path found
+}
+
+// --- CORE ALGORITHMS: Hybrid CI-SA (Cheapest Insertion + Simulated Annealing) ---
+
+// Giai đoạn 1: Cheapest Insertion (Xây dựng sườn lộ trình tốt ngay từ đầu)
+function solveCheapestInsertion(points, matrix, startIdx, endIdx) {
+  // Bắt đầu với lộ trình: Start -> End (hoặc chỉ Start nếu không có End)
+  let currentRoute = [startIdx];
+  if (endIdx !== startIdx) currentRoute.push(endIdx);
+
+  // Danh sách các điểm chưa thăm (loại trừ start/end)
+  let unvisited = new Set();
+  for (let i = 0; i < points.length; i++) {
+    if (i !== startIdx && i !== endIdx) unvisited.add(i);
+  }
+
+  // Vòng lặp chèn điểm
+  while (unvisited.size > 0) {
+    let bestPoint = -1;
+    let bestInsertPos = -1;
+    let minAddedCost = Infinity;
+
+    // Duyệt qua từng điểm chưa thăm
+    for (let pointIdx of unvisited) {
+      // Nếu route chỉ có 1 điểm (Start), chèn vào cuối
+      if (currentRoute.length === 1) {
+        let addedCost = 0;
+        const u = currentRoute[0];
+        if (matrix) {
+          const costUP = (matrix.durations[u][pointIdx] * 0.7) + (matrix.distances[u][pointIdx] * 0.3);
+          addedCost = costUP;
+        } else {
+          addedCost = getHaversineDistance(points[u], points[pointIdx]);
+        }
+        
+        if (addedCost < minAddedCost) {
+          minAddedCost = addedCost;
+          bestPoint = pointIdx;
+          bestInsertPos = 1; // Chèn vào sau Start
+        }
+      } else {
+        // Thử chèn vào giữa từng cặp điểm hiện có (u -> v)
+        for (let i = 0; i < currentRoute.length - 1; i++) {
+          const u = currentRoute[i];
+          const v = currentRoute[i+1];
+
+          // Chi phí tăng thêm = (u->p + p->v) - (u->v)
+          let addedCost = 0;
+          if (matrix) {
+              // Cost = 0.7*Time + 0.3*Dist
+              const costUP = (matrix.durations[u][pointIdx] * 0.7) + (matrix.distances[u][pointIdx] * 0.3);
+              const costPV = (matrix.durations[pointIdx][v] * 0.7) + (matrix.distances[pointIdx][v] * 0.3);
+              const costUV = (matrix.durations[u][v] * 0.7) + (matrix.distances[u][v] * 0.3);
+              addedCost = costUP + costPV - costUV;
+          } else {
+              const distUP = getHaversineDistance(points[u], points[pointIdx]);
+              const distPV = getHaversineDistance(points[pointIdx], points[v]);
+              const distUV = getHaversineDistance(points[u], points[v]);
+              addedCost = distUP + distPV - distUV;
+          }
+
+          if (addedCost < minAddedCost) {
+            minAddedCost = addedCost;
+            bestPoint = pointIdx;
+            bestInsertPos = i + 1; // Chèn vào sau u
+          }
+        }
+      }
+    }
+
+    if (bestPoint !== -1) {
+      currentRoute.splice(bestInsertPos, 0, bestPoint);
+      unvisited.delete(bestPoint);
+    } else {
+      break; // Should not happen
+    }
+  }
+  
+  return currentRoute;
+}
+
+// Giai đoạn 2: Simulated Annealing (Tinh chỉnh để đạt tối ưu)
+async function optimizeRouteHybrid(stops, startPoint, endPoint) {
+  // 1. Chuẩn bị dữ liệu: Gộp tất cả điểm vào 1 mảng để lấy Matrix
+  // Mapping: Index 0 = Start, 1..N = Stops, N+1 = End
+  const allPoints = [startPoint, ...stops];
+  if (endPoint) allPoints.push(endPoint);
+  
+  const startIdx = 0;
+  const endIdx = endPoint ? allPoints.length - 1 : 0; // Nếu không có endpoint thì quay về start
+
+  // 2. Lấy Matrix (QUAN TRỌNG)
+  console.log(`[VRP] Calling OSRM Matrix for ${allPoints.length} points...`);
+  const matrix = await getOSRMMatrix(allPoints);
+
+  // 3. Chạy Phase 1: Cheapest Insertion
+  // Kết quả trả về là mảng các index, ví dụ: [0, 5, 2, 3, 1, 6]
+  let currentOrder = solveCheapestInsertion(allPoints, matrix, startIdx, endIdx);
+  
+  // Đảm bảo start và end luôn ở đúng vị trí sau Cheapest Insertion
+  if (currentOrder[0] !== startIdx) {
+    console.warn(`[VRP] Fixing start position after CI: expected ${startIdx}, got ${currentOrder[0]}`);
+    currentOrder = [startIdx, ...currentOrder.filter(idx => idx !== startIdx && idx !== endIdx)];
+    if (endPoint) currentOrder.push(endIdx);
+  }
+  if (endPoint && currentOrder[currentOrder.length - 1] !== endIdx) {
+    console.warn(`[VRP] Fixing end position after CI: expected ${endIdx}, got ${currentOrder[currentOrder.length - 1]}`);
+    currentOrder = currentOrder.filter(idx => idx !== endIdx);
+    currentOrder.push(endIdx);
+  }
+  
+  // 4. Chạy Phase 2: Simulated Annealing
+  // Cấu hình SA: Nóng nhanh, nguội từ từ
+  let temp = 1000;
+  const coolingRate = 0.99;
+  const absoluteTemperature = 1;
+  
+  // Các điểm ở giữa (loại trừ start và end cố định)
+  // Chúng ta chỉ hoán đổi vị trí các điểm ở giữa start và end
+  let bestOrder = [...currentOrder];
+  let currentCost = calculateRouteCost(currentOrder, matrix, allPoints);
+  let bestCost = currentCost;
+
+  while (temp > absoluteTemperature) {
+    // Chỉ tráo đổi các điểm ở giữa (index từ 1 đến length-2)
+    // Cần ít nhất 2 điểm ở giữa để có thể tráo đổi (Start + 2 stops + End = 4 điểm tối thiểu)
+    // Hoặc nếu không có End, cần ít nhất 3 điểm (Start + 2 stops = 3 điểm tối thiểu)
+    const minLengthForSwap = endPoint ? 4 : 3;
+    if (currentOrder.length >= minLengthForSwap) {
+        const newOrder = [...currentOrder];
+        
+        // Chọn 2 vị trí ngẫu nhiên ở giữa để tác động
+        // Vị trí hợp lệ: 1 đến newOrder.length - 2 (nếu có end) hoặc newOrder.length - 1 (nếu không có end)
+        const middleStart = 1;
+        const middleEnd = endPoint ? newOrder.length - 2 : newOrder.length - 1;
+        
+        if (middleEnd > middleStart) {
+          const pos1 = Math.floor(Math.random() * (middleEnd - middleStart + 1)) + middleStart;
+          const pos2 = Math.floor(Math.random() * (middleEnd - middleStart + 1)) + middleStart;
+          
+          if (pos1 !== pos2 && pos1 >= middleStart && pos1 <= middleEnd && pos2 >= middleStart && pos2 <= middleEnd) {
+              const moveType = Math.random();
+              
+              if (moveType < 0.5) {
+                  // Move 1: Swap (Đổi chỗ)
+                  [newOrder[pos1], newOrder[pos2]] = [newOrder[pos2], newOrder[pos1]];
+              } else {
+                  // Move 2: 2-Opt (Đảo ngược đoạn) - Mạnh mẽ hơn Swap
+                  const start = Math.min(pos1, pos2);
+                  const end = Math.max(pos1, pos2);
+                  // Đảm bảo không đảo ngược start hoặc end
+                  if (start >= middleStart && end <= middleEnd) {
+                    const segment = newOrder.slice(start, end + 1).reverse();
+                    newOrder.splice(start, segment.length, ...segment);
+                  } else {
+                    continue; // Skip invalid move
+                  }
+              }
+              
+              // Đảm bảo start và end vẫn ở đúng vị trí sau khi swap
+              if (newOrder[0] !== startIdx || (endPoint && newOrder[newOrder.length - 1] !== endIdx)) {
+                continue; // Skip invalid moves
+              }
+              
+              const newCost = calculateRouteCost(newOrder, matrix, allPoints);
+              const delta = newCost - currentCost;
+
+              // Chấp nhận nếu tốt hơn HOẶC xác suất ngẫu nhiên (Metropolis criterion)
+              if (delta < 0 || Math.exp(-delta / temp) > Math.random()) {
+                  currentOrder = newOrder;
+                  currentCost = newCost;
+                  
+                  if (newCost < bestCost) {
+                      bestOrder = [...newOrder];
+                      bestCost = newCost;
+                  }
+              }
+          }
+        }
+    }
+    temp *= coolingRate;
+  }
+
+  // Đảm bảo bestOrder luôn có start và end đúng vị trí trước khi trả về
+  if (bestOrder[0] !== startIdx) {
+    console.warn(`[VRP] Fixing start position in bestOrder: expected ${startIdx}, got ${bestOrder[0]}`);
+    bestOrder = [startIdx, ...bestOrder.filter(idx => idx !== startIdx && idx !== endIdx)];
+    if (endPoint) bestOrder.push(endIdx);
+  }
+  if (endPoint && bestOrder[bestOrder.length - 1] !== endIdx) {
+    console.warn(`[VRP] Fixing end position in bestOrder: expected ${endIdx}, got ${bestOrder[bestOrder.length - 1]}`);
+    bestOrder = bestOrder.filter(idx => idx !== endIdx);
+    bestOrder.push(endIdx);
+  }
+
+  const initialCost = calculateRouteCost(solveCheapestInsertion(allPoints, matrix, startIdx, endIdx), matrix, allPoints);
+  console.log(`[VRP] Hybrid Optimization: Initial Cost=${Math.round(initialCost)} -> Optimized=${Math.round(bestCost)}`);
+
+  // 5. Convert indices back to stop objects
+  // Loại bỏ Start (index 0) và End (index cuối) để trả về danh sách stops đã sắp xếp
+  const optimizedStopsIndices = bestOrder.slice(1, endPoint ? bestOrder.length - 1 : bestOrder.length);
+  
+  // Map lại về object gốc
+  // Lưu ý: Stops gốc trong allPoints bắt đầu từ index 1
+  return optimizedStopsIndices.map(idx => allPoints[idx]);
+}
+
+// OPTIMIZED: Nearest Neighbor + 2-opt for fast and accurate route optimization
+// This algorithm is much faster than Dijkstra and produces near-optimal results
+// Step 1: Nearest Neighbor (simple, fast O(n²))
+// Step 2: 2-opt local search (improves route quality)
+async function optimizeRouteWith2Opt(stops, startPoint, endPoint) {
+  if (stops.length === 0) return [];
+  
+  console.log(`[VRP] Optimizing ${stops.length} stops using Nearest Neighbor + 2-opt`);
+  
+  // Step 1: Nearest Neighbor - Build initial route starting from startPoint
+  const ordered = [];
+  const remaining = [...stops];
+  let current = startPoint;
+  
+  // Visit all stops using simple nearest neighbor
+  while (remaining.length > 0) {
+    let nearest = null;
+    let minDist = Infinity;
+    let nearestIdx = -1;
+    
+    for (let i = 0; i < remaining.length; i++) {
+      const dist = getHaversineDistance(
+        { lat: current.lat, lon: current.lon },
+        { lat: remaining[i].lat, lon: remaining[i].lon }
+      );
+      if (dist < minDist) {
+        minDist = dist;
+        nearest = remaining[i];
+        nearestIdx = i;
+      }
+    }
+    
+    if (nearest) {
+      ordered.push(nearest);
+      remaining.splice(nearestIdx, 1);
+      current = nearest;
+    } else {
+      break;
+    }
+  }
+  
+  // Step 2: 2-opt local search to improve route
+  // This tries reversing segments of the route to find shorter paths
+  let improved = true;
+  let iterations = 0;
+  const maxIterations = Math.min(100, stops.length * 2); // Limit iterations for performance
+  
+  // Helper function to calculate total route distance
+  const calculateRouteDistance = (route) => {
+    if (route.length === 0) return 0;
+    
+    let total = getHaversineDistance(startPoint, route[0]);
+    for (let i = 0; i < route.length - 1; i++) {
+      total += getHaversineDistance(route[i], route[i + 1]);
+    }
+    total += getHaversineDistance(route[route.length - 1], endPoint);
+    return total;
+  };
+  
+  while (improved && iterations < maxIterations) {
+    improved = false;
+    iterations++;
+    
+    // Try all possible 2-opt swaps
+    for (let i = 0; i < ordered.length - 1; i++) {
+      for (let j = i + 2; j < ordered.length; j++) {
+        // Current route: start -> ... -> ordered[i] -> ordered[i+1] -> ... -> ordered[j] -> ordered[j+1] -> ... -> end
+        // New route: start -> ... -> ordered[i] -> ordered[j] -> ... -> ordered[i+1] -> ordered[j+1] -> ... -> end
+        // (reverse segment from i+1 to j)
+        
+        // Calculate current distance
+        const currentDist = calculateRouteDistance(ordered);
+        
+        // Create new route by reversing segment i+1 to j
+        const newOrder = [
+          ...ordered.slice(0, i + 1),
+          ...ordered.slice(i + 1, j + 1).reverse(),
+          ...ordered.slice(j + 1)
+        ];
+        
+        // Calculate new distance
+        const newDist = calculateRouteDistance(newOrder);
+        
+        // If new route is better, accept it
+        if (newDist < currentDist - 0.1) { // Small threshold to avoid floating point issues
+          ordered.splice(0, ordered.length, ...newOrder);
+          improved = true;
+          break;
+        }
+      }
+      if (improved) break;
+    }
+  }
+  
+  if (iterations > 1) {
+    console.log(`[VRP] 2-opt optimization completed in ${iterations} iterations`);
+  }
+  
+  // VALIDATION: Ensure route doesn't have duplicate points
+  const seenIds = new Set();
+  const uniqueOrdered = [];
+  for (const stop of ordered) {
+    const stopId = stop.id || `${stop.lat},${stop.lon}`;
+    if (!seenIds.has(stopId)) {
+      seenIds.add(stopId);
+      uniqueOrdered.push(stop);
+    } else {
+      console.warn(`[VRP] Duplicate point detected in route: ${stopId}, skipping`);
+    }
+  }
+  
+  return uniqueOrdered;
+}
+
+// Helper function to optimize stop order using Hybrid CI-SA (Cheapest Insertion + Simulated Annealing)
+// This algorithm provides the best balance between speed and optimality for VRP/TSP problems
+async function optimizeStopOrder(stops, startPoint, endPoint) {
+  if (stops.length === 0) return [];
+  
+  // Use Hybrid CI-SA algorithm for optimal routing
+  // This replaces the old Nearest Neighbor + 2-opt approach
+  return await optimizeRouteHybrid(stops, startPoint, endPoint);
+}
+
+// --- SMART CLUSTERING: Sweep Line Algorithm ---
+// Phân cụm điểm theo góc từ depot (giống cách shipper thực tế làm)
+// Đảm bảo các điểm gần nhau về mặt địa lý được gom vào cùng một cụm
+function clusterPointsBySweepLine(points, depot, numClusters) {
+  if (points.length === 0) return [];
+  if (numClusters <= 0) numClusters = 1;
+  if (numClusters >= points.length) {
+    // Mỗi điểm là một cụm
+    return points.map(p => [p]);
+  }
+
+  // 1. Tính góc (bearing) của mỗi điểm từ depot
+  const pointsWithAngle = points.map(point => {
+    const dx = point.lon - depot.lon;
+    const dy = point.lat - depot.lat;
+    
+    // Tính góc từ depot đến điểm (0-360 độ, 0 = Bắc, 90 = Đông)
+    let angle = Math.atan2(dx, dy) * (180 / Math.PI);
+    if (angle < 0) angle += 360;
+    
+    // Tính khoảng cách từ depot
+    const distance = getHaversineDistance(depot, point);
+    
+    return {
+      point,
+      angle,
+      distance
+    };
+  });
+
+  // 2. Sắp xếp theo góc (từ Bắc quay theo chiều kim đồng hồ)
+  pointsWithAngle.sort((a, b) => {
+    if (Math.abs(a.angle - b.angle) < 0.1) {
+      // Nếu góc gần nhau, ưu tiên điểm gần hơn
+      return a.distance - b.distance;
+    }
+    return a.angle - b.angle;
+  });
+
+  // 3. Chia thành các cụm theo góc (sweep line)
+  const clusters = [];
+  const pointsPerCluster = Math.ceil(pointsWithAngle.length / numClusters);
+  
+  for (let i = 0; i < numClusters; i++) {
+    const startIdx = i * pointsPerCluster;
+    const endIdx = Math.min(startIdx + pointsPerCluster, pointsWithAngle.length);
+    
+    if (startIdx < pointsWithAngle.length) {
+      const cluster = pointsWithAngle.slice(startIdx, endIdx).map(item => item.point);
+      if (cluster.length > 0) {
+        clusters.push(cluster);
+      }
+    }
+  }
+
+  return clusters;
+}
+
+// --- K-Means Clustering (Alternative - nếu muốn dùng) ---
+// Hàm K-Means đơn giản không cần thư viện ngoài
+function clusterPointsByKMeans(points, numClusters, maxIterations = 10) {
+  if (points.length === 0) return [];
+  if (numClusters <= 0) numClusters = 1;
+  if (numClusters >= points.length) {
+    return points.map(p => [p]);
+  }
+
+  // Khởi tạo centroids ngẫu nhiên
+  let centroids = [];
+  for (let i = 0; i < numClusters; i++) {
+    const randomPoint = points[Math.floor(Math.random() * points.length)];
+    centroids.push({ lat: randomPoint.lat, lon: randomPoint.lon });
+  }
+
+  let clusters = [];
+  
+  for (let iter = 0; iter < maxIterations; iter++) {
+    // Gán mỗi điểm vào cụm gần nhất
+    clusters = Array(numClusters).fill(null).map(() => []);
+    
+    for (const point of points) {
+      let minDist = Infinity;
+      let nearestCluster = 0;
+      
+      for (let i = 0; i < centroids.length; i++) {
+        const dist = getHaversineDistance(point, centroids[i]);
+        if (dist < minDist) {
+          minDist = dist;
+          nearestCluster = i;
+        }
+      }
+      
+      clusters[nearestCluster].push(point);
+    }
+
+    // Cập nhật centroids
+    let changed = false;
+    for (let i = 0; i < centroids.length; i++) {
+      if (clusters[i].length === 0) continue;
+      
+      const avgLat = clusters[i].reduce((sum, p) => sum + p.lat, 0) / clusters[i].length;
+      const avgLon = clusters[i].reduce((sum, p) => sum + p.lon, 0) / clusters[i].length;
+      
+      const oldCentroid = centroids[i];
+      centroids[i] = { lat: avgLat, lon: avgLon };
+      
+      if (getHaversineDistance(oldCentroid, centroids[i]) > 10) {
+        changed = true;
+      }
+    }
+
+    // Nếu centroids không thay đổi nhiều, dừng lại
+    if (!changed && iter > 2) break;
+  }
+
+  // Loại bỏ cụm rỗng
+  return clusters.filter(c => c.length > 0);
+}
+
+// Helper function to find best dump for district
+async function findBestDumpForDistrict(depot, points, dumps) {
+  if (!dumps || dumps.length === 0) return null;
+  
+  // Filter active dumps with valid coordinates
+  const activeDumps = dumps.filter(d => {
+    const hasValidCoords = d.lat && d.lon && 
+      typeof d.lat === 'number' && typeof d.lon === 'number' &&
+      !isNaN(d.lat) && !isNaN(d.lon);
+    const isActive = d.status === 'active' || !d.status;
+    
+    // Also ensure dump is NOT at the same location as depot
+    let isDifferentFromDepot = true;
+    if (depot && depot.lat && depot.lon && hasValidCoords) {
+      const dist = getHaversineDistance(
+        { lat: depot.lat, lon: depot.lon },
+        { lat: d.lat, lon: d.lon }
+      );
+      isDifferentFromDepot = dist > 100; // At least 100m away from depot
+    }
+    
+    return hasValidCoords && isActive && isDifferentFromDepot;
+  });
+  
+  if (activeDumps.length === 0) {
+    console.warn(`[VRP] No valid dumps found (with coords and different from depot)`);
+    return null;
+  }
+  
+  // Strategy: Find dump closest to the last stop (after visiting all points)
+  // This ensures efficient end-of-route disposal
+  let targetPoint = depot;
+  
+  if (points && points.length > 0) {
+    // Use the farthest point from depot as target
+    let maxDist = 0;
+    for (const point of points) {
+      if (!point.lat || !point.lon) continue;
+      const dist = getHaversineDistance(
+        { lat: depot.lat, lon: depot.lon },
+        { lat: point.lat, lon: point.lon }
+      );
+      if (dist > maxDist) {
+        maxDist = dist;
+        targetPoint = point;
+      }
+    }
+  }
+  
+  // Find dump nearest to target point (farthest point from depot)
+  let nearestDump = null;
+  let minDistance = Infinity;
+  
+  for (const dump of activeDumps) {
+    if (!dump.lat || !dump.lon) continue;
+    
+    const distance = getHaversineDistance(
+      { lat: targetPoint.lat, lon: targetPoint.lon },
+      { lat: dump.lat, lon: dump.lon }
+    );
+    
+    if (distance < minDistance) {
+      minDistance = distance;
+      nearestDump = dump;
+    }
+  }
+  
+  if (nearestDump) {
+    console.log(`[VRP] Selected dump: ${nearestDump.name} at [${nearestDump.lon}, ${nearestDump.lat}], distance from target: ${Math.round(minDistance)}m`);
+  }
+  
+  return nearestDump || activeDumps[0];
+}
+
 // Helper function to get route from OSRM (Open Source Routing Machine)
+// IMPORTANT: Use segment-by-segment routing to ensure route passes through ALL waypoints
+// OSRM route API with multiple waypoints may optimize route but skip intermediate stops
 async function getOSRMRoute(waypoints) {
   try {
     if (!waypoints || waypoints.length < 2) {
+      console.warn("[OSRM] Invalid waypoints: need at least 2 points");
       return null;
     }
 
-    // Build OSRM API URL
-    // Using public OSRM demo server (for production, use your own OSRM instance)
-    const coordinates = waypoints.map((wp) => `${wp[0]},${wp[1]}`).join(";");
-    const url = `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson`;
+    // Validate waypoints format: [lon, lat]
+    for (const wp of waypoints) {
+      if (!Array.isArray(wp) || wp.length !== 2 || 
+          typeof wp[0] !== 'number' || typeof wp[1] !== 'number' ||
+          wp[0] < -180 || wp[0] > 180 || wp[1] < -90 || wp[1] > 90) {
+        console.warn(`[OSRM] Invalid waypoint format: ${JSON.stringify(wp)}`);
+        return null;
+      }
+    }
 
     const axios = require("axios");
-    const response = await axios.get(url, {
-      timeout: 10000,
-      headers: {
-        "User-Agent": "EcoCheck-Backend/1.0",
-      },
-    });
-
-    if (
-      response.data &&
-      response.data.code === "Ok" &&
-      response.data.routes &&
-      response.data.routes.length > 0
-    ) {
-      const route = response.data.routes[0];
-      return {
-        geometry: route.geometry,
-        distance: route.distance,
-        duration: route.duration,
-      };
+    
+    // Remove duplicate consecutive waypoints (e.g., if dump = depot)
+    const uniqueWaypoints = [];
+    for (let i = 0; i < waypoints.length; i++) {
+      const current = waypoints[i];
+      const previous = uniqueWaypoints[uniqueWaypoints.length - 1];
+      
+      // Only add if different from previous waypoint (at least 10m apart, ~0.0001 degrees)
+      // Use smaller threshold to ensure all stops are included
+      if (!previous || 
+          Math.abs(current[0] - previous[0]) > 0.0001 || 
+          Math.abs(current[1] - previous[1]) > 0.0001) {
+        uniqueWaypoints.push(current);
+      } else {
+        console.warn(`[OSRM] Skipping duplicate waypoint ${i}: [${current[0].toFixed(4)}, ${current[1].toFixed(4)}] (same as previous - within 10m)`);
+      }
     }
-    return null;
+    
+    if (uniqueWaypoints.length < 2) {
+      console.warn(`[OSRM] Not enough unique waypoints (${uniqueWaypoints.length}), need at least 2`);
+      return null;
+    }
+    
+    // Skip single request - always use segment-by-segment for guaranteed waypoint inclusion
+
+    // ALWAYS use segment-by-segment routing to ensure route passes through ALL waypoints
+    // OSRM route API with multiple waypoints may optimize but skip intermediate stops
+    console.log(`[OSRM] Using segment-by-segment routing to ensure route passes through all ${uniqueWaypoints.length} waypoints`);
+    let totalDistance = 0;
+    let totalDuration = 0;
+    const allCoordinates = [];
+
+    // Use uniqueWaypoints
+    const fallbackWaypoints = uniqueWaypoints;
+
+    for (let i = 0; i < fallbackWaypoints.length - 1; i++) {
+      const start = fallbackWaypoints[i];
+      const end = fallbackWaypoints[i + 1];
+      
+      const segmentCoords = `${start[0]},${start[1]};${end[0]},${end[1]}`;
+      const segmentUrl = `https://router.project-osrm.org/route/v1/driving/${segmentCoords}?overview=full&geometries=geojson&alternatives=false&steps=false`;
+
+      try {
+        const segmentResponse = await axios.get(segmentUrl, {
+          timeout: 10000,
+          headers: {
+            "User-Agent": "EcoCheck-Backend/1.0",
+          },
+        });
+
+        if (
+          segmentResponse.data &&
+          segmentResponse.data.code === "Ok" &&
+          segmentResponse.data.routes &&
+          segmentResponse.data.routes.length > 0
+        ) {
+          const segmentRoute = segmentResponse.data.routes[0];
+          if (segmentRoute.distance && segmentRoute.duration && segmentRoute.geometry) {
+            const segmentCoords = segmentRoute.geometry.coordinates;
+            
+            // CRITICAL FIX: Ensure smooth connection between segments
+            if (i === 0) {
+              // First segment: add all coordinates
+              allCoordinates.push(...segmentCoords);
+            } else {
+              // Subsequent segments: ensure connection
+              const lastCoord = allCoordinates[allCoordinates.length - 1];
+              const firstCoord = segmentCoords[0];
+              
+              // Check if segments are connected (within 1m tolerance ~0.00001 degrees)
+              const isConnected = Math.abs(lastCoord[0] - firstCoord[0]) < 0.00001 &&
+                                  Math.abs(lastCoord[1] - firstCoord[1]) < 0.00001;
+              
+              if (isConnected) {
+                // Connected: skip first coordinate to avoid duplicate
+              allCoordinates.push(...segmentCoords.slice(1));
+              } else {
+                // NOT connected: create a smooth bridge line between segments
+                // This ensures the route is continuous from START to END
+                const gap = Math.sqrt(
+                  Math.pow(lastCoord[0] - firstCoord[0], 2) + 
+                  Math.pow(lastCoord[1] - firstCoord[1], 2)
+                );
+                
+                if (gap > 0.0001) { // Only bridge if gap is significant (>10m)
+                  console.log(`[OSRM] Segment ${i}->${i+1} gap detected (${Math.round(gap * 111000)}m), creating bridge`);
+                  // Create intermediate points for smooth connection (linear interpolation)
+                  const bridgePoints = 3; // Number of intermediate points
+                  for (let b = 1; b <= bridgePoints; b++) {
+                    const t = b / (bridgePoints + 1);
+                    const bridgeLon = lastCoord[0] + (firstCoord[0] - lastCoord[0]) * t;
+                    const bridgeLat = lastCoord[1] + (firstCoord[1] - lastCoord[1]) * t;
+                    allCoordinates.push([bridgeLon, bridgeLat]);
+                  }
+                }
+                // Then add all segment coordinates
+                allCoordinates.push(...segmentCoords);
+              }
+            }
+            
+            totalDistance += segmentRoute.distance;
+            totalDuration += segmentRoute.duration;
+          } else {
+            // Invalid response data - log error but don't use straight line fallback
+            console.error(`[OSRM] Segment ${i}->${i+1} returned invalid data (missing distance/duration/geometry)`);
+            throw new Error(`OSRM route segment ${i}->${i+1} has invalid response data`);
+          }
+        } else {
+          // OSRM returned error code
+          const errorCode = segmentResponse.data?.code || 'Unknown';
+          const errorMessage = segmentResponse.data?.message || 'No error message';
+          console.error(`[OSRM] Segment ${i}->${i+1} returned error code: ${errorCode}, message: ${errorMessage}`);
+          throw new Error(`OSRM route segment ${i}->${i+1} failed: ${errorCode} - ${errorMessage}`);
+        }
+      } catch (error) {
+        // Retry logic for transient errors (timeout, network issues)
+        const maxRetries = 3;
+        let lastError = error;
+        let retryCount = 0;
+        
+        while (retryCount < maxRetries) {
+          try {
+            console.log(`[OSRM] Segment ${i}->${i+1} retry attempt ${retryCount + 1}/${maxRetries}...`);
+            await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 500)); // Exponential backoff
+            
+            const retryResponse = await axios.get(segmentUrl, {
+              timeout: 10000, // Longer timeout for retry
+              headers: {
+                "User-Agent": "EcoCheck-Backend/1.0",
+              },
+            });
+            
+            if (
+              retryResponse.data &&
+              retryResponse.data.code === "Ok" &&
+              retryResponse.data.routes &&
+              retryResponse.data.routes.length > 0 &&
+              retryResponse.data.routes[0].distance &&
+              retryResponse.data.routes[0].duration &&
+              retryResponse.data.routes[0].geometry
+            ) {
+              // Retry succeeded!
+              const segmentRoute = retryResponse.data.routes[0];
+              const segmentCoords = segmentRoute.geometry.coordinates;
+              
+        if (i === 0) {
+                allCoordinates.push(...segmentCoords);
+        } else {
+                const lastCoord = allCoordinates[allCoordinates.length - 1];
+                const firstCoord = segmentCoords[0];
+                const isConnected = Math.abs(lastCoord[0] - firstCoord[0]) < 0.00001 &&
+                                    Math.abs(lastCoord[1] - firstCoord[1]) < 0.00001;
+                
+                if (isConnected) {
+                  allCoordinates.push(...segmentCoords.slice(1));
+                } else {
+                  // NOT connected: create a smooth bridge line between segments
+                  const gap = Math.sqrt(
+                    Math.pow(lastCoord[0] - firstCoord[0], 2) + 
+                    Math.pow(lastCoord[1] - firstCoord[1], 2)
+                  );
+                  
+                  if (gap > 0.0001) { // Only bridge if gap is significant (>10m)
+                    console.log(`[OSRM] Segment ${i}->${i+1} gap detected after retry (${Math.round(gap * 111000)}m), creating bridge`);
+                    // Create intermediate points for smooth connection
+                    const bridgePoints = 3;
+                    for (let b = 1; b <= bridgePoints; b++) {
+                      const t = b / (bridgePoints + 1);
+                      const bridgeLon = lastCoord[0] + (firstCoord[0] - lastCoord[0]) * t;
+                      const bridgeLat = lastCoord[1] + (firstCoord[1] - lastCoord[1]) * t;
+                      allCoordinates.push([bridgeLon, bridgeLat]);
+                    }
+                  }
+                  allCoordinates.push(...segmentCoords);
+                }
+              }
+              
+              totalDistance += segmentRoute.distance;
+              totalDuration += segmentRoute.duration;
+              console.log(`[OSRM] Segment ${i}->${i+1} retry succeeded ✅`);
+              lastError = null; // Clear error to indicate success
+              break; // Exit retry loop
+            }
+          } catch (retryError) {
+            lastError = retryError;
+            retryCount++;
+          }
+        }
+        
+        // If all retries failed, throw error instead of using straight line
+        if (lastError) {
+          console.error(`[OSRM] Segment ${i}->${i+1} failed after ${maxRetries} retries: ${lastError.message}`);
+          throw new Error(`OSRM route segment ${i}->${i+1} failed after ${maxRetries} retries: ${lastError.message}`);
+        }
+      }
+    }
+
+    // Combine all segments into one route
+    if (allCoordinates.length > 0) {
+      console.log(`[OSRM] Fallback route created: ${Math.round(totalDistance)}m, ${allCoordinates.length} coordinates`);
+      return {
+        geometry: {
+          type: "LineString",
+          coordinates: allCoordinates,
+        },
+        distance: Math.round(totalDistance),
+        duration: Math.round(totalDuration),
+      };
+    } else {
+      console.warn("[OSRM] No valid route created");
+      return null;
+    }
   } catch (error) {
     console.warn(`[OSRM] Route calculation failed: ${error.message}`);
+    if (error.response) {
+      console.warn(`[OSRM] Response status: ${error.response.status}, data:`, error.response.data);
+    }
     return null;
   }
 }
 
 // ==================== VRP OPTIMIZATION API ====================
+
+// GET /api/vrp/districts - Get available districts (from depots, similar to depot management)
+app.get("/api/vrp/districts", async (req, res) => {
+  try {
+    const { date } = req.query;
+    const scheduledDate = date || new Date().toISOString().split('T')[0];
+    
+    // Get districts from depots AND count actual schedules for each district
+    const { rows } = await db.query(`
+      WITH depot_districts AS (
+        SELECT DISTINCT
+          CASE 
+            WHEN d.address IS NOT NULL AND d.address ~ 'Quận\\s*\\d+' THEN 
+              'Quận ' || COALESCE((regexp_match(d.address, 'Quận\\s*(\\d+)'))[1], '')
+            WHEN d.address IS NOT NULL AND d.address ~ 'Q\\.?\\s*\\d+' THEN 
+              'Quận ' || COALESCE((regexp_match(d.address, 'Q\\.?\\s*(\\d+)'))[1], '')
+            WHEN d.address IS NOT NULL AND d.address ~ 'Bình Thạnh' THEN 'Bình Thạnh'
+            WHEN d.address IS NOT NULL AND d.address ~ 'Tân Bình' THEN 'Tân Bình'
+            WHEN d.address IS NOT NULL AND d.address ~ 'Tân Phú' THEN 'Tân Phú'
+            WHEN d.address IS NOT NULL AND d.address ~ 'Phú Nhuận' THEN 'Phú Nhuận'
+            WHEN d.address IS NOT NULL AND d.address ~ 'Gò Vấp' THEN 'Gò Vấp'
+            WHEN d.address IS NOT NULL AND d.address ~ 'Bình Tân' THEN 'Bình Tân'
+            WHEN d.address IS NOT NULL AND d.address ~ 'Thủ Đức' THEN 'Thủ Đức'
+            ELSE NULL
+          END as district
+        FROM depots d
+        WHERE d.address IS NOT NULL
+          AND d.status = 'active'
+      ),
+      schedule_counts AS (
+      SELECT 
+        dd.district,
+          COUNT(DISTINCT s.schedule_id)::integer as schedule_count
+        FROM depot_districts dd
+        LEFT JOIN schedules s ON (
+          s.scheduled_date = $1::date
+            AND s.status = 'scheduled'
+            AND s.address IS NOT NULL
+            AND (
+              s.address LIKE '%' || dd.district || '%'
+              OR (dd.district ~ '^Quận\\s*\\d+$' 
+                  AND s.address ~ ('Quận\\s*' || SUBSTRING(dd.district FROM 'Quận\\s*(\\d+)')))
+            )
+      )
+      WHERE dd.district IS NOT NULL
+      GROUP BY dd.district
+      )
+      SELECT 
+        sc.district,
+        COALESCE(sc.schedule_count, 0) as schedule_count,
+        COALESCE(sc.schedule_count, 0) as point_count
+      FROM schedule_counts sc
+      ORDER BY sc.district
+    `, [scheduledDate]);
+    
+    res.json({ ok: true, data: rows });
+  } catch (error) {
+    console.error("[VRP] Get districts error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 // VRP optimization endpoint
 app.post("/api/vrp/optimize", async (req, res) => {
   try {
-    const { vehicles = [], points = [], depot, dump, timeWindow } = req.body;
+    const { vehicles = [], points = [], depot, dump, timeWindow, dumps: dumpsList } = req.body;
 
     if (!vehicles || vehicles.length === 0) {
       return res.status(400).json({
@@ -1365,30 +2666,305 @@ app.post("/api/vrp/optimize", async (req, res) => {
       });
     }
 
-    // Simple VRP algorithm: distribute points evenly among vehicles
-    // In production, use a proper VRP solver (OR-Tools, VROOM, etc.)
-    const pointsPerVehicle = Math.ceil(points.length / vehicles.length);
-    const routes = [];
+    // If dump is not provided, find best dump automatically
+    // NOTE: Dump is NOT required for grouping points, only for route optimization
+    let selectedDump = dump;
+    if (!selectedDump && dumpsList && dumpsList.length > 0) {
+      selectedDump = await findBestDumpForDistrict(depot, points, dumpsList);
+      console.log(`[VRP] Auto-selected dump: ${selectedDump?.name || 'None'}`);
+    } else if (!selectedDump) {
+      console.warn(`[VRP] No dump provided - routes will end at last stop (no dump destination)`);
+    }
 
-    for (let i = 0; i < vehicles.length; i++) {
-      const vehicle = vehicles[i];
-      const startIdx = i * pointsPerVehicle;
-      const endIdx = Math.min(startIdx + pointsPerVehicle, points.length);
-      const vehiclePoints = points.slice(startIdx, endIdx);
-
-      if (vehiclePoints.length === 0) continue;
-
-      // Build waypoints: depot -> points -> dump
-      const waypoints = [];
-      if (depot) {
-        waypoints.push([depot.lon, depot.lat]);
-      }
-      vehiclePoints.forEach((p) => {
-        waypoints.push([p.lon, p.lat]);
+    // SMART VRP algorithm với Clustering: Phân cụm trước, sau đó tối ưu từng cụm
+    // Logic: All points -> Clustering (Sweep Line) -> Mỗi cụm -> Tối ưu với Hybrid CI-SA
+    // Điều này giúp tránh việc xe phải băng qua đường nhiều lần
+    
+    // CRITICAL FIX: Ensure defaultVehicleCapacity is always a number
+    const defaultVehicleCapacity = parseFloat(vehicles[0]?.capacity || vehicles[0]?.capacity_kg || 5000);
+    
+    // 1. SMART CLUSTERING: Phân cụm điểm theo góc từ depot (Sweep Line)
+    // Số cụm = Số xe (hoặc có thể điều chỉnh)
+    const numClusters = vehicles.length;
+    console.log(`[VRP] Clustering ${points.length} points into ${numClusters} zones using Sweep Line algorithm...`);
+    
+    let clusteredPoints = [];
+    try {
+      // Sử dụng Sweep Line để phân cụm (phù hợp với bài toán VRP)
+      clusteredPoints = clusterPointsBySweepLine(points, depot, numClusters);
+      console.log(`[VRP] Clustering completed: ${clusteredPoints.length} clusters created`);
+      clusteredPoints.forEach((cluster, idx) => {
+        console.log(`[VRP] Cluster ${idx + 1}: ${cluster.length} points`);
       });
-      if (dump) {
-        waypoints.push([dump.lon, dump.lat]);
+    } catch (error) {
+      console.warn(`[VRP] Sweep Line clustering failed: ${error.message}, falling back to K-Means`);
+      try {
+        clusteredPoints = clusterPointsByKMeans(points, numClusters);
+        console.log(`[VRP] K-Means clustering completed: ${clusteredPoints.length} clusters`);
+      } catch (e2) {
+        console.warn(`[VRP] K-Means also failed: ${e2.message}, using simple distance-based grouping`);
+        // Fallback: Chia đều theo khoảng cách
+        const sortedPoints = [...points].sort((a, b) => {
+          const distA = getHaversineDistance(depot, a);
+          const distB = getHaversineDistance(depot, b);
+          return distA - distB;
+        });
+        const chunkSize = Math.ceil(sortedPoints.length / numClusters);
+        for (let i = 0; i < sortedPoints.length; i += chunkSize) {
+          clusteredPoints.push(sortedPoints.slice(i, i + chunkSize));
+        }
       }
+    }
+
+    const routes = [];
+    let routeIndex = 0; // Route A, B, C, ...
+
+    // 2. XỬ LÝ TỪNG CỤM: Mỗi cụm được gán cho một xe và tối ưu riêng biệt
+    // Điều này đảm bảo xe không phải băng qua đường nhiều lần
+    for (let clusterIdx = 0; clusterIdx < clusteredPoints.length; clusterIdx++) {
+      const cluster = clusteredPoints[clusterIdx];
+      
+      if (cluster.length === 0) {
+        console.log(`[VRP] Cluster ${clusterIdx + 1} is empty, skipping`);
+        continue;
+      }
+
+      // Gán xe cho cụm này (round-robin nếu có nhiều cụm hơn xe)
+      const vehicle = vehicles[clusterIdx % vehicles.length];
+      if (!vehicle || !vehicle.id) {
+        console.error(`[VRP] Invalid vehicle for cluster ${clusterIdx + 1}`);
+        continue;
+      }
+
+      const vehicleCapacity = parseFloat(vehicle.capacity || vehicle.capacity_kg || defaultVehicleCapacity);
+      
+      // Nếu cụm quá lớn, chia nhỏ theo capacity
+      let remainingPoints = [...cluster];
+      let subRouteIndex = 0;
+      
+      while (remainingPoints.length > 0) {
+        // Tạo route mới cho phần cụm này
+        const route = {
+          vehicleId: vehicle.id,
+          vehiclePlate: vehicle.plate,
+          stops: [],
+          currentLoad: 0,
+          currentLocation: depot,
+          clusterIndex: clusterIdx
+        };
+
+        // Thêm điểm vào route theo capacity (trong cùng cụm)
+        const unassignedInCluster = remainingPoints.map(p => ({ ...p, assigned: false }));
+        let pointsAdded = 0;
+        
+        while (unassignedInCluster.some(p => !p.assigned)) {
+          const availablePoints = unassignedInCluster.filter(p => !p.assigned);
+          if (availablePoints.length === 0) break;
+          
+          // Tìm điểm gần nhất từ vị trí hiện tại (trong cụm)
+          let nearestPoint = null;
+          let minDistance = Infinity;
+          let nearestIdx = -1;
+          
+          for (let i = 0; i < unassignedInCluster.length; i++) {
+            const point = unassignedInCluster[i];
+            if (point.assigned) continue;
+            
+            const distance = getHaversineDistance(route.currentLocation, point);
+            if (distance < minDistance) {
+              minDistance = distance;
+              nearestPoint = point;
+              nearestIdx = i;
+            }
+          }
+          
+          if (!nearestPoint) break;
+          
+          // Kiểm tra capacity
+          const demand = parseFloat(nearestPoint.demand) || 0;
+          const currentLoad = parseFloat(route.currentLoad) || 0;
+          const totalLoad = currentLoad + demand;
+          
+          if (totalLoad <= vehicleCapacity || demand === 0 || !nearestPoint.demand) {
+            route.stops.push(nearestPoint);
+            route.currentLoad = totalLoad;
+            route.currentLocation = nearestPoint;
+            unassignedInCluster[nearestIdx].assigned = true;
+            pointsAdded++;
+          } else {
+            // Không thể thêm điểm này, dừng route này
+            break;
+          }
+        }
+
+        // Chỉ thêm route nếu có ít nhất 1 điểm
+        if (route.stops.length > 0) {
+          routes.push(route);
+          routeIndex++;
+          
+          // Cập nhật remainingPoints (loại bỏ các điểm đã được gán)
+          remainingPoints = unassignedInCluster.filter(p => !p.assigned).map(p => {
+            const { assigned, ...point } = p;
+            return point;
+          });
+          
+          console.log(`[VRP] Created Route ${String.fromCharCode(65 + routeIndex - 1)} from Cluster ${clusterIdx + 1} (${vehicle.plate}): ${route.stops.length} points, ${Math.round(route.currentLoad)}kg`);
+        } else {
+          break; // Không thể tạo route nào nữa từ cụm này
+        }
+      }
+    }
+
+    console.log(`[VRP] Total routes created: ${routes.length} from ${points.length} points`);
+
+    // 4. Optimize and process each route
+    for (let routeIdx = 0; routeIdx < routes.length; routeIdx++) {
+      const route = routes[routeIdx];
+      const vehicle = vehicles.find(v => v.id === route.vehicleId) || vehicles[routeIdx % vehicles.length];
+
+      // Get vehicle current location (or use depot as fallback)
+      let vehicleStartLocation = depot;
+      try {
+        const currentLoc = await getVehicleCurrentLocation(vehicle.id);
+        if (currentLoc && currentLoc.lon && currentLoc.lat) {
+          vehicleStartLocation = currentLoc;
+          console.log(`[VRP] Vehicle ${vehicle.id} current location: ${currentLoc.lon}, ${currentLoc.lat}`);
+        }
+      } catch (error) {
+        console.warn(`[VRP] Could not get current location for vehicle ${vehicle.id}, using depot`);
+      }
+
+      // 3. Optimize stop order using Hybrid CI-SA (Cheapest Insertion + Simulated Annealing)
+      // OSRM will be used later for route drawing (getOSRMRoute) which gives actual road paths
+      if (route.stops.length > 0) {
+        route.stops = await optimizeStopOrder(route.stops, vehicleStartLocation, selectedDump || vehicleStartLocation);
+        console.log(`[VRP] Vehicle ${vehicle.id}: Optimized ${route.stops.length} stops using Hybrid CI-SA`);
+      }
+
+      // Build waypoints: vehicle current location -> optimized stops -> dump
+      // IMPORTANT: Keep the optimized order - Route will go through ALL waypoints in order
+      const waypoints = [];
+      
+      // 1. Start point (depot or vehicle current location)
+      if (vehicleStartLocation && vehicleStartLocation.lon && vehicleStartLocation.lat) {
+        waypoints.push([vehicleStartLocation.lon, vehicleStartLocation.lat]);
+        console.log(`[VRP] Vehicle ${vehicle.id}: Start point: ${vehicleStartLocation.lon}, ${vehicleStartLocation.lat}`);
+      }
+      
+      // 2. All stops (in optimized order)
+      route.stops.forEach((p, idx) => {
+        if (p.lon && p.lat) {
+          waypoints.push([p.lon, p.lat]);
+          console.log(`[VRP] Vehicle ${vehicle.id}: Stop ${idx + 1}: ${p.lon}, ${p.lat}`);
+        } else {
+          console.warn(`[VRP] Vehicle ${vehicle.id}: Stop ${idx + 1} missing coordinates`);
+        }
+      });
+      
+      // 3. End point (dump) - ALWAYS add to ensure route has clear END point
+      // Route must go: START -> stops -> END
+      if (selectedDump && selectedDump.lon && selectedDump.lat) {
+        const dumpCoords = [parseFloat(selectedDump.lon), parseFloat(selectedDump.lat)];
+        const startCoords = waypoints[0];
+        
+        // Check if dump is same as start point (within 10m tolerance)
+        const isSameAsStart = Math.abs(dumpCoords[0] - startCoords[0]) < 0.0001 &&
+                              Math.abs(dumpCoords[1] - startCoords[1]) < 0.0001;
+        
+        if (isSameAsStart) {
+          console.warn(`[VRP] Vehicle ${vehicle.id}: Dump is same as start point, but still adding to ensure route has END point`);
+          // Still add dump to ensure route has clear END point
+          // OSRM will handle the route correctly even if start and end are close
+        }
+        
+        // ALWAYS add dump as END point to ensure route completeness
+        waypoints.push(dumpCoords);
+        console.log(`[VRP] Vehicle ${vehicle.id}: End point (dump): ${selectedDump.name || 'Dump'} at [${dumpCoords[0]}, ${dumpCoords[1]}]`);
+      } else {
+        // If no dump provided, use last stop as END point
+        if (waypoints.length > 1) {
+          const lastStop = waypoints[waypoints.length - 1];
+          console.log(`[VRP] Vehicle ${vehicle.id}: No dump provided, route will end at last stop: [${lastStop[0]}, ${lastStop[1]}]`);
+        }
+      }
+      
+      // VALIDATION: Ensure route is valid (START → END, no duplicates, no dead ends)
+      const validationErrors = [];
+      
+      // 1. Validate START point exists
+      if (!waypoints || waypoints.length === 0) {
+        validationErrors.push("No waypoints defined");
+      } else {
+        const startPoint = waypoints[0];
+        if (!startPoint || startPoint.length !== 2) {
+          validationErrors.push("Invalid START point");
+        } else if (startPoint[0] === vehicleStartLocation.lon && startPoint[1] === vehicleStartLocation.lat) {
+          // START point matches vehicle location - OK
+        } else {
+          validationErrors.push(`START point [${startPoint[0]}, ${startPoint[1]}] does not match vehicle location [${vehicleStartLocation.lon}, ${vehicleStartLocation.lat}]`);
+        }
+      }
+      
+      // 2. Validate END point exists (if dump is provided)
+      if (selectedDump && selectedDump.lon && selectedDump.lat) {
+        const endPoint = waypoints[waypoints.length - 1];
+        if (!endPoint || endPoint.length !== 2) {
+          validationErrors.push("Invalid END point");
+        } else {
+          const dumpCoords = [parseFloat(selectedDump.lon), parseFloat(selectedDump.lat)];
+          const isSameAsEnd = Math.abs(endPoint[0] - dumpCoords[0]) < 0.0001 &&
+                              Math.abs(endPoint[1] - dumpCoords[1]) < 0.0001;
+          if (!isSameAsEnd) {
+            validationErrors.push(`END point [${endPoint[0]}, ${endPoint[1]}] does not match dump location [${dumpCoords[0]}, ${dumpCoords[1]}]`);
+          }
+        }
+      }
+      
+      // 3. Validate no duplicate consecutive waypoints
+      const duplicateWaypoints = [];
+      for (let i = 0; i < waypoints.length - 1; i++) {
+        const wp1 = waypoints[i];
+        const wp2 = waypoints[i + 1];
+        const dist = Math.abs(wp1[0] - wp2[0]) + Math.abs(wp1[1] - wp2[1]);
+        if (dist < 0.0001) { // Less than ~10m apart
+          duplicateWaypoints.push(`Waypoints ${i} and ${i+1} are duplicates`);
+        }
+      }
+      if (duplicateWaypoints.length > 0) {
+        validationErrors.push(`Duplicate waypoints detected: ${duplicateWaypoints.join(', ')}`);
+      }
+      
+      // 4. Validate no duplicate stops (non-consecutive duplicates)
+      const stopIds = new Set();
+      for (const stop of route.stops) {
+        const stopId = stop.id || `${stop.lat},${stop.lon}`;
+        if (stopIds.has(stopId)) {
+          validationErrors.push(`Duplicate stop detected: ${stopId}`);
+        }
+        stopIds.add(stopId);
+      }
+      
+      // 5. Validate waypoints count matches expected (START + stops + END)
+      const expectedWaypoints = 1 + route.stops.length + (selectedDump ? 1 : 0);
+      if (waypoints.length !== expectedWaypoints) {
+        validationErrors.push(`Waypoints count mismatch: expected ${expectedWaypoints} (START + ${route.stops.length} stops + ${selectedDump ? '1' : '0'} END), got ${waypoints.length}`);
+      }
+      
+      // Log validation results
+      if (validationErrors.length > 0) {
+        console.warn(`[VRP] Vehicle ${vehicle.id}: Route validation warnings:`, validationErrors);
+      } else {
+        console.log(`[VRP] Vehicle ${vehicle.id}: Route validation passed ✅`);
+      }
+      
+      // Validate waypoints minimum
+      if (waypoints.length < 2) {
+        console.warn(`[VRP] Vehicle ${vehicle.id}: Not enough waypoints (${waypoints.length}), skipping route`);
+        continue;
+      }
+      
+      console.log(`[VRP] Vehicle ${vehicle.id}: Total waypoints: ${waypoints.length} (1 START + ${route.stops.length} stops + ${selectedDump ? '1' : '0'} END)`);
+      console.log(`[VRP] Vehicle ${vehicle.id}: Waypoints order:`, waypoints.map(wp => `[${wp[0].toFixed(4)},${wp[1].toFixed(4)}]`).join(' -> '));
 
       // Get route from OSRM (road network routing)
       let routeGeometry = null;
@@ -1397,47 +2973,41 @@ app.post("/api/vrp/optimize", async (req, res) => {
 
       try {
         const osrmRoute = await getOSRMRoute(waypoints);
-        if (osrmRoute) {
+        if (osrmRoute && osrmRoute.distance > 0 && osrmRoute.duration > 0 && osrmRoute.geometry) {
           routeGeometry = osrmRoute.geometry;
           totalDistance = Math.round(osrmRoute.distance);
           totalDuration = Math.round(osrmRoute.duration);
+          const coordCount = osrmRoute.geometry.coordinates?.length || 0;
+          console.log(`[VRP] Vehicle ${vehicle.id}: OSRM route - ${totalDistance}m, ${totalDuration}s, ${coordCount} coordinates`);
+          console.log(`[VRP] Vehicle ${vehicle.id}: Route geometry type: ${routeGeometry.type}, coordinates: ${coordCount}`);
         } else {
-          // Fallback to straight line if OSRM fails
-          console.warn(
-            `[VRP] OSRM failed for vehicle ${vehicle.id}, using straight line`
+          // OSRM returned null or invalid data - don't use fallback
+          console.error(
+            `[VRP] OSRM failed or returned invalid data for vehicle ${vehicle.id} - route will have no geometry`
           );
-          routeGeometry = {
-            type: "LineString",
-            coordinates: waypoints,
-          };
-          // Calculate haversine distance as fallback
-          for (let j = 1; j < waypoints.length; j++) {
-            totalDistance += getHaversineDistance(
-              { lat: waypoints[j - 1][1], lon: waypoints[j - 1][0] },
-              { lat: waypoints[j][1], lon: waypoints[j][0] }
-            );
-          }
-          totalDistance = Math.round(totalDistance);
-          totalDuration = Math.round(totalDistance / 8.33); // Assume 30 km/h = 8.33 m/s
+          routeGeometry = null; // Don't create fallback geometry - route will be marked as incomplete
         }
       } catch (error) {
         console.warn(
           `[VRP] Route calculation error for vehicle ${vehicle.id}:`,
           error.message
         );
-        // Fallback to straight line
-        routeGeometry = {
-          type: "LineString",
-          coordinates: waypoints,
-        };
-        for (let j = 1; j < waypoints.length; j++) {
-          totalDistance += getHaversineDistance(
-            { lat: waypoints[j - 1][1], lon: waypoints[j - 1][0] },
-            { lat: waypoints[j][1], lon: waypoints[j][0] }
-          );
-        }
-        totalDistance = Math.round(totalDistance);
-        totalDuration = Math.round(totalDistance / 8.33);
+        // Don't use fallback - log error and route will have no geometry
+        console.error(
+          `[VRP] Route calculation failed for vehicle ${vehicle.id} - route will have no geometry. Error: ${error.message}`
+        );
+        routeGeometry = null;
+        // Route will still be included but without geometry - frontend should handle this gracefully
+      }
+
+      // Ensure distance and duration are valid numbers
+      if (!totalDistance || totalDistance <= 0) {
+        console.warn(`[VRP] Invalid distance for vehicle ${vehicle.id}, setting default`);
+        totalDistance = 1000; // Default 1km
+      }
+      if (!totalDuration || totalDuration <= 0 || isNaN(totalDuration)) {
+        console.warn(`[VRP] Invalid duration for vehicle ${vehicle.id}, calculating from distance`);
+        totalDuration = Math.round(totalDistance / 8.33); // Recalculate from distance
       }
 
       // Estimate ETA from duration (in seconds)
@@ -1445,40 +3015,73 @@ app.post("/api/vrp/optimize", async (req, res) => {
       const minutes = Math.round((totalDuration % 3600) / 60);
       const eta = `${hours}:${minutes.toString().padStart(2, "0")}`;
 
-      routes.push({
-        vehicleId: vehicle.id,
-        vehiclePlate: vehicle.plate,
-        distance: totalDistance,
-        eta: eta,
-        geojson: {
-          type: "FeatureCollection",
-          features: [
-            {
-              type: "Feature",
+      // Final validation before updating route
+      if (totalDistance <= 0 || isNaN(totalDistance)) {
+        console.error(`[VRP] Invalid distance ${totalDistance} for vehicle ${vehicle.id}, skipping route`);
+        // Remove this route from routes array
+        routes.splice(routeIdx, 1);
+        routeIdx--; // Adjust index after removal
+        continue;
+      }
+
+      // Update route object with optimized data (don't push new, update existing)
+      route.distance = totalDistance; // in meters
+      route.eta = eta; // format: "H:MM"
+      route.geojson = {
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
               geometry: routeGeometry,
               properties: {
                 vehicleId: vehicle.id,
                 vehiclePlate: vehicle.plate,
+                distance: totalDistance,
+                duration: totalDuration,
               },
-            },
-          ],
         },
-        stops: vehiclePoints.map((p, idx) => ({
+      ],
+      };
+      route.stops = route.stops.map((p, idx) => ({
           id: p.id,
           seq: idx + 1,
           lat: p.lat,
           lon: p.lon,
-        })),
-        depot: depot ? { lat: depot.lat, lon: depot.lon } : null,
-        dump: dump ? { lat: dump.lat, lon: dump.lon } : null,
-      });
+          demand: p.demand || 0,
+      }));
+      route.depot = depot && depot.lat && depot.lon ? { 
+          id: depot.id, 
+          name: depot.name || 'Depot', 
+          lat: parseFloat(depot.lat), 
+          lon: parseFloat(depot.lon) 
+        } : (vehicleStartLocation && vehicleStartLocation.lat && vehicleStartLocation.lon ? {
+          id: depot?.id || 'unknown',
+          name: depot?.name || 'Start Point',
+          lat: parseFloat(vehicleStartLocation.lat),
+          lon: parseFloat(vehicleStartLocation.lon)
+      } : null);
+      route.dump = selectedDump && selectedDump.lat && selectedDump.lon ? { 
+          id: selectedDump.id, 
+          name: selectedDump.name || 'Dump', 
+          lat: parseFloat(selectedDump.lat), 
+          lon: parseFloat(selectedDump.lon) 
+      } : null;
+      route.depot_id = depot?.id || null;
+      route.dump_id = selectedDump?.id || null;
+    }
+
+    // Filter out any invalid routes (should not happen, but safety check)
+    const validRoutes = routes.filter(r => r && r.stops && r.stops.length > 0 && r.distance > 0);
+    
+    if (validRoutes.length === 0 && routes.length > 0) {
+      console.warn("[VRP] All routes were invalid after optimization");
     }
 
     console.log(
-      `✅ VRP optimization completed: ${routes.length} routes for ${vehicles.length} vehicles`
+      `✅ VRP optimization completed: ${validRoutes.length} valid routes from ${routes.length} total routes, ${vehicles.length} vehicles`
     );
 
-    res.json({ ok: true, data: { routes } });
+  res.json({ ok: true, data: { routes: validRoutes.length > 0 ? validRoutes : routes } });
   } catch (error) {
     console.error("[VRP] Optimize error:", error);
     res.status(500).json({ ok: false, error: error.message });
@@ -1504,20 +3107,25 @@ app.post("/api/vrp/save-routes", async (req, res) => {
       const routeId = uuidv4();
       const now = new Date();
 
-      // Create route
+      // Create route (with optional driver_id if provided)
       await db.query(
-        `INSERT INTO routes (id, vehicle_id, start_at, status, meta)
-         VALUES ($1, $2, $3, $4, $5)`,
+        `INSERT INTO routes (id, vehicle_id, driver_id, depot_id, dump_id, start_at, status, planned_distance_km, meta)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           routeId,
           routeData.vehicleId,
+          routeData.driver_id || null, // Optional driver assignment
+          routeData.depot_id || null,
+          routeData.dump_id || null,
           now,
-          "pending",
+          routeData.driver_id ? "assigned" : "planned", // If driver assigned, status = assigned, else planned
+          routeData.distance ? parseFloat((routeData.distance / 1000).toFixed(2)) : null, // Convert meters to km
           JSON.stringify({
             optimized: true,
             distance: routeData.distance,
             eta: routeData.eta,
             geojson: routeData.geojson,
+            vehiclePlate: routeData.vehiclePlate,
           }),
         ]
       );
@@ -1541,6 +3149,9 @@ app.post("/api/vrp/save-routes", async (req, res) => {
       savedRoutes.push({
         route_id: routeId,
         vehicle_id: routeData.vehicleId,
+        driver_id: routeData.driver_id || null,
+        depot_id: routeData.depot_id || null,
+        dump_id: routeData.dump_id || null,
         stops_count: routeData.stops?.length || 0,
       });
     }
@@ -1556,6 +3167,54 @@ app.post("/api/vrp/save-routes", async (req, res) => {
     });
   } catch (error) {
     console.error("[VRP] Save routes error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Assign employee to route
+app.post("/api/vrp/assign-route", async (req, res) => {
+  try {
+    const { route_id, driver_id, collector_id } = req.body;
+
+    if (!route_id) {
+      return res.status(400).json({
+        ok: false,
+        error: "route_id is required",
+      });
+    }
+
+    if (!driver_id) {
+      return res.status(400).json({
+        ok: false,
+        error: "driver_id is required",
+      });
+    }
+
+    // Update route with driver assignment
+    const { rows } = await db.query(
+      `UPDATE routes 
+       SET driver_id = $1, status = 'assigned', updated_at = NOW()
+       WHERE id = $2
+       RETURNING id, vehicle_id, driver_id, depot_id, dump_id, status, planned_distance_km`,
+      [driver_id, route_id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        ok: false,
+        error: "Route not found",
+      });
+    }
+
+    console.log(`✅ Assigned driver ${driver_id} to route ${route_id}`);
+
+    res.json({
+      ok: true,
+      data: rows[0],
+      message: "Route assigned successfully",
+    });
+  } catch (error) {
+    console.error("[VRP] Assign route error:", error);
     res.status(500).json({ ok: false, error: error.message });
   }
 });
@@ -1918,8 +3577,8 @@ app.get("/api/analytics/timeseries", async (req, res) => {
 
 app.get("/api/analytics/predict", async (req, res) => {
   try {
-    const days = Number(req.query.days || 7);
-    const today = new Date();
+  const days = Number(req.query.days || 7);
+  const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     // Get actual data for past N days
@@ -1968,7 +3627,7 @@ app.get("/api/analytics/predict", async (req, res) => {
       });
     }
 
-    res.json({ ok: true, data: { actual, forecast } });
+  res.json({ ok: true, data: { actual, forecast } });
   } catch (error) {
     console.error("[Analytics] Predict error:", error);
     res.status(500).json({ ok: false, error: error.message });
@@ -2319,7 +3978,7 @@ app.get("/api/exceptions", async (req, res) => {
       meta: row.meta,
     }));
 
-    res.json({ ok: true, data: exceptions });
+  res.json({ ok: true, data: exceptions });
   } catch (error) {
     console.error("[Exceptions] Get error:", error);
     res.status(500).json({ ok: false, error: error.message });
@@ -2391,6 +4050,7 @@ app.get("/api/schedules", async (req, res) => {
       citizen_id,
       status,
       scheduled_date,
+      district,
       limit = 50,
       offset = 0,
     } = req.query;
@@ -2402,9 +4062,12 @@ app.get("/api/schedules", async (req, res) => {
         u.phone as citizen_phone,
         p.name as employee_name,
         p.role as employee_role,
-        d.name as depot_name
+        d.name as depot_name,
+        COALESCE(s.longitude, ST_X(s.location::geometry)) as longitude,
+        COALESCE(s.latitude, ST_Y(s.location::geometry)) as latitude,
+        s.address as location_address
       FROM schedules s
-      LEFT JOIN users u ON s.citizen_id = u.id::text
+      LEFT JOIN users u ON s.citizen_id = u.id::text OR s.citizen_id = u.phone
       LEFT JOIN personnel p ON s.employee_id = p.id
       LEFT JOIN depots d ON p.depot_id = d.id
       WHERE 1=1
@@ -2428,6 +4091,18 @@ app.get("/api/schedules", async (req, res) => {
       query += ` AND DATE(s.scheduled_date) = $${paramIndex}`;
       params.push(scheduled_date);
       paramIndex++;
+    }
+
+    // Filter by district (extract from schedules.address)
+    if (district) {
+      query += ` AND (
+        s.address ~ $${paramIndex} OR
+        s.address LIKE $${paramIndex + 1}
+      )`;
+      // Use regex pattern for exact district match
+      const districtPattern = district.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      params.push(`.*${districtPattern}.*`, `%${district}%`);
+      paramIndex += 2;
     }
 
     query += ` ORDER BY s.created_at DESC LIMIT $${paramIndex} OFFSET $${
@@ -2783,7 +4458,7 @@ app.delete("/api/schedules/:id", async (req, res) => {
 // Get all personnel
 app.get("/api/manager/personnel", async (req, res) => {
   try {
-    const { role, status, depot_id } = req.query;
+    const { role, status, depot_id, district } = req.query;
 
     let query = `
       SELECT 
@@ -2794,10 +4469,12 @@ app.get("/api/manager/personnel", async (req, res) => {
         p.email,
         p.status,
         p.depot_id,
+        p.meta,
         p.hired_at,
         p.created_at,
         p.updated_at,
-        d.name as depot_name
+        d.name as depot_name,
+        d.address as depot_address
       FROM personnel p
       LEFT JOIN depots d ON p.depot_id = d.id
       WHERE 1=1
@@ -2818,6 +4495,17 @@ app.get("/api/manager/personnel", async (req, res) => {
     if (depot_id) {
       query += ` AND p.depot_id = $${paramIndex++}`;
       params.push(depot_id);
+    }
+
+    // Filter by district (from depot address)
+    if (district) {
+      query += ` AND (
+        d.address ~ $${paramIndex} OR
+        d.address LIKE $${paramIndex + 1}
+      )`;
+      const districtPattern = district.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      params.push(`.*${districtPattern}.*`, `%${district}%`);
+      paramIndex += 2;
     }
 
     query += ` ORDER BY p.created_at DESC`;
@@ -2845,10 +4533,12 @@ app.get("/api/manager/personnel/:id", async (req, res) => {
         p.email,
         p.status,
         p.depot_id,
+        p.meta,
         p.hired_at,
         p.created_at,
         p.updated_at,
-        d.name as depot_name
+        d.name as depot_name,
+        d.address as depot_address
       FROM personnel p
       LEFT JOIN depots d ON p.depot_id = d.id
       WHERE p.id = $1`,
@@ -2878,18 +4568,22 @@ app.post("/api/manager/personnel", async (req, res) => {
       status,
       depot_id,
       address, // New: address for user profile
+      meta = {}, // New: meta for operating_area and group
     } = req.body;
 
-    if (!name || !role || !phone || !email) {
+    if (!name || !phone || !email) {
       return res.status(400).json({
         ok: false,
-        error: "Missing required fields: name, role, phone, email",
+        error: "Missing required fields: name, phone, email",
       });
     }
 
+    // Set default role to "collector" if not provided
+    const personnelRole = role || "collector";
+
     // Validate role
     const validRoles = ["driver", "collector"];
-    if (!validRoles.includes(role)) {
+    if (!validRoles.includes(personnelRole)) {
       return res.status(400).json({
         ok: false,
         error: `Invalid role. Must be one of: ${validRoles.join(", ")}`,
@@ -2949,17 +4643,18 @@ app.post("/api/manager/personnel", async (req, res) => {
       const personnelId = uuidv4();
       const personnelResult = await db.query(
         `INSERT INTO personnel (
-          id, name, role, phone, email, status, depot_id, hired_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+          id, name, role, phone, email, status, depot_id, meta, hired_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
         RETURNING *`,
         [
           personnelId,
           name,
-          role,
+          personnelRole, // Use default "collector" if not provided
           phone,
           email,
           status || "active",
           depot_id || null,
+          JSON.stringify(meta || {}), // Store meta (operating_area, group)
         ]
       );
 
@@ -2991,7 +4686,7 @@ app.post("/api/manager/personnel", async (req, res) => {
 app.put("/api/manager/personnel/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, role, phone, email, status, depot_id } = req.body;
+    const { name, role, phone, email, status, depot_id, meta } = req.body;
 
     const updates = [];
     const params = [];
@@ -3025,6 +4720,11 @@ app.put("/api/manager/personnel/:id", async (req, res) => {
     if (depot_id !== undefined) {
       updates.push(`depot_id = $${paramIndex++}`);
       params.push(depot_id);
+    }
+
+    if (meta !== undefined) {
+      updates.push(`meta = $${paramIndex++}`);
+      params.push(JSON.stringify(meta));
     }
 
     if (updates.length === 0) {
@@ -3081,6 +4781,819 @@ app.delete("/api/manager/personnel/:id", async (req, res) => {
     });
   } catch (error) {
     console.error("[Personnel] Delete error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// ==================== GROUPS MANAGEMENT API ====================
+
+// GET /api/groups - Get all groups
+app.get("/api/groups", async (req, res) => {
+  try {
+    const { status, depot_id, vehicle_id, operating_area } = req.query;
+
+    let query = `
+      SELECT 
+        g.id,
+        g.name,
+        g.code,
+        g.description,
+        g.vehicle_id,
+        g.route_id,
+        g.depot_id,
+        g.operating_area,
+        g.status,
+        g.meta,
+        g.created_at,
+        g.updated_at,
+        v.plate as vehicle_plate,
+        v.type as vehicle_type,
+        d.name as depot_name,
+        COUNT(DISTINCT gm.personnel_id) FILTER (WHERE gm.status = 'active') as member_count
+      FROM groups g
+      LEFT JOIN vehicles v ON g.vehicle_id = v.id
+      LEFT JOIN depots d ON g.depot_id = d.id
+      LEFT JOIN group_members gm ON g.id = gm.group_id
+      WHERE 1=1
+    `;
+
+    const params = [];
+    let paramIndex = 1;
+
+    if (status) {
+      query += ` AND g.status = $${paramIndex++}`;
+      params.push(status);
+    }
+
+    if (depot_id) {
+      query += ` AND g.depot_id = $${paramIndex++}`;
+      params.push(depot_id);
+    }
+
+    if (vehicle_id) {
+      query += ` AND g.vehicle_id = $${paramIndex++}`;
+      params.push(vehicle_id);
+    }
+
+    if (operating_area) {
+      query += ` AND g.operating_area = $${paramIndex++}`;
+      params.push(operating_area);
+    }
+
+    query += ` GROUP BY g.id, v.plate, v.type, d.name ORDER BY g.created_at DESC`;
+
+    const { rows } = await db.query(query, params);
+
+    res.json({ ok: true, data: rows });
+  } catch (error) {
+    console.error("[Groups] Get error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// GET /api/groups/:id - Get group details
+app.get("/api/groups/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Get group info
+    const groupQuery = `
+      SELECT 
+        g.*,
+        v.plate as vehicle_plate,
+        v.type as vehicle_type,
+        d.name as depot_name
+      FROM groups g
+      LEFT JOIN vehicles v ON g.vehicle_id = v.id
+      LEFT JOIN depots d ON g.depot_id = d.id
+      WHERE g.id = $1
+    `;
+    const { rows: groupRows } = await db.query(groupQuery, [id]);
+
+    if (groupRows.length === 0) {
+      return res.status(404).json({ ok: false, error: "Group not found" });
+    }
+
+    // Get members
+    const membersQuery = `
+      SELECT 
+        gm.*,
+        p.name as personnel_name,
+        p.phone as personnel_phone,
+        p.email as personnel_email
+      FROM group_members gm
+      JOIN personnel p ON gm.personnel_id = p.id
+      WHERE gm.group_id = $1 AND gm.status = 'active'
+      ORDER BY gm.role_in_group DESC, gm.joined_at ASC
+    `;
+    const { rows: memberRows } = await db.query(membersQuery, [id]);
+
+    // Get stats
+    const statsQuery = `
+      SELECT 
+        COUNT(*) as total_checkins,
+        SUM(collected_weight_kg) as total_weight_kg,
+        SUM(CASE WHEN waste_type = 'household' THEN collected_weight_kg ELSE 0 END) as household_weight_kg,
+        SUM(CASE WHEN waste_type = 'recyclable' THEN collected_weight_kg ELSE 0 END) as recyclable_weight_kg,
+        SUM(CASE WHEN waste_type = 'bulky' THEN collected_weight_kg ELSE 0 END) as bulky_weight_kg
+      FROM group_checkins
+      WHERE group_id = $1
+    `;
+    const { rows: statsRows } = await db.query(statsQuery, [id]);
+
+    res.json({
+      ok: true,
+      data: {
+        ...groupRows[0],
+        members: memberRows,
+        stats: statsRows[0] || {
+          total_checkins: 0,
+          total_weight_kg: 0,
+          household_weight_kg: 0,
+          recyclable_weight_kg: 0,
+          bulky_weight_kg: 0,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("[Groups] Get detail error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// POST /api/groups - Create new group
+app.post("/api/groups", async (req, res) => {
+  try {
+    const {
+      name,
+      code,
+      description,
+      vehicle_id,
+      depot_id,
+      operating_area,
+      member_ids = [],
+      leader_id,
+    } = req.body;
+
+    if (!name) {
+      return res.status(400).json({
+        ok: false,
+        error: "Group name is required",
+      });
+    }
+
+    const { v4: uuidv4 } = require("uuid");
+    const groupId = uuidv4();
+
+    // Create group
+    const { rows: groupRows } = await db.query(
+      `INSERT INTO groups (
+        id, name, code, description, vehicle_id, depot_id, operating_area, status
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')
+      RETURNING *`,
+      [groupId, name, code || null, description || null, vehicle_id || null, depot_id || null, operating_area || null]
+    );
+
+    // Add members
+    if (member_ids.length > 0) {
+      for (const personnelId of member_ids) {
+        const memberId = uuidv4();
+        const role = personnelId === leader_id ? "leader" : "member";
+        await db.query(
+          `INSERT INTO group_members (id, group_id, personnel_id, role_in_group, status)
+           VALUES ($1, $2, $3, $4, 'active')`,
+          [memberId, groupId, personnelId, role]
+        );
+      }
+    }
+
+    console.log(`✅ Group created: ${groupId} (${name})`);
+
+    res.status(201).json({
+      ok: true,
+      data: groupRows[0],
+      message: "Group created successfully",
+    });
+  } catch (error) {
+    console.error("[Groups] Create error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// POST /api/groups/run-migration - Run migration 015 (temporary endpoint)
+app.post("/api/groups/run-migration", async (req, res) => {
+  try {
+    console.log("[Migration] Starting migration 015: Create Groups Tables");
+    
+    // Create groups table
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS groups (
+        id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+        name text NOT NULL,
+        code text UNIQUE,
+        description text,
+        vehicle_id text REFERENCES vehicles(id) ON DELETE SET NULL,
+        route_id uuid REFERENCES routes(id) ON DELETE SET NULL,
+        depot_id uuid REFERENCES depots(id) ON DELETE SET NULL,
+        operating_area text,
+        status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'archived')),
+        meta jsonb DEFAULT '{}',
+        created_at timestamptz DEFAULT now(),
+        updated_at timestamptz DEFAULT now()
+      );
+    `);
+    
+    // Create group_members table
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS group_members (
+        id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+        group_id uuid NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+        personnel_id uuid NOT NULL REFERENCES personnel(id) ON DELETE CASCADE,
+        role_in_group text DEFAULT 'member' CHECK (role_in_group IN ('leader', 'member')),
+        joined_at timestamptz DEFAULT now(),
+        left_at timestamptz,
+        status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive'))
+      );
+    `);
+    
+    // Create unique constraint with WHERE clause separately
+    await db.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS group_members_unique_active 
+      ON group_members(group_id, personnel_id) 
+      WHERE status = 'active';
+    `);
+    
+    // Create group_checkins table
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS group_checkins (
+        id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+        group_id uuid NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+        route_id uuid REFERENCES routes(id) ON DELETE SET NULL,
+        route_stop_id uuid REFERENCES route_stops(id) ON DELETE SET NULL,
+        checked_by uuid NOT NULL REFERENCES personnel(id) ON DELETE SET NULL,
+        waste_type text NOT NULL CHECK (waste_type IN ('household', 'recyclable', 'bulky')),
+        collected_weight_kg numeric(10,2) NOT NULL DEFAULT 0,
+        quantity_bags int DEFAULT 0,
+        notes text,
+        photo_urls text[],
+        geom geography(Point,4326),
+        checked_at timestamptz DEFAULT now(),
+        created_at timestamptz DEFAULT now()
+      );
+    `);
+    
+    // Create indexes
+    await db.query(`CREATE INDEX IF NOT EXISTS groups_status_idx ON groups(status);`);
+    await db.query(`CREATE INDEX IF NOT EXISTS groups_route_idx ON groups(route_id) WHERE route_id IS NOT NULL;`);
+    await db.query(`CREATE INDEX IF NOT EXISTS groups_vehicle_idx ON groups(vehicle_id) WHERE vehicle_id IS NOT NULL;`);
+    await db.query(`CREATE INDEX IF NOT EXISTS groups_depot_idx ON groups(depot_id) WHERE depot_id IS NOT NULL;`);
+    await db.query(`CREATE INDEX IF NOT EXISTS groups_code_idx ON groups(code) WHERE code IS NOT NULL;`);
+    await db.query(`CREATE INDEX IF NOT EXISTS group_members_group_idx ON group_members(group_id);`);
+    await db.query(`CREATE INDEX IF NOT EXISTS group_members_personnel_idx ON group_members(personnel_id);`);
+    await db.query(`CREATE INDEX IF NOT EXISTS group_members_active_idx ON group_members(group_id, personnel_id) WHERE status = 'active';`);
+    await db.query(`CREATE INDEX IF NOT EXISTS group_checkins_group_idx ON group_checkins(group_id);`);
+    await db.query(`CREATE INDEX IF NOT EXISTS group_checkins_route_idx ON group_checkins(route_id);`);
+    await db.query(`CREATE INDEX IF NOT EXISTS group_checkins_checked_at_idx ON group_checkins(checked_at DESC);`);
+    
+    console.log("[Migration] Migration 015 completed successfully");
+    
+    res.json({
+      ok: true,
+      message: "Migration 015 completed successfully - Groups tables created",
+    });
+  } catch (error) {
+    console.error("[Migration] Error:", error);
+    res.status(500).json({
+      ok: false,
+      error: error.message || "Migration failed",
+    });
+  }
+});
+
+// POST /api/groups/auto-create - Tự động tạo nhóm từ nhân viên
+app.post("/api/groups/auto-create", async (req, res) => {
+  try {
+    const client = await db.connect();
+    
+    try {
+      await client.query("BEGIN");
+      
+      // Helper function để extract operating area
+      const extractOperatingArea = (person) => {
+        if (person.operating_area) return person.operating_area;
+        if (person.depot_address) {
+          // Extract từ address (giống logic frontend)
+          const quanMatch = person.depot_address.match(/Quận\s*(\d+)/i);
+          if (quanMatch) {
+            return `Quận ${quanMatch[1]}`;
+          }
+          if (person.depot_address.match(/Bình Thạnh/i)) return "Bình Thạnh";
+          if (person.depot_address.match(/Bình Tân/i)) return "Bình Tân";
+          if (person.depot_address.match(/Tân Bình/i)) return "Tân Bình";
+          if (person.depot_address.match(/Tân Phú/i)) return "Tân Phú";
+          if (person.depot_address.match(/Phú Nhuận/i)) return "Phú Nhuận";
+          if (person.depot_address.match(/Gò Vấp/i)) return "Gò Vấp";
+          if (person.depot_address.match(/Thủ Đức/i)) return "Thủ Đức";
+        }
+        return null;
+      };
+      
+      // Helper function để generate prefix
+      const getGroupPrefix = (operatingArea) => {
+        if (!operatingArea) return "GRP";
+        
+        const prefixMap = {
+          "Bình Thạnh": "A",
+          "Bình Tân": "B",
+          "Tân Bình": "T",
+          "Tân Phú": "TP",
+          "Phú Nhuận": "PN",
+          "Gò Vấp": "GV",
+          "Thủ Đức": "TD",
+        };
+        
+        const quanMatch = operatingArea.match(/Quận\s*(\d+)/);
+        if (quanMatch) {
+          return `Q${quanMatch[1]}`;
+        }
+        
+        return prefixMap[operatingArea] || operatingArea.substring(0, 2).toUpperCase();
+      };
+      
+      // Lấy tất cả nhân viên active
+      const personnelResult = await client.query(`
+        SELECT 
+          p.id,
+          p.name,
+          p.depot_id,
+          p.meta->>'operating_area' as operating_area,
+          d.address as depot_address
+        FROM personnel p
+        LEFT JOIN depots d ON p.depot_id = d.id
+        WHERE p.status = 'active'
+        ORDER BY p.meta->>'operating_area', p.depot_id, p.name
+      `);
+      
+      const allPersonnel = personnelResult.rows;
+      
+      // Group personnel theo operating_area và depot_id
+      const groupsMap = new Map();
+      
+      for (const person of allPersonnel) {
+        const operatingArea = extractOperatingArea(person);
+        if (!operatingArea) continue; // Skip nếu không có khu vực
+        
+        const key = `${operatingArea}|${person.depot_id || 'null'}`;
+        
+        if (!groupsMap.has(key)) {
+          groupsMap.set(key, {
+            operating_area: operatingArea,
+            depot_id: person.depot_id,
+            personnel: [],
+          });
+        }
+        
+        groupsMap.get(key).personnel.push(person);
+      }
+      
+      // Tạo groups
+      let createdCount = 0;
+      const groupsByArea = new Map(); // Track số thứ tự theo khu vực
+      
+      for (const [key, groupData] of groupsMap) {
+        if (groupData.personnel.length === 0) continue;
+        
+        const prefix = getGroupPrefix(groupData.operating_area);
+        
+        // Get next number cho khu vực này
+        const areaKey = groupData.operating_area;
+        if (!groupsByArea.has(areaKey)) {
+          // Check existing groups
+          const existingResult = await client.query(`
+            SELECT name FROM groups 
+            WHERE operating_area = $1 AND status = 'active'
+            ORDER BY name DESC
+          `, [areaKey]);
+          
+          const existingNums = existingResult.rows
+            .map(r => {
+              // Extract number from name (A01, B02, Q101, etc.)
+              const match = r.name?.match(/(\d+)$/);
+              return match ? parseInt(match[1]) : 0;
+            })
+            .filter(n => !isNaN(n) && n > 0)
+            .sort((a, b) => b - a);
+          
+          const nextNum = existingNums.length > 0 ? existingNums[0] + 1 : 1;
+          groupsByArea.set(areaKey, nextNum);
+        } else {
+          groupsByArea.set(areaKey, groupsByArea.get(areaKey) + 1);
+        }
+        
+        const groupNum = groupsByArea.get(areaKey).toString().padStart(2, "0");
+        const groupName = `${prefix}${groupNum}`;
+        const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
+        const groupCode = `GRP-${prefix}-${groupNum}-${today}`;
+        
+        const { v4: uuidv4 } = require("uuid");
+        const groupId = uuidv4();
+        
+        // Create group
+        const groupResult = await client.query(`
+          INSERT INTO groups (id, name, code, operating_area, depot_id, status, description)
+          VALUES ($1, $2, $3, $4, $5, 'active', $6)
+          RETURNING id
+        `, [
+          groupId,
+          groupName,
+          groupCode,
+          groupData.operating_area,
+          groupData.depot_id,
+          `Nhóm tự động tạo từ ${groupData.personnel.length} nhân viên tại ${groupData.operating_area}`
+        ]);
+        
+        // Add members
+        const leaderId = groupData.personnel[0].id; // First person as leader
+        
+        for (let i = 0; i < groupData.personnel.length; i++) {
+          const person = groupData.personnel[i];
+          const memberId = uuidv4();
+          await client.query(`
+            INSERT INTO group_members (id, group_id, personnel_id, role_in_group, status)
+            VALUES ($1, $2, $3, $4, 'active')
+          `, [
+            memberId,
+            groupId,
+            person.id,
+            i === 0 ? 'leader' : 'member'
+          ]);
+        }
+        
+        createdCount++;
+        console.log(`✅ Auto-created group: ${groupName} (${groupCode}) with ${groupData.personnel.length} members`);
+      }
+      
+      await client.query("COMMIT");
+      
+      res.json({
+        ok: true,
+        message: `Đã tạo ${createdCount} nhóm tự động`,
+        data: { created: createdCount }
+      });
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error("[Groups] Auto-create error:", error);
+    res.status(500).json({
+      ok: false,
+      error: error.message || "Tạo nhóm tự động thất bại"
+    });
+  }
+});
+
+// PUT /api/groups/:id - Update group
+app.put("/api/groups/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, code, description, vehicle_id, depot_id, operating_area, status } = req.body;
+
+    const updates = [];
+    const params = [];
+    let paramIndex = 1;
+
+    if (name !== undefined) {
+      updates.push(`name = $${paramIndex++}`);
+      params.push(name);
+    }
+
+    if (code !== undefined) {
+      updates.push(`code = $${paramIndex++}`);
+      params.push(code);
+    }
+
+    if (description !== undefined) {
+      updates.push(`description = $${paramIndex++}`);
+      params.push(description);
+    }
+
+    if (vehicle_id !== undefined) {
+      updates.push(`vehicle_id = $${paramIndex++}`);
+      params.push(vehicle_id || null);
+    }
+
+    if (depot_id !== undefined) {
+      updates.push(`depot_id = $${paramIndex++}`);
+      params.push(depot_id || null);
+    }
+
+    if (operating_area !== undefined) {
+      updates.push(`operating_area = $${paramIndex++}`);
+      params.push(operating_area || null);
+    }
+
+    if (status !== undefined) {
+      updates.push(`status = $${paramIndex++}`);
+      params.push(status);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ ok: false, error: "No fields to update" });
+    }
+
+    updates.push(`updated_at = NOW()`);
+    params.push(id);
+
+    const { rows } = await db.query(
+      `UPDATE groups SET ${updates.join(", ")} WHERE id = $${paramIndex} RETURNING *`,
+      params
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "Group not found" });
+    }
+
+    console.log(`✅ Group updated: ${id}`);
+
+    res.json({
+      ok: true,
+      data: rows[0],
+      message: "Group updated successfully",
+    });
+  } catch (error) {
+    console.error("[Groups] Update error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// DELETE /api/groups/:id - Delete/Deactivate group
+app.delete("/api/groups/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { rows } = await db.query(
+      `UPDATE groups SET status = 'inactive', updated_at = NOW() WHERE id = $1 RETURNING *`,
+      [id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "Group not found" });
+    }
+
+    // Deactivate all members
+    await db.query(
+      `UPDATE group_members SET status = 'inactive', left_at = NOW() WHERE group_id = $1 AND status = 'active'`,
+      [id]
+    );
+
+    console.log(`🗑️ Group deactivated: ${id}`);
+
+    res.json({
+      ok: true,
+      message: "Group deactivated successfully",
+    });
+  } catch (error) {
+    console.error("[Groups] Delete error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// POST /api/groups/:id/members - Add member to group
+app.post("/api/groups/:id/members", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { personnel_id, role_in_group = "member" } = req.body;
+
+    if (!personnel_id) {
+      return res.status(400).json({
+        ok: false,
+        error: "personnel_id is required",
+      });
+    }
+
+    // Check if personnel is already in an active group
+    const { rows: existingRows } = await db.query(
+      `SELECT * FROM group_members WHERE personnel_id = $1 AND status = 'active'`,
+      [personnel_id]
+    );
+
+    if (existingRows.length > 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "Personnel is already in an active group",
+      });
+    }
+
+    const { v4: uuidv4 } = require("uuid");
+    const memberId = uuidv4();
+
+    const { rows } = await db.query(
+      `INSERT INTO group_members (id, group_id, personnel_id, role_in_group, status)
+       VALUES ($1, $2, $3, $4, 'active')
+       RETURNING *`,
+      [memberId, id, personnel_id, role_in_group]
+    );
+
+    console.log(`✅ Added member ${personnel_id} to group ${id}`);
+
+    res.status(201).json({
+      ok: true,
+      data: rows[0],
+      message: "Member added successfully",
+    });
+  } catch (error) {
+    console.error("[Groups] Add member error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// DELETE /api/groups/:id/members/:personnel_id - Remove member from group
+app.delete("/api/groups/:id/members/:personnel_id", async (req, res) => {
+  try {
+    const { id, personnel_id } = req.params;
+
+    const { rows } = await db.query(
+      `UPDATE group_members 
+       SET status = 'inactive', left_at = NOW() 
+       WHERE group_id = $1 AND personnel_id = $2 AND status = 'active'
+       RETURNING *`,
+      [id, personnel_id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "Member not found in group" });
+    }
+
+    console.log(`🗑️ Removed member ${personnel_id} from group ${id}`);
+
+    res.json({
+      ok: true,
+      message: "Member removed successfully",
+    });
+  } catch (error) {
+    console.error("[Groups] Remove member error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// POST /api/groups/:id/checkins - Create check-in
+app.post("/api/groups/:id/checkins", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      route_id,
+      route_stop_id,
+      checked_by,
+      waste_type,
+      collected_weight_kg,
+      quantity_bags,
+      notes,
+      photo_urls,
+      lon,
+      lat,
+    } = req.body;
+
+    if (!checked_by || !waste_type || !collected_weight_kg) {
+      return res.status(400).json({
+        ok: false,
+        error: "checked_by, waste_type, and collected_weight_kg are required",
+      });
+    }
+
+    const { v4: uuidv4 } = require("uuid");
+    const checkinId = uuidv4();
+
+    let geomClause = "";
+    let geomValue = "";
+    const params = [
+      checkinId,
+      id,
+      route_id || null,
+      route_stop_id || null,
+      checked_by,
+      waste_type,
+      collected_weight_kg,
+      quantity_bags || 0,
+      notes || null,
+      photo_urls || [],
+    ];
+    let paramIndex = params.length + 1;
+
+    if (lon !== undefined && lat !== undefined) {
+      geomClause = `, geom`;
+      geomValue = `, ST_SetSRID(ST_MakePoint($${paramIndex}, $${paramIndex + 1}), 4326)`;
+      params.push(lon, lat);
+    }
+
+    const query = `
+      INSERT INTO group_checkins (
+        id, group_id, route_id, route_stop_id, checked_by, waste_type,
+        collected_weight_kg, quantity_bags, notes, photo_urls${geomClause}
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10${geomValue})
+      RETURNING *
+    `;
+
+    const { rows } = await db.query(query, params);
+
+    console.log(`✅ Check-in created: ${checkinId} for group ${id}`);
+
+    res.status(201).json({
+      ok: true,
+      data: rows[0],
+      message: "Check-in created successfully",
+    });
+  } catch (error) {
+    console.error("[Groups] Create check-in error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// GET /api/groups/:id/checkins - Get check-ins for group
+app.get("/api/groups/:id/checkins", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { route_id, start_date, end_date } = req.query;
+
+    let query = `
+      SELECT 
+        gc.*,
+        p.name as checked_by_name,
+        r.id as route_id_display
+      FROM group_checkins gc
+      LEFT JOIN personnel p ON gc.checked_by = p.id
+      LEFT JOIN routes r ON gc.route_id = r.id
+      WHERE gc.group_id = $1
+    `;
+
+    const params = [id];
+    let paramIndex = 2;
+
+    if (route_id) {
+      query += ` AND gc.route_id = $${paramIndex++}`;
+      params.push(route_id);
+    }
+
+    if (start_date) {
+      query += ` AND gc.checked_at >= $${paramIndex++}`;
+      params.push(start_date);
+    }
+
+    if (end_date) {
+      query += ` AND gc.checked_at <= $${paramIndex++}`;
+      params.push(end_date);
+    }
+
+    query += ` ORDER BY gc.checked_at DESC`;
+
+    const { rows } = await db.query(query, params);
+
+    res.json({ ok: true, data: rows });
+  } catch (error) {
+    console.error("[Groups] Get check-ins error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// GET /api/groups/:id/stats - Get group statistics
+app.get("/api/groups/:id/stats", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { start_date, end_date } = req.query;
+
+    let query = `
+      SELECT 
+        COUNT(*) as total_checkins,
+        SUM(collected_weight_kg) as total_weight_kg,
+        SUM(CASE WHEN waste_type = 'household' THEN collected_weight_kg ELSE 0 END) as household_weight_kg,
+        SUM(CASE WHEN waste_type = 'recyclable' THEN collected_weight_kg ELSE 0 END) as recyclable_weight_kg,
+        SUM(CASE WHEN waste_type = 'bulky' THEN collected_weight_kg ELSE 0 END) as bulky_weight_kg,
+        COUNT(DISTINCT route_id) as total_routes,
+        COUNT(DISTINCT checked_by) as total_checkers
+      FROM group_checkins
+      WHERE group_id = $1
+    `;
+
+    const params = [id];
+    let paramIndex = 2;
+
+    if (start_date) {
+      query += ` AND checked_at >= $${paramIndex++}`;
+      params.push(start_date);
+    }
+
+    if (end_date) {
+      query += ` AND checked_at <= $${paramIndex++}`;
+      params.push(end_date);
+    }
+
+    const { rows } = await db.query(query, params);
+
+    res.json({ ok: true, data: rows[0] || {} });
+  } catch (error) {
+    console.error("[Groups] Get stats error:", error);
     res.status(500).json({ ok: false, error: error.message });
   }
 });
@@ -3686,18 +6199,18 @@ app.post("/api/incidents", async (req, res) => {
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending')
       RETURNING *`,
       [
-        reporter_id,
-        reporter_name,
-        reporter_phone,
-        report_category,
-        type,
-        description,
+            reporter_id,
+            reporter_name,
+            reporter_phone,
+            report_category,
+            type,
+            description,
         latitude || null,
         longitude || null,
         location_address || null,
-        image_urls,
-        priority,
-      ]
+            image_urls,
+            priority,
+          ]
     );
 
     console.log(
@@ -3866,10 +6379,21 @@ app.use("*", (req, res) => {
 });
 
 // Start server (HTTP + Socket.IO)
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 EcoCheck Backend started on port ${PORT}`);
   console.log(`📊 Health check: http://localhost:${PORT}/health`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
+});
+
+// Handle EADDRINUSE error gracefully
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`❌ Port ${PORT} is already in use. Please wait a few seconds and try again.`);
+    console.error(`   Or kill the process using: netstat -ano | findstr :${PORT}`);
+    process.exit(1);
+  } else {
+    throw err;
+  }
 });
 
 module.exports = app;

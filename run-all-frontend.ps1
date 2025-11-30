@@ -56,3 +56,13 @@ Write-Host "Đang đợi 5 giây để các service khởi động..." -Foregrou
 Start-Sleep -Seconds 5
 
 
+
+
+
+
+
+
+
+
+
+

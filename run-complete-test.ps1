@@ -131,3 +131,13 @@ Write-Host "   - Kiem tra console trong moi cua so de xem log" -ForegroundColor 
 Write-Host ""
 
 
+
+
+
+
+
+
+
+
+
+

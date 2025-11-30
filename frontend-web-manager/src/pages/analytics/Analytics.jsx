@@ -39,16 +39,51 @@ function ForecastChart({ actual = [], forecast = [] }) {
   )
   
   const actualXs = allXs.slice(0, actualValues.length)
-  const forecastXs = allXs.slice(actualValues.length - 1) // Start from last actual point
+  // Forecast Xs should start from the last actual point and continue
+  const forecastXs = allXs.slice(actualValues.length > 0 ? actualValues.length - 1 : 0)
   
-  const actualYs = actualValues.map(v => height - pad - ((v - min) / range) * (height - 2 * pad))
-  const forecastYs = forecastValues.map(v => height - pad - ((v - min) / range) * (height - 2 * pad))
+  // Ensure forecastXs has the same length as forecastValues
+  if (forecastXs.length !== forecastValues.length) {
+    // Recalculate forecastXs to match forecastValues length
+    const startX = actualValues.length > 0 ? actualXs[actualXs.length - 1] : pad
+    const endX = width - pad
+    const forecastXStep = forecastValues.length > 1 ? (endX - startX) / (forecastValues.length - 1) : 0
+    for (let i = 0; i < forecastValues.length; i++) {
+      if (i === 0 && actualValues.length > 0) {
+        forecastXs[i] = startX
+      } else {
+        forecastXs[i] = startX + i * forecastXStep
+      }
+    }
+  }
+  
+  // Calculate Y positions with validation
+  const actualYs = actualValues.map(v => {
+    const numValue = Number(v) || 0
+    const y = height - pad - ((numValue - min) / range) * (height - 2 * pad)
+    return isNaN(y) ? height - pad : y
+  })
+  
+  const forecastYs = forecastValues.map(v => {
+    const numValue = Number(v) || 0
+    const y = height - pad - ((numValue - min) / range) * (height - 2 * pad)
+    return isNaN(y) ? height - pad : y
+  })
   
   const forecastStartX = actualXs.length > 0 ? actualXs[actualXs.length - 1] : pad
 
-  // Build paths
-  const actualPath = actualXs.map((x, i) => `${i ? 'L' : 'M'}${x},${actualYs[i]}`).join(' ')
-  const forecastPath = forecastXs.map((x, i) => `${i ? 'L' : 'M'}${x},${forecastYs[i]}`).join(' ')
+  // Build paths with validation
+  const actualPath = actualXs.map((x, i) => {
+    const xVal = Number(x) || 0
+    const yVal = Number(actualYs[i]) || height - pad
+    return `${i ? 'L' : 'M'}${xVal},${yVal}`
+  }).join(' ')
+  
+  const forecastPath = forecastXs.map((x, i) => {
+    const xVal = Number(x) || 0
+    const yVal = Number(forecastYs[i]) || height - pad
+    return `${i ? 'L' : 'M'}${xVal},${yVal}`
+  }).join(' ')
   
   // Build areas for gradient
   const actualArea = `M${pad},${height - pad} ${actualPath} L${forecastStartX},${height - pad} Z`

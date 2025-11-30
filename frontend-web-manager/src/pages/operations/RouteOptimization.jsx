@@ -23,8 +23,16 @@ export default function RouteOptimization() {
   const routeLayerRef = useRef(null)
   const stopMarkersRef = useRef([])
   
+  // Employee assignment
+  const [personnel, setPersonnel] = useState([])
+  const [assignModalOpen, setAssignModalOpen] = useState(false)
+  const [selectedRoute, setSelectedRoute] = useState(null)
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState('')
+  
   // Filters
   const [collectionDate, setCollectionDate] = useState(new Date().toISOString().split('T')[0])
+  const [selectedDistrict, setSelectedDistrict] = useState('')
+  const [districts, setDistricts] = useState([])
   const [selectedDepot, setSelectedDepot] = useState('')
   const [selectedDump, setSelectedDump] = useState('')
 
@@ -35,7 +43,26 @@ export default function RouteOptimization() {
       // Cleanup on unmount
       clearRouteDisplay()
     }
-  }, [collectionDate, selectedDepot, selectedDump])
+  }, [collectionDate, selectedDistrict])
+
+  // Load districts when date changes
+  useEffect(() => {
+    if (collectionDate) {
+      loadDistricts()
+    }
+  }, [collectionDate])
+
+  // Auto-filter when district changes
+  useEffect(() => {
+    if (selectedDistrict) {
+      autoFilterByDistrict()
+    } else {
+      // Reset filters when no district selected
+      setSelectedDepot('')
+      setSelectedDump('')
+      setSelectedVehicles([])
+    }
+  }, [selectedDistrict])
   
   // Clear route display when routes change (new optimization)
   useEffect(() => {
@@ -48,17 +75,115 @@ export default function RouteOptimization() {
     }
   }, [routes])
 
+  async function loadDistricts() {
+    const res = await api.getDistricts(collectionDate)
+    console.log('[RouteOptimization] Load districts response:', res)
+    if (res.ok && Array.isArray(res.data)) {
+      console.log('[RouteOptimization] Districts loaded:', res.data)
+      setDistricts(res.data)
+      // Auto-select first district if available
+      if (res.data.length > 0 && !selectedDistrict) {
+        setSelectedDistrict(res.data[0].district)
+      }
+    } else {
+      console.warn('[RouteOptimization] Failed to load districts:', res)
+    }
+  }
+
+  // Helper function to extract district from address
+  function extractDistrictFromAddress(address) {
+    if (!address) return null
+    const match = address.match(/Quận\s*(\d+)|Q\.?\s*(\d+)/i)
+    if (match) return `Quận ${match[1] || match[2]}`
+    const districts = [
+      'Quận 1', 'Quận 2', 'Quận 3', 'Quận 4', 'Quận 5',
+      'Quận 6', 'Quận 7', 'Quận 8', 'Quận 9', 'Quận 10',
+      'Quận 11', 'Quận 12', 'Bình Thạnh', 'Tân Bình', 'Tân Phú',
+      'Phú Nhuận', 'Gò Vấp', 'Bình Tân', 'Thủ Đức'
+    ]
+    for (const dist of districts) {
+      if (address.includes(dist)) return dist
+    }
+    return null
+  }
+
+  async function autoFilterByDistrict() {
+    if (!selectedDistrict) return
+
+    // Load data with district filter from backend
+    const [f, s, dep, dum, p] = await Promise.all([
+      api.getFleet({ district: selectedDistrict }),
+      api.getSchedules({ 
+        scheduled_date: collectionDate, 
+        status: 'scheduled',
+        district: selectedDistrict
+      }),
+      api.getDepots({ district: selectedDistrict }),
+      api.getDumps(), // Dumps không filter theo quận
+      api.getPersonnel({ 
+        status: 'active',
+        district: selectedDistrict
+      })
+    ])
+
+    // Set filtered data directly from backend
+    if (s.ok && Array.isArray(s.data)) {
+      setSchedules(s.data)
+    } else {
+      setSchedules([])
+    }
+
+    if (dep.ok && Array.isArray(dep.data)) {
+      setDepots(dep.data)
+      // Auto-select first depot in district
+      if (dep.data.length > 0) {
+        setSelectedDepot(dep.data[0].id)
+      }
+    } else {
+      setDepots([])
+    }
+
+    if (f.ok && Array.isArray(f.data)) {
+      setFleet(f.data)
+    } else {
+      setFleet([])
+    }
+
+    // Keep all dumps (will auto-select best one)
+    if (dum.ok && Array.isArray(dum.data)) {
+      setDumps(dum.data)
+    } else {
+      setDumps([])
+    }
+
+    // Filter only drivers and collectors
+    if (p.ok && Array.isArray(p.data)) {
+      const filtered = p.data.filter(emp => 
+        emp.role === 'driver' || emp.role === 'collector'
+      )
+      setPersonnel(filtered)
+    } else {
+      setPersonnel([])
+    }
+  }
+
   async function loadData() {
-    const [f, s, dep, dum] = await Promise.all([
+    const [f, s, dep, dum, p] = await Promise.all([
       api.getFleet(),
       api.getSchedules({ scheduled_date: collectionDate, status: 'scheduled' }),
       api.getDepots(),
-      api.getDumps()
+      api.getDumps(),
+      api.getPersonnel({ status: 'active' })
     ])
     if (f.ok && Array.isArray(f.data)) setFleet(f.data)
     if (s.ok && Array.isArray(s.data)) setSchedules(s.data)
     if (dep.ok && Array.isArray(dep.data)) setDepots(dep.data)
     if (dum.ok && Array.isArray(dum.data)) setDumps(dum.data)
+    if (p.ok && Array.isArray(p.data)) {
+      // Filter only drivers and collectors
+      const filtered = p.data.filter(emp => emp.role === 'driver' || emp.role === 'collector')
+      setPersonnel(filtered)
+    }
   }
 
   function initMap() {
@@ -194,51 +319,104 @@ export default function RouteOptimization() {
     setActiveRouteId(route.vehicleId)
     
     // Display route path from geojson
+    console.log('[RouteOptimization] Route geojson:', route.geojson)
     if (route.geojson && route.geojson.features && route.geojson.features.length > 0) {
       const source = routeSourceRef.current || mapObj.current.getSource('route')
       if (source) {
         source.setData(route.geojson)
+        console.log('[RouteOptimization] Route displayed on map')
       }
       
-      // Fit map to route bounds
+      // Fit map to route bounds - include all waypoints (depot, stops, dump)
       const coordinates = route.geojson.features[0]?.geometry?.coordinates || []
+      const bounds = new maplibregl.LngLatBounds()
+      
+      // Add route coordinates
       if (coordinates.length > 0) {
-        const bounds = new maplibregl.LngLatBounds()
         coordinates.forEach(coord => {
           bounds.extend(coord)
         })
-        
+      }
+      
+      // Also include all waypoints to ensure they're visible
+      if (route.depot && route.depot.lon && route.depot.lat) {
+        bounds.extend([parseFloat(route.depot.lon), parseFloat(route.depot.lat)])
+      }
+      if (route.stops && Array.isArray(route.stops)) {
+        route.stops.forEach(stop => {
+          if (stop.lon && stop.lat) {
+            bounds.extend([parseFloat(stop.lon), parseFloat(stop.lat)])
+          }
+        })
+      }
+      if (route.dump && route.dump.lon && route.dump.lat) {
+        bounds.extend([parseFloat(route.dump.lon), parseFloat(route.dump.lat)])
+      }
+      
+      if (!bounds.isEmpty()) {
         mapObj.current.fitBounds(bounds, {
           padding: { top: 50, bottom: 50, left: 50, right: 50 },
           maxZoom: 15
         })
       }
+    } else {
+      console.warn('[RouteOptimization] No route geometry to display')
     }
     
-    // Add marker for depot (start point)
+    // Add marker for depot (start point) - Improved styling with clear START label
+    console.log('[RouteOptimization] Display route - depot:', route.depot, 'dump:', route.dump)
+    console.log('[RouteOptimization] Using NEW marker style - START (green square) and END (red circle)')
     if (route.depot && route.depot.lon && route.depot.lat) {
       const depotEl = document.createElement('div')
       depotEl.className = 'route-depot-marker'
-      depotEl.style.width = '32px'
-      depotEl.style.height = '32px'
-      depotEl.style.borderRadius = '50%'
-      depotEl.style.backgroundColor = '#10b981'
-      depotEl.style.border = '3px solid white'
-      depotEl.style.boxShadow = '0 2px 8px rgba(0,0,0,0.4)'
-      depotEl.style.display = 'flex'
-      depotEl.style.alignItems = 'center'
-      depotEl.style.justifyContent = 'center'
-      depotEl.style.color = 'white'
-      depotEl.style.fontSize = '12px'
-      depotEl.style.fontWeight = 'bold'
-      depotEl.textContent = 'S'
-      depotEl.title = 'Điểm bắt đầu (Depot)'
+      // Set all styles with !important to override any CSS
+      depotEl.setAttribute('style', `
+        width: 50px !important;
+        height: 50px !important;
+        border-radius: 12px !important;
+        background-color: #059669 !important;
+        border: 5px solid #ffffff !important;
+        box-shadow: 0 4px 16px rgba(5, 150, 105, 0.6), 0 0 0 3px rgba(5, 150, 105, 0.2) !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        color: white !important;
+        font-size: 11px !important;
+        font-weight: 900 !important;
+        font-family: system-ui, -apple-system, sans-serif !important;
+        letter-spacing: 0.5px !important;
+        line-height: 1.1 !important;
+        text-align: center !important;
+        padding: 2px !important;
+        box-sizing: border-box !important;
+        position: relative !important;
+        z-index: 1000 !important;
+      `)
+      depotEl.textContent = 'START'
+      depotEl.title = `Điểm bắt đầu: ${route.depot.name || 'Depot'}`
       
-      const depotMarker = new maplibregl.Marker(depotEl)
-        .setLngLat([route.depot.lon, route.depot.lat])
+      // Force style after element is created
+      setTimeout(() => {
+        depotEl.style.width = '50px'
+        depotEl.style.height = '50px'
+        depotEl.style.backgroundColor = '#059669'
+        depotEl.style.borderRadius = '12px'
+        console.log('[RouteOptimization] START marker style applied:', {
+          width: depotEl.style.width,
+          height: depotEl.style.height,
+          bgColor: depotEl.style.backgroundColor,
+          borderRadius: depotEl.style.borderRadius
+        })
+      }, 10)
+      
+      const depotMarker = new maplibregl.Marker({ element: depotEl })
+        .setLngLat([parseFloat(route.depot.lon), parseFloat(route.depot.lat)])
         .addTo(mapObj.current)
       
       stopMarkersRef.current.push(depotMarker)
+      console.log('[RouteOptimization] Added depot marker at:', route.depot.lon, route.depot.lat)
+    } else {
+      console.warn('[RouteOptimization] Depot missing or invalid:', route.depot)
     }
     
     // Add markers for stops (numbered)
@@ -271,30 +449,58 @@ export default function RouteOptimization() {
       })
     }
     
-    // Add marker for dump (end point)
+    // Add marker for dump (end point) - Improved styling with clear END label
     if (route.dump && route.dump.lon && route.dump.lat) {
       const dumpEl = document.createElement('div')
       dumpEl.className = 'route-dump-marker'
-      dumpEl.style.width = '32px'
-      dumpEl.style.height = '32px'
-      dumpEl.style.borderRadius = '50%'
-      dumpEl.style.backgroundColor = '#ef4444'
-      dumpEl.style.border = '3px solid white'
-      dumpEl.style.boxShadow = '0 2px 8px rgba(0,0,0,0.4)'
-      dumpEl.style.display = 'flex'
-      dumpEl.style.alignItems = 'center'
-      dumpEl.style.justifyContent = 'center'
-      dumpEl.style.color = 'white'
-      dumpEl.style.fontSize = '12px'
-      dumpEl.style.fontWeight = 'bold'
-      dumpEl.textContent = 'E'
-      dumpEl.title = 'Điểm kết thúc (Dump)'
+      // Set all styles with !important to override any CSS
+      dumpEl.setAttribute('style', `
+        width: 50px !important;
+        height: 50px !important;
+        border-radius: 50% !important;
+        background-color: #dc2626 !important;
+        border: 5px solid #ffffff !important;
+        box-shadow: 0 4px 16px rgba(220, 38, 38, 0.6), 0 0 0 3px rgba(220, 38, 38, 0.2) !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        color: white !important;
+        font-size: 11px !important;
+        font-weight: 900 !important;
+        font-family: system-ui, -apple-system, sans-serif !important;
+        letter-spacing: 0.5px !important;
+        line-height: 1.1 !important;
+        text-align: center !important;
+        padding: 2px !important;
+        box-sizing: border-box !important;
+        position: relative !important;
+        z-index: 1000 !important;
+      `)
+      dumpEl.textContent = 'END'
+      dumpEl.title = `Điểm kết thúc: ${route.dump.name || 'Dump'}`
       
-      const dumpMarker = new maplibregl.Marker(dumpEl)
-        .setLngLat([route.dump.lon, route.dump.lat])
+      // Force style after element is created
+      setTimeout(() => {
+        dumpEl.style.width = '50px'
+        dumpEl.style.height = '50px'
+        dumpEl.style.backgroundColor = '#dc2626'
+        dumpEl.style.borderRadius = '50%'
+        console.log('[RouteOptimization] END marker style applied:', {
+          width: dumpEl.style.width,
+          height: dumpEl.style.height,
+          bgColor: dumpEl.style.backgroundColor,
+          borderRadius: dumpEl.style.borderRadius
+        })
+      }, 10)
+      
+      const dumpMarker = new maplibregl.Marker({ element: dumpEl })
+        .setLngLat([parseFloat(route.dump.lon), parseFloat(route.dump.lat)])
         .addTo(mapObj.current)
       
       stopMarkersRef.current.push(dumpMarker)
+      console.log('[RouteOptimization] Added dump marker at:', route.dump.lon, route.dump.lat)
+    } else {
+      console.warn('[RouteOptimization] Dump missing or invalid:', route.dump)
     }
   }
   
@@ -302,7 +508,66 @@ export default function RouteOptimization() {
     displayRouteOnMap(route)
   }
 
+  function handleAssignEmployee(route) {
+    setSelectedRoute(route)
+    setSelectedEmployeeId(route.driver_id || route.assigned_employee_id || '')
+    setAssignModalOpen(true)
+  }
+
+  async function handleSaveAssignment() {
+    if (!selectedRoute || !selectedEmployeeId) {
+      setToast({ message: 'Vui lòng chọn nhân viên', type: 'error' })
+      return
+    }
+
+    setLoading(true)
+    try {
+      // First save route if not saved yet (get route_id from save-routes)
+      let routeId = selectedRoute.route_id
+      if (!routeId) {
+        // Save route first
+        const saveRes = await api.saveRoutes({ routes: [selectedRoute] })
+        if (saveRes.ok && saveRes.data.routes && saveRes.data.routes.length > 0) {
+          routeId = saveRes.data.routes[0].route_id
+        } else {
+          setToast({ message: 'Không thể lưu hành trình', type: 'error' })
+          setLoading(false)
+          return
+        }
+      }
+
+      // Assign employee to route
+      const res = await api.assignRoute(routeId, selectedEmployeeId)
+      setLoading(false)
+      
+      if (res.ok) {
+        setToast({ message: 'Đã gán nhân viên thành công', type: 'success' })
+        setAssignModalOpen(false)
+        setSelectedRoute(null)
+        setSelectedEmployeeId('')
+        
+        // Update route in list
+        setRoutes(prevRoutes => 
+          prevRoutes.map(r => 
+            r.vehicleId === selectedRoute.vehicleId 
+              ? { ...r, driver_id: selectedEmployeeId, route_id: routeId, assigned: true }
+              : r
+          )
+        )
+      } else {
+        setToast({ message: res.error || 'Gán nhân viên thất bại', type: 'error' })
+      }
+    } catch (error) {
+      setLoading(false)
+      setToast({ message: 'Lỗi: ' + error.message, type: 'error' })
+    }
+  }
+
   async function handleOptimize() {
+    if (!selectedDistrict) {
+      setToast({ message: 'Vui lòng chọn quận', type: 'error' })
+      return
+    }
     if (selectedVehicles.length === 0) {
       setToast({ message: 'Vui lòng chọn ít nhất một phương tiện', type: 'error' })
       return
@@ -317,7 +582,8 @@ export default function RouteOptimization() {
     
     const vehicles = fleet.filter(v => selectedVehicles.includes(v.id))
     const depot = depots.find(d => d.id === selectedDepot) || depots[0]
-    const dump = dumps.find(d => d.id === selectedDump) || dumps[0]
+    // Don't require dump - backend will auto-select best one
+    const dump = dumps.find(d => d.id === selectedDump) || null
     
     // Convert schedules to points format
     const points = schedules.map(s => ({
@@ -331,15 +597,16 @@ export default function RouteOptimization() {
     const payload = {
       timeWindow: { start: '19:00', end: '05:00' },
       vehicles,
-      depot: depot ? { lon: depot.lon, lat: depot.lat } : { lon: 106.7, lat: 10.78 },
-      dump: dump ? { lon: dump.lon, lat: dump.lat } : { lon: 106.72, lat: 10.81 },
+      depot: depot ? { id: depot.id, name: depot.name, lon: depot.lon, lat: depot.lat } : { lon: 106.7, lat: 10.78 },
+      dump: dump ? { id: dump.id, name: dump.name, lon: dump.lon, lat: dump.lat } : null,
+      dumps: dumps, // Send all dumps for auto-selection
       points
     }
     const res = await api.optimizeVRP(payload)
     setLoading(false)
     if (res.ok) {
       setRoutes(res.data.routes || [])
-      setToast({ message: 'Tối ưu tuyến đường thành công', type: 'success' })
+      setToast({ message: `Tối ưu tuyến đường ${selectedDistrict} thành công`, type: 'success' })
     } else {
       setToast({ message: 'Tối ưu thất bại', type: 'error' })
     }
@@ -373,7 +640,7 @@ export default function RouteOptimization() {
             <div className="card" style={{ marginBottom: 16 }}>
               <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
                 <div style={{ flex: '1 1 200px' }}>
-                  <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 500 }}>Ngày thu gom</label>
+                  <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 500 }}>📅 Ngày thu gom</label>
                   <input
                     type="date"
                     value={collectionDate}
@@ -382,44 +649,72 @@ export default function RouteOptimization() {
                   />
                 </div>
                 <div style={{ flex: '1 1 200px' }}>
-                  <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 500 }}>Trạm thu gom</label>
+                  <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 500 }}>🗺️ Chọn quận</label>
                   <select
-                    value={selectedDepot}
-                    onChange={(e) => setSelectedDepot(e.target.value)}
+                    value={selectedDistrict}
+                    onChange={(e) => setSelectedDistrict(e.target.value)}
                     style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 6 }}
                   >
-                    <option value="">-- Chọn trạm --</option>
-                    {depots.map(d => (
-                      <option key={d.id} value={d.id}>{d.name}</option>
+                    <option value="">-- Chọn quận --</option>
+                    {districts.map(d => (
+                      <option key={d.district} value={d.district}>
+                        {d.district} ({d.point_count || d.schedule_count || 0} điểm)
+                      </option>
                     ))}
                   </select>
                 </div>
-                <div style={{ flex: '1 1 200px' }}>
-                  <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 500 }}>Bãi rác</label>
-                  <select
-                    value={selectedDump}
-                    onChange={(e) => setSelectedDump(e.target.value)}
-                    style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 6 }}
-                  >
-                    <option value="">-- Chọn bãi rác --</option>
-                    {dumps.map(d => (
-                      <option key={d.id} value={d.id}>{d.name}</option>
-                    ))}
-                  </select>
-                </div>
+                {selectedDistrict && (
+                  <>
+                    <div style={{ flex: '1 1 200px' }}>
+                      <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 500 }}>📍 Trạm thu gom (tự động)</label>
+                      <select
+                        value={selectedDepot}
+                        onChange={(e) => setSelectedDepot(e.target.value)}
+                        style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 6, backgroundColor: '#f5f5f5' }}
+                        disabled={depots.length <= 1}
+                      >
+                        {depots.map(d => (
+                          <option key={d.id} value={d.id}>{d.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div style={{ flex: '1 1 200px' }}>
+                      <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 500 }}>🗑️ Bãi rác (tự động)</label>
+                      <select
+                        value={selectedDump || ''}
+                        onChange={(e) => setSelectedDump(e.target.value)}
+                        style={{ width: '100%', padding: '8px 12px', border: '1px solid #ccc', borderRadius: 6, backgroundColor: '#f5f5f5' }}
+                      >
+                        <option value="">Tự động chọn gần nhất</option>
+                        {dumps.map(d => (
+                          <option key={d.id} value={d.id}>{d.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </>
+                )}
                 <div style={{ flex: '0 0 auto', alignSelf: 'flex-end' }}>
-                  <button className="btn btn-primary" onClick={loadData} style={{ marginTop: 24 }}>
+                  <button className="btn btn-secondary" onClick={loadData} style={{ marginTop: 24 }}>
                     Tải lại
                   </button>
                 </div>
               </div>
+              {selectedDistrict && (
+                <div style={{ marginTop: 12, padding: 12, backgroundColor: '#e3f2fd', borderRadius: 6, fontSize: 14, color: '#1976d2' }}>
+                  📍 <strong>{selectedDistrict}</strong>: Tìm thấy {schedules.length} điểm thu gom · {depots.length} trạm · {fleet.length} phương tiện
+                </div>
+              )}
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 24 }}>
               <div className="card">
                 <h2>Bản đồ & Lịch thu gom</h2>
                 <div style={{ marginBottom: 12, color: '#666', fontSize: 14 }}>
-                  Tìm thấy {schedules.length} lịch thu gom cho ngày {new Date(collectionDate).toLocaleDateString('vi-VN')}
+                  {selectedDistrict ? (
+                    <>Tìm thấy {schedules.length} điểm thu gom tại <strong>{selectedDistrict}</strong> cho ngày {new Date(collectionDate).toLocaleDateString('vi-VN')}</>
+                  ) : (
+                    <>Tìm thấy {schedules.length} lịch thu gom cho ngày {new Date(collectionDate).toLocaleDateString('vi-VN')}</>
+                  )}
                 </div>
                 <div ref={mapRef} style={{ width: '100%', height: 500, borderRadius: 8, overflow: 'hidden', border: '1px solid #e0e0e0' }} />
                 <div style={{ marginTop: 16, display: 'flex', justifyContent: 'center' }}>
@@ -455,7 +750,9 @@ export default function RouteOptimization() {
             {routes.length > 0 && (
               <div className="card" style={{ marginTop: 24 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                  <h2 style={{ margin: 0 }}>Tuyến đường đã tối ưu</h2>
+                  <h2 style={{ margin: 0 }}>
+                    {selectedDistrict ? `Danh sách tuyến đường ${selectedDistrict}` : 'Tuyến đường đã tối ưu'}
+                  </h2>
                   {activeRouteId && (
                     <button 
                       className="btn btn-secondary" 
@@ -467,33 +764,71 @@ export default function RouteOptimization() {
                   )}
                 </div>
                 <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {routes.map((r, i) => (
-                    <div 
-                      key={i} 
-                      onDoubleClick={() => handleRouteDoubleClick(r)}
-                      style={{ 
-                        padding: 12, 
-                        border: `2px solid ${activeRouteId === r.vehicleId ? '#3b82f6' : '#e0e0e0'}`, 
-                        borderRadius: 6,
-                        cursor: 'pointer',
-                        backgroundColor: activeRouteId === r.vehicleId ? '#eff6ff' : 'white',
-                        transition: 'all 0.2s'
-                      }}
-                      title="Nhấn đúp để xem đường đi trên bản đồ"
-                    >
-                      <div style={{ fontWeight: 600, color: activeRouteId === r.vehicleId ? '#3b82f6' : 'inherit' }}>
-                        Phương tiện: {r.vehicleId}
+                  {routes.map((r, i) => {
+                    const depotName = r.depot?.name || depots.find(d => d.id === r.depot_id || d.id === selectedDepot)?.name || 'Depot'
+                    const dumpName = r.dump?.name || dumps.find(d => d.id === r.dump_id || d.id === selectedDump)?.name || 'Dump'
+                    const assignedEmployee = personnel.find(p => p.id === r.driver_id)
+                    
+                    return (
+                      <div 
+                        key={i} 
+                        style={{ 
+                          padding: 12, 
+                          border: `2px solid ${activeRouteId === r.vehicleId ? '#3b82f6' : r.assigned ? '#10b981' : '#e0e0e0'}`, 
+                          borderRadius: 6,
+                          backgroundColor: activeRouteId === r.vehicleId ? '#eff6ff' : r.assigned ? '#f0fdf4' : 'white',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: 8 }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 600, color: activeRouteId === r.vehicleId ? '#3b82f6' : 'inherit', marginBottom: 4 }}>
+                              Hành trình {String.fromCharCode(65 + i)} · {r.vehiclePlate || r.vehicleId}
+                            </div>
+                            <div style={{ fontSize: 12, color: '#666', marginBottom: 2 }}>
+                              <strong>Điểm xuất phát:</strong> {depotName}
+                            </div>
+                            <div style={{ fontSize: 12, color: '#666', marginBottom: 2 }}>
+                              <strong>Điểm đến:</strong> {dumpName}
+                            </div>
+                            <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>
+                              <strong>Số lượng bộ/tuyến:</strong> {r.stops?.length || 0} điểm thu gom
+                            </div>
+                            <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
+                              Khoảng cách: {r.distance && r.distance > 0 ? (r.distance / 1000).toFixed(2) : '0.00'}km · Thời gian: {r.eta || '00:00'} · Điểm dừng: {r.stops?.length || 0}
+                            </div>
+                            {r.assigned && assignedEmployee && (
+                              <div style={{ fontSize: 11, color: '#10b981', marginTop: 4, fontWeight: 500 }}>
+                                ✓ Đã gán: {assignedEmployee.name}
+                              </div>
+                            )}
+                            {activeRouteId === r.vehicleId && (
+                              <div style={{ fontSize: 11, color: '#3b82f6', marginTop: 4, fontStyle: 'italic' }}>
+                                📍 Đang hiển thị trên bản đồ
+                              </div>
+                            )}
                       </div>
-                      <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>
-                        Khoảng cách: {r.distance}m · Thời gian dự kiến: {r.eta} · Điểm dừng: {r.stops?.length || 0}
-                      </div>
-                      {activeRouteId === r.vehicleId && (
-                        <div style={{ fontSize: 11, color: '#3b82f6', marginTop: 4, fontStyle: 'italic' }}>
-                          ✓ Đang hiển thị trên bản đồ
-                        </div>
-                      )}
                     </div>
-                  ))}
+                        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                          <button
+                            className="btn btn-secondary"
+                            onClick={() => handleRouteDoubleClick(r)}
+                            style={{ flex: 1, fontSize: 12, padding: '6px 12px' }}
+                          >
+                            Xem bản đồ
+                          </button>
+                          <button
+                            className="btn btn-primary"
+                            onClick={() => handleAssignEmployee(r)}
+                            disabled={loading}
+                            style={{ flex: 1, fontSize: 12, padding: '6px 12px' }}
+                          >
+                            {r.assigned ? 'Đổi nhân viên' : 'Gán nhân viên'}
+                          </button>
+                </div>
+                      </div>
+                    )
+                  })}
                 </div>
                 {activeRouteId && (
                   <div style={{ marginTop: 12, padding: 8, backgroundColor: '#f0f9ff', borderRadius: 6, fontSize: 12, color: '#666' }}>
@@ -512,8 +847,87 @@ export default function RouteOptimization() {
         onConfirm={confirmSend}
         onCancel={() => setConfirmOpen(false)}
       />
+      
+      {/* Assign Employee Modal */}
+      {assignModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            padding: 24,
+            borderRadius: 8,
+            width: '90%',
+            maxWidth: 500,
+            boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
+          }}>
+            <h3 style={{ marginTop: 0, marginBottom: 16 }}>Gán nhân viên cho hành trình</h3>
+            {selectedRoute && (
+              <div style={{ marginBottom: 16, padding: 12, backgroundColor: '#f5f5f5', borderRadius: 6 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
+                  {selectedRoute.vehiclePlate || selectedRoute.vehicleId}
+                </div>
+                <div style={{ fontSize: 12, color: '#666' }}>
+                  {selectedRoute.stops?.length || 0} điểm thu gom · {(selectedRoute.distance / 1000).toFixed(2)}km
+                </div>
+              </div>
+            )}
+            <label style={{ display: 'block', marginBottom: 8, fontSize: 14, fontWeight: 500 }}>
+              Chọn nhân viên
+            </label>
+            <select
+              value={selectedEmployeeId}
+              onChange={(e) => setSelectedEmployeeId(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                border: '1px solid #ccc',
+                borderRadius: 6,
+                fontSize: 14,
+                marginBottom: 16
+              }}
+            >
+              <option value="">-- Chọn nhân viên --</option>
+              {personnel.map(emp => (
+                <option key={emp.id} value={emp.id}>
+                  {emp.name} ({emp.role === 'driver' ? 'Tài xế' : 'Công nhân'}) - {emp.phone || 'N/A'}
+                </option>
+              ))}
+            </select>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  setAssignModalOpen(false)
+                  setSelectedRoute(null)
+                  setSelectedEmployeeId('')
+                }}
+                disabled={loading}
+              >
+                Hủy
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleSaveAssignment}
+                disabled={loading || !selectedEmployeeId}
+              >
+                {loading ? 'Đang xử lý...' : 'Gán nhân viên'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>
   )
 }
-
