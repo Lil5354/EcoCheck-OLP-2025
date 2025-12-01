@@ -15,17 +15,18 @@ class BadgeCard extends StatelessWidget {
       elevation: badge.unlocked ? 2 : 0,
       color: badge.unlocked ? Colors.white : AppColors.surface,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.start,
           children: [
             _BadgeIcon(badge: badge),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             _BadgeName(badge: badge),
             const SizedBox(height: 4),
-            _BadgeDescription(badge: badge),
+            Flexible(child: _BadgeDescription(badge: badge)),
             if (!badge.unlocked) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               _RequiredPoints(points: badge.requiredPoints),
             ],
           ],
@@ -44,8 +45,8 @@ class _BadgeIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 80,
-      height: 80,
+      width: 64,
+      height: 64,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: badge.unlocked
@@ -56,7 +57,7 @@ class _BadgeIcon extends StatelessWidget {
         child: Text(
           badge.icon,
           style: TextStyle(
-            fontSize: 40,
+            fontSize: 32,
             color: badge.unlocked ? null : AppColors.disabled,
           ),
         ),
@@ -75,8 +76,9 @@ class _BadgeName extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       badge.name,
-      style: AppTextStyles.h5.copyWith(
+      style: AppTextStyles.bodyMedium.copyWith(
         color: badge.unlocked ? AppColors.text : AppColors.textSecondary,
+        fontWeight: FontWeight.w600,
       ),
       textAlign: TextAlign.center,
       maxLines: 2,

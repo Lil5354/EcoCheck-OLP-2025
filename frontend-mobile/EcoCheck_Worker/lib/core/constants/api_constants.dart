@@ -32,7 +32,8 @@ class ApiConstants {
   static const Duration sendTimeout = Duration(seconds: 30);
 
   // Auth Endpoints
-  static const String login = '$apiPrefix/auth/login';
+  static const String login =
+      '$apiPrefix/auth/worker/login'; // Worker login endpoint
   static const String register = '$apiPrefix/auth/register';
   static const String verifyOtp = '$apiPrefix/auth/verify-otp';
   static const String refreshToken = '$apiPrefix/auth/refresh-token';

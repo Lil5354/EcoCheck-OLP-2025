@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'dart:async';
 import 'package:eco_check/core/constants/color_constants.dart';
 import 'package:eco_check/core/constants/text_constants.dart';
@@ -12,7 +13,7 @@ class TrackingPage extends StatefulWidget {
 }
 
 class _TrackingPageState extends State<TrackingPage> {
-  final Completer<GoogleMapController> _controller = Completer();
+  final MapController _mapController = MapController();
 
   // Mock data
   bool _isVehicleNearby = true;
@@ -25,12 +26,6 @@ class _TrackingPageState extends State<TrackingPage> {
   String _aqiLevel = "Trung bình";
   Color _aqiColor = AppColors.warning;
 
-  // Camera position - HCMC center
-  static const CameraPosition _initialPosition = CameraPosition(
-    target: LatLng(10.762622, 106.660172), // HCMC coordinates
-    zoom: 14.5,
-  );
-
   // Mock vehicle location (moving)
   LatLng _vehicleLocation = const LatLng(10.770000, 106.670000);
 
@@ -38,10 +33,10 @@ class _TrackingPageState extends State<TrackingPage> {
   final LatLng _userLocation = const LatLng(10.762622, 106.660172);
 
   // Markers
-  final Set<Marker> _markers = {};
+  final List<Marker> _markers = [];
 
   // Polylines for route
-  final Set<Polyline> _polylines = {};
+  final List<Polyline> _polylines = [];
 
   @override
   void initState() {
@@ -53,34 +48,31 @@ class _TrackingPageState extends State<TrackingPage> {
     // User marker
     _markers.add(
       Marker(
-        markerId: const MarkerId('user'),
-        position: _userLocation,
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-        infoWindow: const InfoWindow(
-          title: 'Vị trí của bạn',
-          snippet: '123 Nguyễn Huệ, Q1',
-        ),
+        point: _userLocation,
+        width: 40,
+        height: 40,
+        child: const Icon(Icons.location_on, color: Colors.green, size: 40),
       ),
     );
 
     // Vehicle marker
     _markers.add(
       Marker(
-        markerId: const MarkerId('vehicle'),
-        position: _vehicleLocation,
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
-        infoWindow: InfoWindow(title: _vehicleId, snippet: _vehicleType),
+        point: _vehicleLocation,
+        width: 40,
+        height: 40,
+        child: const Icon(Icons.local_shipping, color: Colors.blue, size: 40),
       ),
     );
 
     // Route polyline
     _polylines.add(
       Polyline(
-        polylineId: const PolylineId('route'),
         points: [_vehicleLocation, _userLocation],
         color: AppColors.primary,
-        width: 4,
-        patterns: [PatternItem.dash(20), PatternItem.gap(10)],
+        strokeWidth: 4,
+        borderStrokeWidth: 2,
+        borderColor: AppColors.primary.withOpacity(0.3),
       ),
     );
 
@@ -105,16 +97,30 @@ class _TrackingPageState extends State<TrackingPage> {
               (_userLocation.longitude - _vehicleLocation.longitude) * 0.1,
         );
 
-        // Update vehicle marker
-        _markers.removeWhere((m) => m.markerId.value == 'vehicle');
+        // Update markers
+        _markers.clear();
+
+        // User marker
         _markers.add(
           Marker(
-            markerId: const MarkerId('vehicle'),
-            position: _vehicleLocation,
-            icon: BitmapDescriptor.defaultMarkerWithHue(
-              BitmapDescriptor.hueBlue,
+            point: _userLocation,
+            width: 40,
+            height: 40,
+            child: const Icon(Icons.location_on, color: Colors.green, size: 40),
+          ),
+        );
+
+        // Vehicle marker
+        _markers.add(
+          Marker(
+            point: _vehicleLocation,
+            width: 40,
+            height: 40,
+            child: const Icon(
+              Icons.local_shipping,
+              color: Colors.blue,
+              size: 40,
             ),
-            infoWindow: InfoWindow(title: _vehicleId, snippet: _vehicleType),
           ),
         );
 
@@ -122,11 +128,11 @@ class _TrackingPageState extends State<TrackingPage> {
         _polylines.clear();
         _polylines.add(
           Polyline(
-            polylineId: const PolylineId('route'),
             points: [_vehicleLocation, _userLocation],
             color: AppColors.primary,
-            width: 4,
-            patterns: [PatternItem.dash(20), PatternItem.gap(10)],
+            strokeWidth: 4,
+            borderStrokeWidth: 2,
+            borderColor: AppColors.primary.withOpacity(0.3),
           ),
         );
 
@@ -138,22 +144,12 @@ class _TrackingPageState extends State<TrackingPage> {
     });
   }
 
-  Future<void> _goToVehicle() async {
-    final GoogleMapController controller = await _controller.future;
-    controller.animateCamera(
-      CameraUpdate.newCameraPosition(
-        CameraPosition(target: _vehicleLocation, zoom: 16, tilt: 45),
-      ),
-    );
+  void _goToVehicle() {
+    _mapController.move(_vehicleLocation, 16);
   }
 
-  Future<void> _goToUser() async {
-    final GoogleMapController controller = await _controller.future;
-    controller.animateCamera(
-      CameraUpdate.newCameraPosition(
-        CameraPosition(target: _userLocation, zoom: 16, tilt: 0),
-      ),
-    );
+  void _goToUser() {
+    _mapController.move(_userLocation, 16);
   }
 
   @override
@@ -176,19 +172,24 @@ class _TrackingPageState extends State<TrackingPage> {
       ),
       body: Stack(
         children: [
-          // Google Map
-          GoogleMap(
-            mapType: MapType.normal,
-            initialCameraPosition: _initialPosition,
-            markers: _markers,
-            polylines: _polylines,
-            onMapCreated: (GoogleMapController controller) {
-              _controller.complete(controller);
-            },
-            myLocationEnabled: true,
-            myLocationButtonEnabled: false,
-            zoomControlsEnabled: false,
-            mapToolbarEnabled: false,
+          // OpenStreetMap
+          FlutterMap(
+            mapController: _mapController,
+            options: MapOptions(
+              initialCenter: _userLocation,
+              initialZoom: 14.5,
+              minZoom: 5,
+              maxZoom: 18,
+            ),
+            children: [
+              TileLayer(
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.example.eco_check',
+                maxZoom: 19,
+              ),
+              PolylineLayer(polylines: _polylines),
+              MarkerLayer(markers: _markers),
+            ],
           ),
 
           // Air Quality Index Card (Top)

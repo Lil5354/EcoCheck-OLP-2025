@@ -58,6 +58,47 @@ class ProfileHeader extends StatelessWidget {
                 color: AppColors.white.withOpacity(0.9),
               ),
             ),
+            if (worker?.groupName != null) ...[
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.group, size: 16, color: AppColors.white),
+                  const SizedBox(width: 6),
+                  Text(
+                    worker!.groupName!,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: AppColors.white.withOpacity(0.95),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (worker?.roleInGroup != null) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.white.withOpacity(0.3),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        worker?.roleInGroup == 'leader'
+                            ? 'Trưởng nhóm'
+                            : 'Thành viên',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
             if (worker?.role != null) ...[
               const SizedBox(height: 8),
               Container(

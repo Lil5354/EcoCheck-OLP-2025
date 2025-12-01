@@ -33,7 +33,8 @@ export default function Schedules() {
     loadPersonnel();
 
     // Connect to Socket.IO for real-time updates
-    const socket = io("http://localhost:3000");
+    const SOCKET_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+    const socket = io(SOCKET_URL);
 
     socket.on("connect", () => {
       console.log("✅ Connected to Socket.IO server");

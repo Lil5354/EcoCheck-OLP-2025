@@ -1,5 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:eco_check/data/repositories/ecocheck_repository.dart';
+import 'package:eco_check/data/models/gamification_model.dart';
 import 'gamification_event.dart';
 import 'gamification_state.dart';
 
@@ -22,13 +23,26 @@ class GamificationBloc extends Bloc<GamificationEvent, GamificationState> {
     LoadUserStats event,
     Emitter<GamificationState> emit,
   ) async {
+    print('[GamificationBloc] Loading user stats for userId: ${event.userId}');
     emit(const GamificationLoading());
 
     try {
-      // Load real data from backend
-      final stats = await _repository.getUserStatistics(event.userId);
+      // Load all data from backend in parallel
+      print('[GamificationBloc] Calling API...');
+      final results = await Future.wait([
+        _repository.getUserStatistics(event.userId),
+        _repository.getLeaderboard(period: 'all', limit: 20),
+      ]);
 
-      // Convert to BLoC state format
+      final stats = results[0] as UserStatisticsModel;
+      final leaderboardData = results[1] as List<LeaderboardEntryModel>;
+
+      print('[GamificationBloc] Stats loaded: ${stats.totalPoints} points');
+      print(
+        '[GamificationBloc] Leaderboard entries: ${leaderboardData.length}',
+      );
+
+      // Convert badges to BLoC state format
       final badges = stats.badges
           .map(
             (b) => BadgeData(
@@ -42,16 +56,41 @@ class GamificationBloc extends Bloc<GamificationEvent, GamificationState> {
           )
           .toList();
 
+      // Convert leaderboard to BLoC state format
+      final leaderboard = leaderboardData
+          .map(
+            (e) => LeaderboardEntry(
+              userId: e.userId,
+              userName: e.userName,
+              avatarUrl: e.avatarUrl,
+              points: e.points,
+              position: e.rank,
+              rank: e.rankTier,
+              isCurrentUser: e.userId == event.userId,
+            ),
+          )
+          .toList();
+
+      print(
+        '[GamificationBloc] Converted leaderboard: ${leaderboard.length} entries',
+      );
+      print(
+        '[GamificationBloc] Top 3: ${leaderboard.take(3).map((e) => '${e.userName}:${e.points}').join(", ")}',
+      );
+
       emit(
         GamificationDataLoaded(
           points: stats.totalPoints,
           rank: stats.rankTier,
           position: stats.rank,
           badges: badges,
-          leaderboard: const [], // Will load separately
+          leaderboard: leaderboard,
         ),
       );
-    } catch (e) {
+      print('[GamificationBloc] Data loaded successfully!');
+    } catch (e, stackTrace) {
+      print('[GamificationBloc] Error: $e');
+      print('[GamificationBloc] Stack trace: $stackTrace');
       emit(GamificationError('Không thể tải thống kê: ${e.toString()}'));
     }
   }

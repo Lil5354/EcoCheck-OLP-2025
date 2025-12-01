@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
 
-/// User Model
+/// User Model (Worker)
 class UserModel extends Equatable {
   final String id;
   final String phone;
@@ -17,6 +17,22 @@ class UserModel extends Equatable {
   final DateTime createdAt;
   final DateTime updatedAt;
 
+  // Worker-specific fields
+  final String? personnelRole; // driver, collector, etc.
+  final String? depotId;
+  final String? depotName;
+  final String? groupId;
+  final String? groupName;
+  final String? groupCode;
+  final String? roleInGroup; // leader, member
+  final String? operatingArea;
+  final String? vehicleId;
+  final String? vehiclePlate;
+  final String? vehicleType;
+  final List<String>? skills;
+  final int? experience;
+  final String? license;
+
   const UserModel({
     required this.id,
     required this.phone,
@@ -32,6 +48,20 @@ class UserModel extends Equatable {
     this.fcmToken,
     required this.createdAt,
     required this.updatedAt,
+    this.personnelRole,
+    this.depotId,
+    this.depotName,
+    this.groupId,
+    this.groupName,
+    this.groupCode,
+    this.roleInGroup,
+    this.operatingArea,
+    this.vehicleId,
+    this.vehiclePlate,
+    this.vehicleType,
+    this.skills,
+    this.experience,
+    this.license,
   });
 
   @override
@@ -50,6 +80,20 @@ class UserModel extends Equatable {
     fcmToken,
     createdAt,
     updatedAt,
+    personnelRole,
+    depotId,
+    depotName,
+    groupId,
+    groupName,
+    groupCode,
+    roleInGroup,
+    operatingArea,
+    vehicleId,
+    vehiclePlate,
+    vehicleType,
+    skills,
+    experience,
+    license,
   ];
 
   /// From JSON - with null-safe parsing and field name variations
@@ -58,7 +102,15 @@ class UserModel extends Equatable {
     double? lat;
     double? lon;
 
-    if (json.containsKey('location') && json['location'] != null) {
+    // Check depotLocation first (for worker data)
+    if (json.containsKey('depotLocation') && json['depotLocation'] != null) {
+      lat = json['depotLocation']['latitude'] != null
+          ? double.tryParse(json['depotLocation']['latitude'].toString())
+          : null;
+      lon = json['depotLocation']['longitude'] != null
+          ? double.tryParse(json['depotLocation']['longitude'].toString())
+          : null;
+    } else if (json.containsKey('location') && json['location'] != null) {
       lat = json['location']['latitude'] != null
           ? double.tryParse(json['location']['latitude'].toString())
           : null;
@@ -72,6 +124,14 @@ class UserModel extends Equatable {
       lon = json['longitude'] != null
           ? double.tryParse(json['longitude'].toString())
           : null;
+    }
+
+    // Parse skills array
+    List<String>? skills;
+    if (json['skills'] != null) {
+      if (json['skills'] is List) {
+        skills = (json['skills'] as List).map((e) => e.toString()).toList();
+      }
     }
 
     return UserModel(
@@ -108,6 +168,23 @@ class UserModel extends Equatable {
                 ) ??
                 DateTime.now()
           : DateTime.now(),
+      // Worker-specific fields
+      personnelRole: json['personnelRole']?.toString(),
+      depotId: json['depotId']?.toString(),
+      depotName: json['depotName']?.toString(),
+      groupId: json['groupId']?.toString(),
+      groupName: json['groupName']?.toString(),
+      groupCode: json['groupCode']?.toString(),
+      roleInGroup: json['roleInGroup']?.toString(),
+      operatingArea: json['operatingArea']?.toString(),
+      vehicleId: json['vehicleId']?.toString(),
+      vehiclePlate: json['vehiclePlate']?.toString(),
+      vehicleType: json['vehicleType']?.toString(),
+      skills: skills,
+      experience: json['experience'] != null
+          ? int.tryParse(json['experience'].toString())
+          : null,
+      license: json['license']?.toString(),
     );
   }
 
@@ -118,17 +195,41 @@ class UserModel extends Equatable {
       'phone': phone,
       'email': email,
       'full_name': fullName,
+      'fullName': fullName,
       'role': role,
       'address': address,
       'location': latitude != null && longitude != null
           ? {'latitude': latitude, 'longitude': longitude}
           : null,
+      'latitude': latitude,
+      'longitude': longitude,
       'avatar_url': avatarUrl,
+      'avatarUrl': avatarUrl,
       'is_verified': isVerified,
+      'isVerified': isVerified,
       'is_active': isActive,
+      'isActive': isActive,
       'fcm_token': fcmToken,
+      'fcmToken': fcmToken,
       'created_at': createdAt.toIso8601String(),
+      'createdAt': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
+      'updatedAt': updatedAt.toIso8601String(),
+      // Worker-specific fields
+      'personnelRole': personnelRole,
+      'depotId': depotId,
+      'depotName': depotName,
+      'groupId': groupId,
+      'groupName': groupName,
+      'groupCode': groupCode,
+      'roleInGroup': roleInGroup,
+      'operatingArea': operatingArea,
+      'vehicleId': vehicleId,
+      'vehiclePlate': vehiclePlate,
+      'vehicleType': vehicleType,
+      'skills': skills,
+      'experience': experience,
+      'license': license,
     };
   }
 
@@ -148,6 +249,20 @@ class UserModel extends Equatable {
     String? fcmToken,
     DateTime? createdAt,
     DateTime? updatedAt,
+    String? personnelRole,
+    String? depotId,
+    String? depotName,
+    String? groupId,
+    String? groupName,
+    String? groupCode,
+    String? roleInGroup,
+    String? operatingArea,
+    String? vehicleId,
+    String? vehiclePlate,
+    String? vehicleType,
+    List<String>? skills,
+    int? experience,
+    String? license,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -164,6 +279,20 @@ class UserModel extends Equatable {
       fcmToken: fcmToken ?? this.fcmToken,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      personnelRole: personnelRole ?? this.personnelRole,
+      depotId: depotId ?? this.depotId,
+      depotName: depotName ?? this.depotName,
+      groupId: groupId ?? this.groupId,
+      groupName: groupName ?? this.groupName,
+      groupCode: groupCode ?? this.groupCode,
+      roleInGroup: roleInGroup ?? this.roleInGroup,
+      operatingArea: operatingArea ?? this.operatingArea,
+      vehicleId: vehicleId ?? this.vehicleId,
+      vehiclePlate: vehiclePlate ?? this.vehiclePlate,
+      vehicleType: vehicleType ?? this.vehicleType,
+      skills: skills ?? this.skills,
+      experience: experience ?? this.experience,
+      license: license ?? this.license,
     );
   }
 }

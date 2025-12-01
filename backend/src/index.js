@@ -61,42 +61,50 @@ async function getOSRMMatrix(points) {
   if (points.length < 2) return null;
   try {
     // Format: lon,lat;lon,lat...
-    const coordinates = points.map(p => `${p.lon},${p.lat}`).join(';');
+    const coordinates = points.map((p) => `${p.lon},${p.lat}`).join(";");
     const url = `https://router.project-osrm.org/table/v1/driving/${coordinates}?annotations=duration,distance`;
-    
+
     // Sử dụng axios có sẵn trong project
     const axios = require("axios");
     const response = await axios.get(url, { timeout: 5000 }); // Timeout 5s
 
-    if (response.data && response.data.code === 'Ok') {
+    if (response.data && response.data.code === "Ok") {
       return {
         durations: response.data.durations, // Giây
-        distances: response.data.distances  // Mét
+        distances: response.data.distances, // Mét
       };
     }
     return null;
   } catch (error) {
-    console.warn(`[VRP] OSRM Matrix failed: ${error.message}. Falling back to Haversine.`);
+    console.warn(
+      `[VRP] OSRM Matrix failed: ${error.message}. Falling back to Haversine.`
+    );
     return null; // Trả về null để fallback sang Haversine
   }
 }
 
 // Tính tổng chi phí của một lộ trình cụ thể
-function calculateRouteCost(routeIndices, matrix, points, weightTime = 0.7, weightDist = 0.3) {
+function calculateRouteCost(
+  routeIndices,
+  matrix,
+  points,
+  weightTime = 0.7,
+  weightDist = 0.3
+) {
   let cost = 0;
   for (let i = 0; i < routeIndices.length - 1; i++) {
     const from = routeIndices[i];
-    const to = routeIndices[i+1];
-    
+    const to = routeIndices[i + 1];
+
     if (matrix) {
       // Dùng dữ liệu thực tế từ OSRM
       const time = matrix.durations[from][to];
       const dist = matrix.distances[from][to];
-      cost += (time * weightTime) + (dist * weightDist);
+      cost += time * weightTime + dist * weightDist;
     } else {
       // Fallback: Dùng Haversine (chỉ có khoảng cách)
       const dist = getHaversineDistance(points[from], points[to]);
-      cost += dist; 
+      cost += dist;
     }
   }
   return cost;
@@ -146,7 +154,7 @@ async function getOSRMDistance(point1, point2, retries = 3) {
           response.data.routes[0].distance
         ) {
           const distance = response.data.routes[0].distance;
-          
+
           // Cache the result (but limit cache size)
           if (osrmDistanceCache.size >= OSRM_CACHE_MAX_SIZE) {
             // Remove oldest entry (simple FIFO)
@@ -154,24 +162,30 @@ async function getOSRMDistance(point1, point2, retries = 3) {
             osrmDistanceCache.delete(firstKey);
           }
           osrmDistanceCache.set(cacheKey, distance);
-          
+
           return distance;
         }
       } catch (error) {
         lastError = error;
         if (attempt < retries) {
           // Wait a bit before retry (exponential backoff)
-          await new Promise(resolve => setTimeout(resolve, attempt * 200));
+          await new Promise((resolve) => setTimeout(resolve, attempt * 200));
           continue;
         }
       }
     }
 
     // If all retries failed, fall back to Haversine (but don't cache)
-    console.warn(`[OSRM] Distance calculation failed after ${retries} attempts, using Haversine fallback: ${lastError?.message || 'Unknown error'}`);
+    console.warn(
+      `[OSRM] Distance calculation failed after ${retries} attempts, using Haversine fallback: ${
+        lastError?.message || "Unknown error"
+      }`
+    );
     return getHaversineDistance(point1, point2);
   } catch (error) {
-    console.warn(`[OSRM] Distance calculation error: ${error.message}, using Haversine fallback`);
+    console.warn(
+      `[OSRM] Distance calculation error: ${error.message}, using Haversine fallback`
+    );
     return getHaversineDistance(point1, point2);
   }
 }
@@ -484,8 +498,8 @@ app.post("/api/rt/checkin", async (req, res) => {
 // Realtime endpoints - Query from database
 app.get("/api/rt/checkins", async (req, res) => {
   try {
-  const n = Number(req.query.n || 30);
-    
+    const n = Number(req.query.n || 30);
+
     // Query recent checkins from database (last 24 hours)
     const query = `
       SELECT 
@@ -509,21 +523,21 @@ app.get("/api/rt/checkins", async (req, res) => {
       ORDER BY c.created_at DESC
       LIMIT $1
     `;
-    
+
     const { rows } = await db.query(query, [n]);
-    
+
     // Transform to match frontend format
-    const points = rows.map(row => ({
+    const points = rows.map((row) => ({
       id: row.id,
-      type: row.type === 'ghost' ? 'ghost' : row.type,
+      type: row.type === "ghost" ? "ghost" : row.type,
       level: row.level,
       incident: row.incident,
       lat: parseFloat(row.lat),
       lon: parseFloat(row.lon),
       ts: parseInt(row.ts),
     }));
-    
-  res.set("Cache-Control", "no-store").json({ ok: true, data: points });
+
+    res.set("Cache-Control", "no-store").json({ ok: true, data: points });
   } catch (error) {
     console.error("[API] Error fetching realtime checkins:", error);
     res.status(500).json({ ok: false, error: error.message });
@@ -533,9 +547,11 @@ app.get("/api/rt/checkins", async (req, res) => {
 // Realtime endpoints (viewport + delta) - Query from database
 app.get("/api/rt/points", async (req, res) => {
   try {
-  const bbox = (req.query.bbox || "").split(",").map(parseFloat);
-    const since = req.query.since ? new Date(Number(req.query.since)) : undefined;
-    
+    const bbox = (req.query.bbox || "").split(",").map(parseFloat);
+    const since = req.query.since
+      ? new Date(Number(req.query.since))
+      : undefined;
+
     let query = `
       SELECT 
         p.id,
@@ -557,10 +573,10 @@ app.get("/api/rt/points", async (req, res) => {
         FROM points
         WHERE geom IS NOT NULL
     `;
-    
+
     const params = [];
     let paramIndex = 1;
-    
+
     // Apply bbox filter if provided
     if (bbox.length === 4) {
       const [minLng, minLat, maxLng, maxLat] = bbox;
@@ -570,36 +586,36 @@ app.get("/api/rt/points", async (req, res) => {
                  AND ST_Y(geom::geometry) <= $${paramIndex++}`;
       params.push(minLng, maxLng, minLat, maxLat);
     }
-    
+
     // Apply since filter if provided
     if (since) {
       query += ` AND COALESCE(last_checkin_at, NOW()) >= $${paramIndex++}`;
       params.push(since);
     }
-    
+
     query += ` ORDER BY COALESCE(last_checkin_at, NOW()) DESC LIMIT 1500
       ) p
     `;
-    
+
     const { rows } = await db.query(query, params);
-    
+
     // Transform to match frontend format
-    const added = rows.map(row => ({
+    const added = rows.map((row) => ({
       id: row.id,
       lon: parseFloat(row.lon),
       lat: parseFloat(row.lat),
-      type: row.ghost ? 'ghost' : row.type, // Set type to 'ghost' if ghost point
+      type: row.ghost ? "ghost" : row.type, // Set type to 'ghost' if ghost point
       level: parseFloat(row.level) || 0,
       ghost: row.ghost || false,
       ts: parseInt(row.ts),
     }));
-    
-    res.set("Cache-Control", "no-store").json({ 
-      ok: true, 
+
+    res.set("Cache-Control", "no-store").json({
+      ok: true,
       serverTime: Date.now(),
       added,
       updated: [],
-      removed: []
+      removed: [],
     });
   } catch (error) {
     console.error("[API] Error fetching realtime points:", error);
@@ -633,14 +649,14 @@ app.get("/api/rt/vehicles", async (req, res) => {
         AND (vt.geom IS NOT NULL OR d.geom IS NOT NULL)
       ORDER BY v.id, COALESCE(vt.recorded_at, '1970-01-01'::timestamptz) DESC NULLS LAST
     `;
-    
+
     const { rows } = await db.query(query);
-    
+
     // Transform to match frontend format
-    const vehicles = rows.map(row => {
+    const vehicles = rows.map((row) => {
       const lon = row.lon ? parseFloat(row.lon) : 106.7; // Default HCMC center
       const lat = row.lat ? parseFloat(row.lat) : 10.78;
-      
+
       return {
         id: row.id,
         lon: lon,
@@ -650,9 +666,9 @@ app.get("/api/rt/vehicles", async (req, res) => {
         ts: parseInt(row.ts) || Date.now(),
       };
     });
-    
-  res
-    .set("Cache-Control", "no-store")
+
+    res
+      .set("Cache-Control", "no-store")
       .json({ ok: true, data: vehicles, serverTime: Date.now() });
   } catch (error) {
     console.error("[API] Error fetching realtime vehicles:", error);
@@ -686,9 +702,9 @@ io.on("connection", async (socket) => {
         AND (vt.geom IS NOT NULL OR d.geom IS NOT NULL)
       ORDER BY v.id, COALESCE(vt.recorded_at, '1970-01-01'::timestamptz) DESC NULLS LAST
     `;
-    
+
     const { rows } = await db.query(query);
-    const vehicles = rows.map(row => ({
+    const vehicles = rows.map((row) => ({
       id: row.id,
       lon: parseFloat(row.lon) || 106.7,
       lat: parseFloat(row.lat) || 10.78,
@@ -696,7 +712,7 @@ io.on("connection", async (socket) => {
       heading: parseFloat(row.heading) || 0,
       ts: parseInt(row.ts) || Date.now(),
     }));
-    
+
     socket.emit("fleet:init", vehicles);
   } catch (error) {
     console.error("[Socket.IO] Error fetching vehicles on connection:", error);
@@ -729,9 +745,9 @@ setInterval(async () => {
         AND (vt.geom IS NOT NULL OR d.geom IS NOT NULL)
       ORDER BY v.id, COALESCE(vt.recorded_at, '1970-01-01'::timestamptz) DESC NULLS LAST
     `;
-    
+
     const { rows } = await db.query(query);
-    const vehicles = rows.map(row => ({
+    const vehicles = rows.map((row) => ({
       id: row.id,
       lon: parseFloat(row.lon) || 106.7,
       lat: parseFloat(row.lat) || 10.78,
@@ -739,7 +755,7 @@ setInterval(async () => {
       heading: parseFloat(row.heading) || 0,
       ts: parseInt(row.ts) || Date.now(),
     }));
-    
+
     io.emit("fleet", vehicles);
   } catch (error) {
     console.error("[Socket.IO] Error broadcasting fleet:", error);
@@ -813,8 +829,8 @@ app.get("/api/analytics/summary", async (req, res) => {
         total > 0 ? Math.round((parseInt(row.count) / total) * 100) : 0;
     });
 
-  res.json({
-    ok: true,
+    res.json({
+      ok: true,
       data: {
         routesActive,
         collectionRate: parseFloat(collectionRate.toFixed(2)),
@@ -889,7 +905,7 @@ app.get("/api/master/fleet", async (req, res) => {
         d.address ~ $${paramIndex} OR
         d.address LIKE $${paramIndex + 1}
       )`;
-      const districtPattern = district.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const districtPattern = district.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       params.push(`.*${districtPattern}.*`, `%${district}%`);
       paramIndex += 2;
     }
@@ -1179,7 +1195,7 @@ app.get("/api/master/depots", async (req, res) => {
         address ~ $${paramIndex} OR
         address LIKE $${paramIndex + 1}
       )`;
-      const districtPattern = district.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const districtPattern = district.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       params.push(`.*${districtPattern}.*`, `%${district}%`);
       paramIndex += 2;
     }
@@ -1209,7 +1225,7 @@ app.post("/api/master/depots", async (req, res) => {
     } = req.body;
 
     // Validate required fields
-    if (!name || (typeof name === 'string' && name.trim().length === 0)) {
+    if (!name || (typeof name === "string" && name.trim().length === 0)) {
       return res.status(400).json({
         ok: false,
         error: "Missing required field: name",
@@ -1217,10 +1233,16 @@ app.post("/api/master/depots", async (req, res) => {
     }
 
     // Validate coordinates - check for null, undefined, or invalid numbers
-    if (lon === null || lon === undefined || lat === null || lat === undefined) {
+    if (
+      lon === null ||
+      lon === undefined ||
+      lat === null ||
+      lat === undefined
+    ) {
       return res.status(400).json({
         ok: false,
-        error: "Missing required fields: lon, lat. Please select a location on the map.",
+        error:
+          "Missing required fields: lon, lat. Please select a location on the map.",
       });
     }
 
@@ -1237,7 +1259,8 @@ app.post("/api/master/depots", async (req, res) => {
     if (lonNum < -180 || lonNum > 180 || latNum < -90 || latNum > 90) {
       return res.status(400).json({
         ok: false,
-        error: "Invalid coordinates: lon must be between -180 and 180, lat must be between -90 and 90",
+        error:
+          "Invalid coordinates: lon must be between -180 and 180, lat must be between -90 and 90",
       });
     }
 
@@ -1275,7 +1298,7 @@ app.post("/api/master/depots", async (req, res) => {
         END as district`,
       [
         depotId,
-        typeof name === 'string' ? name.trim() : name,
+        typeof name === "string" ? name.trim() : name,
         lonNum,
         latNum,
         address || null,
@@ -1717,7 +1740,7 @@ app.get("/api/points", async (req, res) => {
       label: row.label,
     }));
 
-  res.json({ ok: true, data: points });
+    res.json({ ok: true, data: points });
   } catch (error) {
     console.error("[Points] Get error:", error);
     res.status(500).json({ ok: false, error: error.message });
@@ -1732,10 +1755,25 @@ function extractDistrict(address) {
     return `Quận ${match[1] || match[2]}`;
   }
   const districts = [
-    'Quận 1', 'Quận 2', 'Quận 3', 'Quận 4', 'Quận 5',
-    'Quận 6', 'Quận 7', 'Quận 8', 'Quận 9', 'Quận 10',
-    'Quận 11', 'Quận 12', 'Bình Thạnh', 'Tân Bình', 'Tân Phú',
-    'Phú Nhuận', 'Gò Vấp', 'Bình Tân', 'Thủ Đức'
+    "Quận 1",
+    "Quận 2",
+    "Quận 3",
+    "Quận 4",
+    "Quận 5",
+    "Quận 6",
+    "Quận 7",
+    "Quận 8",
+    "Quận 9",
+    "Quận 10",
+    "Quận 11",
+    "Quận 12",
+    "Bình Thạnh",
+    "Tân Bình",
+    "Tân Phú",
+    "Phú Nhuận",
+    "Gò Vấp",
+    "Bình Tân",
+    "Thủ Đức",
   ];
   for (const dist of districts) {
     if (address.includes(dist)) return dist;
@@ -1751,8 +1789,11 @@ function extractWard(address) {
     return `${match[1]} ${match[2]}`;
   }
   const wards = [
-    'Phường Bến Nghé', 'Phường Phạm Ngũ Lão', 'Phường Thới An Đông',
-    'Xã Phước Kiển', 'Xã Phú Hữu'
+    "Phường Bến Nghé",
+    "Phường Phạm Ngũ Lão",
+    "Phường Thới An Đông",
+    "Xã Phước Kiển",
+    "Xã Phú Hữu",
   ];
   for (const ward of wards) {
     if (address.includes(ward)) return ward;
@@ -1774,14 +1815,18 @@ async function getVehicleCurrentLocation(vehicleId) {
        ORDER BY recorded_at DESC LIMIT 1`,
       [vehicleId]
     );
-    
-    if (tracking.rows.length > 0 && tracking.rows[0].lon && tracking.rows[0].lat) {
+
+    if (
+      tracking.rows.length > 0 &&
+      tracking.rows[0].lon &&
+      tracking.rows[0].lat
+    ) {
       return {
         lon: parseFloat(tracking.rows[0].lon),
-        lat: parseFloat(tracking.rows[0].lat)
+        lat: parseFloat(tracking.rows[0].lat),
       };
     }
-    
+
     // Option 2: Get from depot of vehicle (fallback)
     const vehicle = await db.query(
       `SELECT 
@@ -1792,18 +1837,21 @@ async function getVehicleCurrentLocation(vehicleId) {
        WHERE v.id = $1`,
       [vehicleId]
     );
-    
+
     if (vehicle.rows.length > 0 && vehicle.rows[0].lon && vehicle.rows[0].lat) {
       return {
         lon: parseFloat(vehicle.rows[0].lon),
-        lat: parseFloat(vehicle.rows[0].lat)
+        lat: parseFloat(vehicle.rows[0].lat),
       };
     }
-    
+
     // Option 3: Default location (HCM center)
     return { lon: 106.7, lat: 10.78 };
   } catch (error) {
-    console.warn(`[VRP] Error getting vehicle location for ${vehicleId}:`, error.message);
+    console.warn(
+      `[VRP] Error getting vehicle location for ${vehicleId}:`,
+      error.message
+    );
     // Fallback to default
     return { lon: 106.7, lat: 10.78 };
   }
@@ -1811,9 +1859,13 @@ async function getVehicleCurrentLocation(vehicleId) {
 
 // Helper function: Build distance graph for all points using OSRM for nearest neighbors
 // This creates a more accurate graph using real road distances for optimization
-async function buildDistanceGraph(points, useOSRMForNearest = true, nearestCount = 10) {
+async function buildDistanceGraph(
+  points,
+  useOSRMForNearest = true,
+  nearestCount = 10
+) {
   const graph = {};
-  
+
   // First, build graph with Haversine distances (fast, approximate)
   for (let i = 0; i < points.length; i++) {
     const nodeId = `p${i}`;
@@ -1829,40 +1881,50 @@ async function buildDistanceGraph(points, useOSRMForNearest = true, nearestCount
       }
     }
   }
-  
+
   // If OSRM is enabled, update distances for nearest neighbors with real road distances
   // OPTIMIZED: Use batch processing to avoid rate limiting and timeouts
   if (useOSRMForNearest && points.length > 1) {
     // Reduce nearestCount for large datasets to avoid too many API calls
-    const actualNearestCount = points.length > 20 ? Math.min(5, nearestCount) : nearestCount;
-    console.log(`[VRP] Building OSRM-enhanced distance graph (updating ${actualNearestCount} nearest neighbors per point, batch processing)...`);
-    
+    const actualNearestCount =
+      points.length > 20 ? Math.min(5, nearestCount) : nearestCount;
+    console.log(
+      `[VRP] Building OSRM-enhanced distance graph (updating ${actualNearestCount} nearest neighbors per point, batch processing)...`
+    );
+
     // Process points in batches to avoid overwhelming OSRM server
     const batchSize = 5; // Process 5 points at a time
     const delayBetweenBatches = 500; // 500ms delay between batches
-    
-    for (let batchStart = 0; batchStart < points.length; batchStart += batchSize) {
+
+    for (
+      let batchStart = 0;
+      batchStart < points.length;
+      batchStart += batchSize
+    ) {
       const batchEnd = Math.min(batchStart + batchSize, points.length);
-      
+
       // Process batch of points
       for (let i = batchStart; i < batchEnd; i++) {
         const nodeId = `p${i}`;
         const point1 = points[i];
-        
+
         // Get all distances from this point and sort by distance
         const distances = [];
         for (const neighborId in graph[nodeId]) {
           distances.push({
             neighborId,
             dist: graph[nodeId][neighborId],
-            pointIndex: parseInt(neighborId.replace('p', ''))
+            pointIndex: parseInt(neighborId.replace("p", "")),
           });
         }
-        
+
         // Sort by Haversine distance and take nearest N
         distances.sort((a, b) => a.dist - b.dist);
-        const nearest = distances.slice(0, Math.min(actualNearestCount, distances.length));
-        
+        const nearest = distances.slice(
+          0,
+          Math.min(actualNearestCount, distances.length)
+        );
+
         // Process OSRM requests sequentially (not parallel) to avoid rate limiting
         for (const { neighborId, pointIndex } of nearest) {
           const point2 = points[pointIndex];
@@ -1878,23 +1940,27 @@ async function buildDistanceGraph(points, useOSRMForNearest = true, nearestCount
               }
             }
             // Small delay between requests to avoid rate limiting
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await new Promise((resolve) => setTimeout(resolve, 100));
           } catch (error) {
             // Keep Haversine distance if OSRM fails
-            console.warn(`[VRP] OSRM distance failed for ${nodeId}->${neighborId}, keeping Haversine: ${error.message}`);
+            console.warn(
+              `[VRP] OSRM distance failed for ${nodeId}->${neighborId}, keeping Haversine: ${error.message}`
+            );
           }
         }
       }
-      
+
       // Delay between batches
       if (batchEnd < points.length) {
-        await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
+        await new Promise((resolve) =>
+          setTimeout(resolve, delayBetweenBatches)
+        );
       }
     }
-    
+
     console.log(`[VRP] OSRM-enhanced distance graph completed`);
   }
-  
+
   return graph;
 }
 
@@ -1903,14 +1969,14 @@ function dijkstraShortestPath(graph, startNode, endNode) {
   const distances = {};
   const previous = {};
   const unvisited = new Set();
-  
+
   // Initialize distances
   for (const node in graph) {
     distances[node] = Infinity;
     unvisited.add(node);
   }
   distances[startNode] = 0;
-  
+
   while (unvisited.size > 0) {
     // Find unvisited node with smallest distance
     let current = null;
@@ -1921,10 +1987,10 @@ function dijkstraShortestPath(graph, startNode, endNode) {
         current = node;
       }
     }
-    
+
     if (current === null || current === endNode) break;
     unvisited.delete(current);
-    
+
     // Update distances to neighbors
     if (graph[current]) {
       for (const neighbor in graph[current]) {
@@ -1937,7 +2003,7 @@ function dijkstraShortestPath(graph, startNode, endNode) {
       }
     }
   }
-  
+
   // Reconstruct path
   const path = [];
   let current = endNode;
@@ -1949,7 +2015,7 @@ function dijkstraShortestPath(graph, startNode, endNode) {
       break;
     }
   }
-  
+
   return { path, distance: distances[endNode] };
 }
 
@@ -1960,18 +2026,18 @@ function aStarShortestPath(graph, startNode, endNode, points) {
   const gScore = { [startNode]: 0 };
   const fScore = {};
   const cameFrom = {};
-  
+
   // Get point indices from node IDs
-  const getPointIndex = (nodeId) => parseInt(nodeId.replace('p', ''));
+  const getPointIndex = (nodeId) => parseInt(nodeId.replace("p", ""));
   const startIdx = getPointIndex(startNode);
   const endIdx = getPointIndex(endNode);
-  
+
   // Initialize fScore with heuristic (Haversine distance)
   fScore[startNode] = getHaversineDistance(
     { lat: points[startIdx].lat, lon: points[startIdx].lon },
     { lat: points[endIdx].lat, lon: points[endIdx].lon }
   );
-  
+
   while (openSet.size > 0) {
     // Find node in openSet with lowest fScore
     let current = null;
@@ -1982,7 +2048,7 @@ function aStarShortestPath(graph, startNode, endNode, points) {
         current = node;
       }
     }
-    
+
     if (current === endNode) {
       // Reconstruct path
       const path = [];
@@ -1993,36 +2059,38 @@ function aStarShortestPath(graph, startNode, endNode, points) {
       }
       return { path, distance: gScore[endNode] };
     }
-    
+
     openSet.delete(current);
     closedSet.add(current);
-    
+
     // Check neighbors
     if (graph[current]) {
       for (const neighbor in graph[current]) {
         if (closedSet.has(neighbor)) continue;
-        
+
         const tentativeGScore = gScore[current] + graph[current][neighbor];
-        
+
         if (!openSet.has(neighbor)) {
           openSet.add(neighbor);
         } else if (tentativeGScore >= (gScore[neighbor] || Infinity)) {
           continue;
         }
-        
+
         cameFrom[neighbor] = current;
         gScore[neighbor] = tentativeGScore;
-        
+
         // Calculate heuristic (Haversine distance to end)
         const neighborIdx = getPointIndex(neighbor);
-        fScore[neighbor] = gScore[neighbor] + getHaversineDistance(
-          { lat: points[neighborIdx].lat, lon: points[neighborIdx].lon },
-          { lat: points[endIdx].lat, lon: points[endIdx].lon }
-        );
+        fScore[neighbor] =
+          gScore[neighbor] +
+          getHaversineDistance(
+            { lat: points[neighborIdx].lat, lon: points[neighborIdx].lon },
+            { lat: points[endIdx].lat, lon: points[endIdx].lon }
+          );
       }
     }
   }
-  
+
   return null; // No path found
 }
 
@@ -2053,12 +2121,14 @@ function solveCheapestInsertion(points, matrix, startIdx, endIdx) {
         let addedCost = 0;
         const u = currentRoute[0];
         if (matrix) {
-          const costUP = (matrix.durations[u][pointIdx] * 0.7) + (matrix.distances[u][pointIdx] * 0.3);
+          const costUP =
+            matrix.durations[u][pointIdx] * 0.7 +
+            matrix.distances[u][pointIdx] * 0.3;
           addedCost = costUP;
         } else {
           addedCost = getHaversineDistance(points[u], points[pointIdx]);
         }
-        
+
         if (addedCost < minAddedCost) {
           minAddedCost = addedCost;
           bestPoint = pointIdx;
@@ -2068,21 +2138,26 @@ function solveCheapestInsertion(points, matrix, startIdx, endIdx) {
         // Thử chèn vào giữa từng cặp điểm hiện có (u -> v)
         for (let i = 0; i < currentRoute.length - 1; i++) {
           const u = currentRoute[i];
-          const v = currentRoute[i+1];
+          const v = currentRoute[i + 1];
 
           // Chi phí tăng thêm = (u->p + p->v) - (u->v)
           let addedCost = 0;
           if (matrix) {
-              // Cost = 0.7*Time + 0.3*Dist
-              const costUP = (matrix.durations[u][pointIdx] * 0.7) + (matrix.distances[u][pointIdx] * 0.3);
-              const costPV = (matrix.durations[pointIdx][v] * 0.7) + (matrix.distances[pointIdx][v] * 0.3);
-              const costUV = (matrix.durations[u][v] * 0.7) + (matrix.distances[u][v] * 0.3);
-              addedCost = costUP + costPV - costUV;
+            // Cost = 0.7*Time + 0.3*Dist
+            const costUP =
+              matrix.durations[u][pointIdx] * 0.7 +
+              matrix.distances[u][pointIdx] * 0.3;
+            const costPV =
+              matrix.durations[pointIdx][v] * 0.7 +
+              matrix.distances[pointIdx][v] * 0.3;
+            const costUV =
+              matrix.durations[u][v] * 0.7 + matrix.distances[u][v] * 0.3;
+            addedCost = costUP + costPV - costUV;
           } else {
-              const distUP = getHaversineDistance(points[u], points[pointIdx]);
-              const distPV = getHaversineDistance(points[pointIdx], points[v]);
-              const distUV = getHaversineDistance(points[u], points[v]);
-              addedCost = distUP + distPV - distUV;
+            const distUP = getHaversineDistance(points[u], points[pointIdx]);
+            const distPV = getHaversineDistance(points[pointIdx], points[v]);
+            const distUV = getHaversineDistance(points[u], points[v]);
+            addedCost = distUP + distPV - distUV;
           }
 
           if (addedCost < minAddedCost) {
@@ -2101,7 +2176,7 @@ function solveCheapestInsertion(points, matrix, startIdx, endIdx) {
       break; // Should not happen
     }
   }
-  
+
   return currentRoute;
 }
 
@@ -2111,7 +2186,7 @@ async function optimizeRouteHybrid(stops, startPoint, endPoint) {
   // Mapping: Index 0 = Start, 1..N = Stops, N+1 = End
   const allPoints = [startPoint, ...stops];
   if (endPoint) allPoints.push(endPoint);
-  
+
   const startIdx = 0;
   const endIdx = endPoint ? allPoints.length - 1 : 0; // Nếu không có endpoint thì quay về start
 
@@ -2121,26 +2196,40 @@ async function optimizeRouteHybrid(stops, startPoint, endPoint) {
 
   // 3. Chạy Phase 1: Cheapest Insertion
   // Kết quả trả về là mảng các index, ví dụ: [0, 5, 2, 3, 1, 6]
-  let currentOrder = solveCheapestInsertion(allPoints, matrix, startIdx, endIdx);
-  
+  let currentOrder = solveCheapestInsertion(
+    allPoints,
+    matrix,
+    startIdx,
+    endIdx
+  );
+
   // Đảm bảo start và end luôn ở đúng vị trí sau Cheapest Insertion
   if (currentOrder[0] !== startIdx) {
-    console.warn(`[VRP] Fixing start position after CI: expected ${startIdx}, got ${currentOrder[0]}`);
-    currentOrder = [startIdx, ...currentOrder.filter(idx => idx !== startIdx && idx !== endIdx)];
+    console.warn(
+      `[VRP] Fixing start position after CI: expected ${startIdx}, got ${currentOrder[0]}`
+    );
+    currentOrder = [
+      startIdx,
+      ...currentOrder.filter((idx) => idx !== startIdx && idx !== endIdx),
+    ];
     if (endPoint) currentOrder.push(endIdx);
   }
   if (endPoint && currentOrder[currentOrder.length - 1] !== endIdx) {
-    console.warn(`[VRP] Fixing end position after CI: expected ${endIdx}, got ${currentOrder[currentOrder.length - 1]}`);
-    currentOrder = currentOrder.filter(idx => idx !== endIdx);
+    console.warn(
+      `[VRP] Fixing end position after CI: expected ${endIdx}, got ${
+        currentOrder[currentOrder.length - 1]
+      }`
+    );
+    currentOrder = currentOrder.filter((idx) => idx !== endIdx);
     currentOrder.push(endIdx);
   }
-  
+
   // 4. Chạy Phase 2: Simulated Annealing
   // Cấu hình SA: Nóng nhanh, nguội từ từ
   let temp = 1000;
   const coolingRate = 0.99;
   const absoluteTemperature = 1;
-  
+
   // Các điểm ở giữa (loại trừ start và end cố định)
   // Chúng ta chỉ hoán đổi vị trí các điểm ở giữa start và end
   let bestOrder = [...currentOrder];
@@ -2153,82 +2242,115 @@ async function optimizeRouteHybrid(stops, startPoint, endPoint) {
     // Hoặc nếu không có End, cần ít nhất 3 điểm (Start + 2 stops = 3 điểm tối thiểu)
     const minLengthForSwap = endPoint ? 4 : 3;
     if (currentOrder.length >= minLengthForSwap) {
-        const newOrder = [...currentOrder];
-        
-        // Chọn 2 vị trí ngẫu nhiên ở giữa để tác động
-        // Vị trí hợp lệ: 1 đến newOrder.length - 2 (nếu có end) hoặc newOrder.length - 1 (nếu không có end)
-        const middleStart = 1;
-        const middleEnd = endPoint ? newOrder.length - 2 : newOrder.length - 1;
-        
-        if (middleEnd > middleStart) {
-          const pos1 = Math.floor(Math.random() * (middleEnd - middleStart + 1)) + middleStart;
-          const pos2 = Math.floor(Math.random() * (middleEnd - middleStart + 1)) + middleStart;
-          
-          if (pos1 !== pos2 && pos1 >= middleStart && pos1 <= middleEnd && pos2 >= middleStart && pos2 <= middleEnd) {
-              const moveType = Math.random();
-              
-              if (moveType < 0.5) {
-                  // Move 1: Swap (Đổi chỗ)
-                  [newOrder[pos1], newOrder[pos2]] = [newOrder[pos2], newOrder[pos1]];
-              } else {
-                  // Move 2: 2-Opt (Đảo ngược đoạn) - Mạnh mẽ hơn Swap
-                  const start = Math.min(pos1, pos2);
-                  const end = Math.max(pos1, pos2);
-                  // Đảm bảo không đảo ngược start hoặc end
-                  if (start >= middleStart && end <= middleEnd) {
-                    const segment = newOrder.slice(start, end + 1).reverse();
-                    newOrder.splice(start, segment.length, ...segment);
-                  } else {
-                    continue; // Skip invalid move
-                  }
-              }
-              
-              // Đảm bảo start và end vẫn ở đúng vị trí sau khi swap
-              if (newOrder[0] !== startIdx || (endPoint && newOrder[newOrder.length - 1] !== endIdx)) {
-                continue; // Skip invalid moves
-              }
-              
-              const newCost = calculateRouteCost(newOrder, matrix, allPoints);
-              const delta = newCost - currentCost;
+      const newOrder = [...currentOrder];
 
-              // Chấp nhận nếu tốt hơn HOẶC xác suất ngẫu nhiên (Metropolis criterion)
-              if (delta < 0 || Math.exp(-delta / temp) > Math.random()) {
-                  currentOrder = newOrder;
-                  currentCost = newCost;
-                  
-                  if (newCost < bestCost) {
-                      bestOrder = [...newOrder];
-                      bestCost = newCost;
-                  }
-              }
+      // Chọn 2 vị trí ngẫu nhiên ở giữa để tác động
+      // Vị trí hợp lệ: 1 đến newOrder.length - 2 (nếu có end) hoặc newOrder.length - 1 (nếu không có end)
+      const middleStart = 1;
+      const middleEnd = endPoint ? newOrder.length - 2 : newOrder.length - 1;
+
+      if (middleEnd > middleStart) {
+        const pos1 =
+          Math.floor(Math.random() * (middleEnd - middleStart + 1)) +
+          middleStart;
+        const pos2 =
+          Math.floor(Math.random() * (middleEnd - middleStart + 1)) +
+          middleStart;
+
+        if (
+          pos1 !== pos2 &&
+          pos1 >= middleStart &&
+          pos1 <= middleEnd &&
+          pos2 >= middleStart &&
+          pos2 <= middleEnd
+        ) {
+          const moveType = Math.random();
+
+          if (moveType < 0.5) {
+            // Move 1: Swap (Đổi chỗ)
+            [newOrder[pos1], newOrder[pos2]] = [newOrder[pos2], newOrder[pos1]];
+          } else {
+            // Move 2: 2-Opt (Đảo ngược đoạn) - Mạnh mẽ hơn Swap
+            const start = Math.min(pos1, pos2);
+            const end = Math.max(pos1, pos2);
+            // Đảm bảo không đảo ngược start hoặc end
+            if (start >= middleStart && end <= middleEnd) {
+              const segment = newOrder.slice(start, end + 1).reverse();
+              newOrder.splice(start, segment.length, ...segment);
+            } else {
+              continue; // Skip invalid move
+            }
+          }
+
+          // Đảm bảo start và end vẫn ở đúng vị trí sau khi swap
+          if (
+            newOrder[0] !== startIdx ||
+            (endPoint && newOrder[newOrder.length - 1] !== endIdx)
+          ) {
+            continue; // Skip invalid moves
+          }
+
+          const newCost = calculateRouteCost(newOrder, matrix, allPoints);
+          const delta = newCost - currentCost;
+
+          // Chấp nhận nếu tốt hơn HOẶC xác suất ngẫu nhiên (Metropolis criterion)
+          if (delta < 0 || Math.exp(-delta / temp) > Math.random()) {
+            currentOrder = newOrder;
+            currentCost = newCost;
+
+            if (newCost < bestCost) {
+              bestOrder = [...newOrder];
+              bestCost = newCost;
+            }
           }
         }
+      }
     }
     temp *= coolingRate;
   }
 
   // Đảm bảo bestOrder luôn có start và end đúng vị trí trước khi trả về
   if (bestOrder[0] !== startIdx) {
-    console.warn(`[VRP] Fixing start position in bestOrder: expected ${startIdx}, got ${bestOrder[0]}`);
-    bestOrder = [startIdx, ...bestOrder.filter(idx => idx !== startIdx && idx !== endIdx)];
+    console.warn(
+      `[VRP] Fixing start position in bestOrder: expected ${startIdx}, got ${bestOrder[0]}`
+    );
+    bestOrder = [
+      startIdx,
+      ...bestOrder.filter((idx) => idx !== startIdx && idx !== endIdx),
+    ];
     if (endPoint) bestOrder.push(endIdx);
   }
   if (endPoint && bestOrder[bestOrder.length - 1] !== endIdx) {
-    console.warn(`[VRP] Fixing end position in bestOrder: expected ${endIdx}, got ${bestOrder[bestOrder.length - 1]}`);
-    bestOrder = bestOrder.filter(idx => idx !== endIdx);
+    console.warn(
+      `[VRP] Fixing end position in bestOrder: expected ${endIdx}, got ${
+        bestOrder[bestOrder.length - 1]
+      }`
+    );
+    bestOrder = bestOrder.filter((idx) => idx !== endIdx);
     bestOrder.push(endIdx);
   }
 
-  const initialCost = calculateRouteCost(solveCheapestInsertion(allPoints, matrix, startIdx, endIdx), matrix, allPoints);
-  console.log(`[VRP] Hybrid Optimization: Initial Cost=${Math.round(initialCost)} -> Optimized=${Math.round(bestCost)}`);
+  const initialCost = calculateRouteCost(
+    solveCheapestInsertion(allPoints, matrix, startIdx, endIdx),
+    matrix,
+    allPoints
+  );
+  console.log(
+    `[VRP] Hybrid Optimization: Initial Cost=${Math.round(
+      initialCost
+    )} -> Optimized=${Math.round(bestCost)}`
+  );
 
   // 5. Convert indices back to stop objects
   // Loại bỏ Start (index 0) và End (index cuối) để trả về danh sách stops đã sắp xếp
-  const optimizedStopsIndices = bestOrder.slice(1, endPoint ? bestOrder.length - 1 : bestOrder.length);
-  
+  const optimizedStopsIndices = bestOrder.slice(
+    1,
+    endPoint ? bestOrder.length - 1 : bestOrder.length
+  );
+
   // Map lại về object gốc
   // Lưu ý: Stops gốc trong allPoints bắt đầu từ index 1
-  return optimizedStopsIndices.map(idx => allPoints[idx]);
+  return optimizedStopsIndices.map((idx) => allPoints[idx]);
 }
 
 // OPTIMIZED: Nearest Neighbor + 2-opt for fast and accurate route optimization
@@ -2237,20 +2359,22 @@ async function optimizeRouteHybrid(stops, startPoint, endPoint) {
 // Step 2: 2-opt local search (improves route quality)
 async function optimizeRouteWith2Opt(stops, startPoint, endPoint) {
   if (stops.length === 0) return [];
-  
-  console.log(`[VRP] Optimizing ${stops.length} stops using Nearest Neighbor + 2-opt`);
-  
+
+  console.log(
+    `[VRP] Optimizing ${stops.length} stops using Nearest Neighbor + 2-opt`
+  );
+
   // Step 1: Nearest Neighbor - Build initial route starting from startPoint
   const ordered = [];
   const remaining = [...stops];
   let current = startPoint;
-  
+
   // Visit all stops using simple nearest neighbor
   while (remaining.length > 0) {
     let nearest = null;
     let minDist = Infinity;
     let nearestIdx = -1;
-    
+
     for (let i = 0; i < remaining.length; i++) {
       const dist = getHaversineDistance(
         { lat: current.lat, lon: current.lon },
@@ -2262,7 +2386,7 @@ async function optimizeRouteWith2Opt(stops, startPoint, endPoint) {
         nearestIdx = i;
       }
     }
-    
+
     if (nearest) {
       ordered.push(nearest);
       remaining.splice(nearestIdx, 1);
@@ -2271,17 +2395,17 @@ async function optimizeRouteWith2Opt(stops, startPoint, endPoint) {
       break;
     }
   }
-  
+
   // Step 2: 2-opt local search to improve route
   // This tries reversing segments of the route to find shorter paths
   let improved = true;
   let iterations = 0;
   const maxIterations = Math.min(100, stops.length * 2); // Limit iterations for performance
-  
+
   // Helper function to calculate total route distance
   const calculateRouteDistance = (route) => {
     if (route.length === 0) return 0;
-    
+
     let total = getHaversineDistance(startPoint, route[0]);
     for (let i = 0; i < route.length - 1; i++) {
       total += getHaversineDistance(route[i], route[i + 1]);
@@ -2289,33 +2413,34 @@ async function optimizeRouteWith2Opt(stops, startPoint, endPoint) {
     total += getHaversineDistance(route[route.length - 1], endPoint);
     return total;
   };
-  
+
   while (improved && iterations < maxIterations) {
     improved = false;
     iterations++;
-    
+
     // Try all possible 2-opt swaps
     for (let i = 0; i < ordered.length - 1; i++) {
       for (let j = i + 2; j < ordered.length; j++) {
         // Current route: start -> ... -> ordered[i] -> ordered[i+1] -> ... -> ordered[j] -> ordered[j+1] -> ... -> end
         // New route: start -> ... -> ordered[i] -> ordered[j] -> ... -> ordered[i+1] -> ordered[j+1] -> ... -> end
         // (reverse segment from i+1 to j)
-        
+
         // Calculate current distance
         const currentDist = calculateRouteDistance(ordered);
-        
+
         // Create new route by reversing segment i+1 to j
         const newOrder = [
           ...ordered.slice(0, i + 1),
           ...ordered.slice(i + 1, j + 1).reverse(),
-          ...ordered.slice(j + 1)
+          ...ordered.slice(j + 1),
         ];
-        
+
         // Calculate new distance
         const newDist = calculateRouteDistance(newOrder);
-        
+
         // If new route is better, accept it
-        if (newDist < currentDist - 0.1) { // Small threshold to avoid floating point issues
+        if (newDist < currentDist - 0.1) {
+          // Small threshold to avoid floating point issues
           ordered.splice(0, ordered.length, ...newOrder);
           improved = true;
           break;
@@ -2324,11 +2449,13 @@ async function optimizeRouteWith2Opt(stops, startPoint, endPoint) {
       if (improved) break;
     }
   }
-  
+
   if (iterations > 1) {
-    console.log(`[VRP] 2-opt optimization completed in ${iterations} iterations`);
+    console.log(
+      `[VRP] 2-opt optimization completed in ${iterations} iterations`
+    );
   }
-  
+
   // VALIDATION: Ensure route doesn't have duplicate points
   const seenIds = new Set();
   const uniqueOrdered = [];
@@ -2338,10 +2465,12 @@ async function optimizeRouteWith2Opt(stops, startPoint, endPoint) {
       seenIds.add(stopId);
       uniqueOrdered.push(stop);
     } else {
-      console.warn(`[VRP] Duplicate point detected in route: ${stopId}, skipping`);
+      console.warn(
+        `[VRP] Duplicate point detected in route: ${stopId}, skipping`
+      );
     }
   }
-  
+
   return uniqueOrdered;
 }
 
@@ -2349,7 +2478,7 @@ async function optimizeRouteWith2Opt(stops, startPoint, endPoint) {
 // This algorithm provides the best balance between speed and optimality for VRP/TSP problems
 async function optimizeStopOrder(stops, startPoint, endPoint) {
   if (stops.length === 0) return [];
-  
+
   // Use Hybrid CI-SA algorithm for optimal routing
   // This replaces the old Nearest Neighbor + 2-opt approach
   return await optimizeRouteHybrid(stops, startPoint, endPoint);
@@ -2363,25 +2492,25 @@ function clusterPointsBySweepLine(points, depot, numClusters) {
   if (numClusters <= 0) numClusters = 1;
   if (numClusters >= points.length) {
     // Mỗi điểm là một cụm
-    return points.map(p => [p]);
+    return points.map((p) => [p]);
   }
 
   // 1. Tính góc (bearing) của mỗi điểm từ depot
-  const pointsWithAngle = points.map(point => {
+  const pointsWithAngle = points.map((point) => {
     const dx = point.lon - depot.lon;
     const dy = point.lat - depot.lat;
-    
+
     // Tính góc từ depot đến điểm (0-360 độ, 0 = Bắc, 90 = Đông)
     let angle = Math.atan2(dx, dy) * (180 / Math.PI);
     if (angle < 0) angle += 360;
-    
+
     // Tính khoảng cách từ depot
     const distance = getHaversineDistance(depot, point);
-    
+
     return {
       point,
       angle,
-      distance
+      distance,
     };
   });
 
@@ -2397,13 +2526,18 @@ function clusterPointsBySweepLine(points, depot, numClusters) {
   // 3. Chia thành các cụm theo góc (sweep line)
   const clusters = [];
   const pointsPerCluster = Math.ceil(pointsWithAngle.length / numClusters);
-  
+
   for (let i = 0; i < numClusters; i++) {
     const startIdx = i * pointsPerCluster;
-    const endIdx = Math.min(startIdx + pointsPerCluster, pointsWithAngle.length);
-    
+    const endIdx = Math.min(
+      startIdx + pointsPerCluster,
+      pointsWithAngle.length
+    );
+
     if (startIdx < pointsWithAngle.length) {
-      const cluster = pointsWithAngle.slice(startIdx, endIdx).map(item => item.point);
+      const cluster = pointsWithAngle
+        .slice(startIdx, endIdx)
+        .map((item) => item.point);
       if (cluster.length > 0) {
         clusters.push(cluster);
       }
@@ -2419,7 +2553,7 @@ function clusterPointsByKMeans(points, numClusters, maxIterations = 10) {
   if (points.length === 0) return [];
   if (numClusters <= 0) numClusters = 1;
   if (numClusters >= points.length) {
-    return points.map(p => [p]);
+    return points.map((p) => [p]);
   }
 
   // Khởi tạo centroids ngẫu nhiên
@@ -2430,15 +2564,17 @@ function clusterPointsByKMeans(points, numClusters, maxIterations = 10) {
   }
 
   let clusters = [];
-  
+
   for (let iter = 0; iter < maxIterations; iter++) {
     // Gán mỗi điểm vào cụm gần nhất
-    clusters = Array(numClusters).fill(null).map(() => []);
-    
+    clusters = Array(numClusters)
+      .fill(null)
+      .map(() => []);
+
     for (const point of points) {
       let minDist = Infinity;
       let nearestCluster = 0;
-      
+
       for (let i = 0; i < centroids.length; i++) {
         const dist = getHaversineDistance(point, centroids[i]);
         if (dist < minDist) {
@@ -2446,7 +2582,7 @@ function clusterPointsByKMeans(points, numClusters, maxIterations = 10) {
           nearestCluster = i;
         }
       }
-      
+
       clusters[nearestCluster].push(point);
     }
 
@@ -2454,13 +2590,15 @@ function clusterPointsByKMeans(points, numClusters, maxIterations = 10) {
     let changed = false;
     for (let i = 0; i < centroids.length; i++) {
       if (clusters[i].length === 0) continue;
-      
-      const avgLat = clusters[i].reduce((sum, p) => sum + p.lat, 0) / clusters[i].length;
-      const avgLon = clusters[i].reduce((sum, p) => sum + p.lon, 0) / clusters[i].length;
-      
+
+      const avgLat =
+        clusters[i].reduce((sum, p) => sum + p.lat, 0) / clusters[i].length;
+      const avgLon =
+        clusters[i].reduce((sum, p) => sum + p.lon, 0) / clusters[i].length;
+
       const oldCentroid = centroids[i];
       centroids[i] = { lat: avgLat, lon: avgLon };
-      
+
       if (getHaversineDistance(oldCentroid, centroids[i]) > 10) {
         changed = true;
       }
@@ -2471,20 +2609,24 @@ function clusterPointsByKMeans(points, numClusters, maxIterations = 10) {
   }
 
   // Loại bỏ cụm rỗng
-  return clusters.filter(c => c.length > 0);
+  return clusters.filter((c) => c.length > 0);
 }
 
 // Helper function to find best dump for district
 async function findBestDumpForDistrict(depot, points, dumps) {
   if (!dumps || dumps.length === 0) return null;
-  
+
   // Filter active dumps with valid coordinates
-  const activeDumps = dumps.filter(d => {
-    const hasValidCoords = d.lat && d.lon && 
-      typeof d.lat === 'number' && typeof d.lon === 'number' &&
-      !isNaN(d.lat) && !isNaN(d.lon);
-    const isActive = d.status === 'active' || !d.status;
-    
+  const activeDumps = dumps.filter((d) => {
+    const hasValidCoords =
+      d.lat &&
+      d.lon &&
+      typeof d.lat === "number" &&
+      typeof d.lon === "number" &&
+      !isNaN(d.lat) &&
+      !isNaN(d.lon);
+    const isActive = d.status === "active" || !d.status;
+
     // Also ensure dump is NOT at the same location as depot
     let isDifferentFromDepot = true;
     if (depot && depot.lat && depot.lon && hasValidCoords) {
@@ -2494,19 +2636,21 @@ async function findBestDumpForDistrict(depot, points, dumps) {
       );
       isDifferentFromDepot = dist > 100; // At least 100m away from depot
     }
-    
+
     return hasValidCoords && isActive && isDifferentFromDepot;
   });
-  
+
   if (activeDumps.length === 0) {
-    console.warn(`[VRP] No valid dumps found (with coords and different from depot)`);
+    console.warn(
+      `[VRP] No valid dumps found (with coords and different from depot)`
+    );
     return null;
   }
-  
+
   // Strategy: Find dump closest to the last stop (after visiting all points)
   // This ensures efficient end-of-route disposal
   let targetPoint = depot;
-  
+
   if (points && points.length > 0) {
     // Use the farthest point from depot as target
     let maxDist = 0;
@@ -2522,29 +2666,33 @@ async function findBestDumpForDistrict(depot, points, dumps) {
       }
     }
   }
-  
+
   // Find dump nearest to target point (farthest point from depot)
   let nearestDump = null;
   let minDistance = Infinity;
-  
+
   for (const dump of activeDumps) {
     if (!dump.lat || !dump.lon) continue;
-    
+
     const distance = getHaversineDistance(
       { lat: targetPoint.lat, lon: targetPoint.lon },
       { lat: dump.lat, lon: dump.lon }
     );
-    
+
     if (distance < minDistance) {
       minDistance = distance;
       nearestDump = dump;
     }
   }
-  
+
   if (nearestDump) {
-    console.log(`[VRP] Selected dump: ${nearestDump.name} at [${nearestDump.lon}, ${nearestDump.lat}], distance from target: ${Math.round(minDistance)}m`);
+    console.log(
+      `[VRP] Selected dump: ${nearestDump.name} at [${nearestDump.lon}, ${
+        nearestDump.lat
+      }], distance from target: ${Math.round(minDistance)}m`
+    );
   }
-  
+
   return nearestDump || activeDumps[0];
 }
 
@@ -2560,43 +2708,60 @@ async function getOSRMRoute(waypoints) {
 
     // Validate waypoints format: [lon, lat]
     for (const wp of waypoints) {
-      if (!Array.isArray(wp) || wp.length !== 2 || 
-          typeof wp[0] !== 'number' || typeof wp[1] !== 'number' ||
-          wp[0] < -180 || wp[0] > 180 || wp[1] < -90 || wp[1] > 90) {
+      if (
+        !Array.isArray(wp) ||
+        wp.length !== 2 ||
+        typeof wp[0] !== "number" ||
+        typeof wp[1] !== "number" ||
+        wp[0] < -180 ||
+        wp[0] > 180 ||
+        wp[1] < -90 ||
+        wp[1] > 90
+      ) {
         console.warn(`[OSRM] Invalid waypoint format: ${JSON.stringify(wp)}`);
         return null;
       }
     }
 
     const axios = require("axios");
-    
+
     // Remove duplicate consecutive waypoints (e.g., if dump = depot)
     const uniqueWaypoints = [];
     for (let i = 0; i < waypoints.length; i++) {
       const current = waypoints[i];
       const previous = uniqueWaypoints[uniqueWaypoints.length - 1];
-      
+
       // Only add if different from previous waypoint (at least 10m apart, ~0.0001 degrees)
       // Use smaller threshold to ensure all stops are included
-      if (!previous || 
-          Math.abs(current[0] - previous[0]) > 0.0001 || 
-          Math.abs(current[1] - previous[1]) > 0.0001) {
+      if (
+        !previous ||
+        Math.abs(current[0] - previous[0]) > 0.0001 ||
+        Math.abs(current[1] - previous[1]) > 0.0001
+      ) {
         uniqueWaypoints.push(current);
       } else {
-        console.warn(`[OSRM] Skipping duplicate waypoint ${i}: [${current[0].toFixed(4)}, ${current[1].toFixed(4)}] (same as previous - within 10m)`);
+        console.warn(
+          `[OSRM] Skipping duplicate waypoint ${i}: [${current[0].toFixed(
+            4
+          )}, ${current[1].toFixed(4)}] (same as previous - within 10m)`
+        );
       }
     }
-    
+
     if (uniqueWaypoints.length < 2) {
-      console.warn(`[OSRM] Not enough unique waypoints (${uniqueWaypoints.length}), need at least 2`);
+      console.warn(
+        `[OSRM] Not enough unique waypoints (${uniqueWaypoints.length}), need at least 2`
+      );
       return null;
     }
-    
+
     // Skip single request - always use segment-by-segment for guaranteed waypoint inclusion
 
     // ALWAYS use segment-by-segment routing to ensure route passes through ALL waypoints
     // OSRM route API with multiple waypoints may optimize but skip intermediate stops
-    console.log(`[OSRM] Using segment-by-segment routing to ensure route passes through all ${uniqueWaypoints.length} waypoints`);
+    console.log(
+      `[OSRM] Using segment-by-segment routing to ensure route passes through all ${uniqueWaypoints.length} waypoints`
+    );
     let totalDistance = 0;
     let totalDuration = 0;
     const allCoordinates = [];
@@ -2607,7 +2772,7 @@ async function getOSRMRoute(waypoints) {
     for (let i = 0; i < fallbackWaypoints.length - 1; i++) {
       const start = fallbackWaypoints[i];
       const end = fallbackWaypoints[i + 1];
-      
+
       const segmentCoords = `${start[0]},${start[1]};${end[0]},${end[1]}`;
       const segmentUrl = `https://router.project-osrm.org/route/v1/driving/${segmentCoords}?overview=full&geometries=geojson&alternatives=false&steps=false`;
 
@@ -2626,9 +2791,13 @@ async function getOSRMRoute(waypoints) {
           segmentResponse.data.routes.length > 0
         ) {
           const segmentRoute = segmentResponse.data.routes[0];
-          if (segmentRoute.distance && segmentRoute.duration && segmentRoute.geometry) {
+          if (
+            segmentRoute.distance &&
+            segmentRoute.duration &&
+            segmentRoute.geometry
+          ) {
             const segmentCoords = segmentRoute.geometry.coordinates;
-            
+
             // CRITICAL FIX: Ensure smooth connection between segments
             if (i === 0) {
               // First segment: add all coordinates
@@ -2637,30 +2806,38 @@ async function getOSRMRoute(waypoints) {
               // Subsequent segments: ensure connection
               const lastCoord = allCoordinates[allCoordinates.length - 1];
               const firstCoord = segmentCoords[0];
-              
+
               // Check if segments are connected (within 1m tolerance ~0.00001 degrees)
-              const isConnected = Math.abs(lastCoord[0] - firstCoord[0]) < 0.00001 &&
-                                  Math.abs(lastCoord[1] - firstCoord[1]) < 0.00001;
-              
+              const isConnected =
+                Math.abs(lastCoord[0] - firstCoord[0]) < 0.00001 &&
+                Math.abs(lastCoord[1] - firstCoord[1]) < 0.00001;
+
               if (isConnected) {
                 // Connected: skip first coordinate to avoid duplicate
-              allCoordinates.push(...segmentCoords.slice(1));
+                allCoordinates.push(...segmentCoords.slice(1));
               } else {
                 // NOT connected: create a smooth bridge line between segments
                 // This ensures the route is continuous from START to END
                 const gap = Math.sqrt(
-                  Math.pow(lastCoord[0] - firstCoord[0], 2) + 
-                  Math.pow(lastCoord[1] - firstCoord[1], 2)
+                  Math.pow(lastCoord[0] - firstCoord[0], 2) +
+                    Math.pow(lastCoord[1] - firstCoord[1], 2)
                 );
-                
-                if (gap > 0.0001) { // Only bridge if gap is significant (>10m)
-                  console.log(`[OSRM] Segment ${i}->${i+1} gap detected (${Math.round(gap * 111000)}m), creating bridge`);
+
+                if (gap > 0.0001) {
+                  // Only bridge if gap is significant (>10m)
+                  console.log(
+                    `[OSRM] Segment ${i}->${i + 1} gap detected (${Math.round(
+                      gap * 111000
+                    )}m), creating bridge`
+                  );
                   // Create intermediate points for smooth connection (linear interpolation)
                   const bridgePoints = 3; // Number of intermediate points
                   for (let b = 1; b <= bridgePoints; b++) {
                     const t = b / (bridgePoints + 1);
-                    const bridgeLon = lastCoord[0] + (firstCoord[0] - lastCoord[0]) * t;
-                    const bridgeLat = lastCoord[1] + (firstCoord[1] - lastCoord[1]) * t;
+                    const bridgeLon =
+                      lastCoord[0] + (firstCoord[0] - lastCoord[0]) * t;
+                    const bridgeLat =
+                      lastCoord[1] + (firstCoord[1] - lastCoord[1]) * t;
                     allCoordinates.push([bridgeLon, bridgeLat]);
                   }
                 }
@@ -2668,39 +2845,60 @@ async function getOSRMRoute(waypoints) {
                 allCoordinates.push(...segmentCoords);
               }
             }
-            
+
             totalDistance += segmentRoute.distance;
             totalDuration += segmentRoute.duration;
           } else {
             // Invalid response data - log error but don't use straight line fallback
-            console.error(`[OSRM] Segment ${i}->${i+1} returned invalid data (missing distance/duration/geometry)`);
-            throw new Error(`OSRM route segment ${i}->${i+1} has invalid response data`);
+            console.error(
+              `[OSRM] Segment ${i}->${
+                i + 1
+              } returned invalid data (missing distance/duration/geometry)`
+            );
+            throw new Error(
+              `OSRM route segment ${i}->${i + 1} has invalid response data`
+            );
           }
         } else {
           // OSRM returned error code
-          const errorCode = segmentResponse.data?.code || 'Unknown';
-          const errorMessage = segmentResponse.data?.message || 'No error message';
-          console.error(`[OSRM] Segment ${i}->${i+1} returned error code: ${errorCode}, message: ${errorMessage}`);
-          throw new Error(`OSRM route segment ${i}->${i+1} failed: ${errorCode} - ${errorMessage}`);
+          const errorCode = segmentResponse.data?.code || "Unknown";
+          const errorMessage =
+            segmentResponse.data?.message || "No error message";
+          console.error(
+            `[OSRM] Segment ${i}->${
+              i + 1
+            } returned error code: ${errorCode}, message: ${errorMessage}`
+          );
+          throw new Error(
+            `OSRM route segment ${i}->${
+              i + 1
+            } failed: ${errorCode} - ${errorMessage}`
+          );
         }
       } catch (error) {
         // Retry logic for transient errors (timeout, network issues)
         const maxRetries = 3;
         let lastError = error;
         let retryCount = 0;
-        
+
         while (retryCount < maxRetries) {
           try {
-            console.log(`[OSRM] Segment ${i}->${i+1} retry attempt ${retryCount + 1}/${maxRetries}...`);
-            await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 500)); // Exponential backoff
-            
+            console.log(
+              `[OSRM] Segment ${i}->${i + 1} retry attempt ${
+                retryCount + 1
+              }/${maxRetries}...`
+            );
+            await new Promise((resolve) =>
+              setTimeout(resolve, (retryCount + 1) * 500)
+            ); // Exponential backoff
+
             const retryResponse = await axios.get(segmentUrl, {
               timeout: 10000, // Longer timeout for retry
               headers: {
                 "User-Agent": "EcoCheck-Backend/1.0",
               },
             });
-            
+
             if (
               retryResponse.data &&
               retryResponse.data.code === "Ok" &&
@@ -2713,42 +2911,52 @@ async function getOSRMRoute(waypoints) {
               // Retry succeeded!
               const segmentRoute = retryResponse.data.routes[0];
               const segmentCoords = segmentRoute.geometry.coordinates;
-              
-        if (i === 0) {
+
+              if (i === 0) {
                 allCoordinates.push(...segmentCoords);
-        } else {
+              } else {
                 const lastCoord = allCoordinates[allCoordinates.length - 1];
                 const firstCoord = segmentCoords[0];
-                const isConnected = Math.abs(lastCoord[0] - firstCoord[0]) < 0.00001 &&
-                                    Math.abs(lastCoord[1] - firstCoord[1]) < 0.00001;
-                
+                const isConnected =
+                  Math.abs(lastCoord[0] - firstCoord[0]) < 0.00001 &&
+                  Math.abs(lastCoord[1] - firstCoord[1]) < 0.00001;
+
                 if (isConnected) {
                   allCoordinates.push(...segmentCoords.slice(1));
                 } else {
                   // NOT connected: create a smooth bridge line between segments
                   const gap = Math.sqrt(
-                    Math.pow(lastCoord[0] - firstCoord[0], 2) + 
-                    Math.pow(lastCoord[1] - firstCoord[1], 2)
+                    Math.pow(lastCoord[0] - firstCoord[0], 2) +
+                      Math.pow(lastCoord[1] - firstCoord[1], 2)
                   );
-                  
-                  if (gap > 0.0001) { // Only bridge if gap is significant (>10m)
-                    console.log(`[OSRM] Segment ${i}->${i+1} gap detected after retry (${Math.round(gap * 111000)}m), creating bridge`);
+
+                  if (gap > 0.0001) {
+                    // Only bridge if gap is significant (>10m)
+                    console.log(
+                      `[OSRM] Segment ${i}->${
+                        i + 1
+                      } gap detected after retry (${Math.round(
+                        gap * 111000
+                      )}m), creating bridge`
+                    );
                     // Create intermediate points for smooth connection
                     const bridgePoints = 3;
                     for (let b = 1; b <= bridgePoints; b++) {
                       const t = b / (bridgePoints + 1);
-                      const bridgeLon = lastCoord[0] + (firstCoord[0] - lastCoord[0]) * t;
-                      const bridgeLat = lastCoord[1] + (firstCoord[1] - lastCoord[1]) * t;
+                      const bridgeLon =
+                        lastCoord[0] + (firstCoord[0] - lastCoord[0]) * t;
+                      const bridgeLat =
+                        lastCoord[1] + (firstCoord[1] - lastCoord[1]) * t;
                       allCoordinates.push([bridgeLon, bridgeLat]);
                     }
                   }
                   allCoordinates.push(...segmentCoords);
                 }
               }
-              
+
               totalDistance += segmentRoute.distance;
               totalDuration += segmentRoute.duration;
-              console.log(`[OSRM] Segment ${i}->${i+1} retry succeeded ✅`);
+              console.log(`[OSRM] Segment ${i}->${i + 1} retry succeeded ✅`);
               lastError = null; // Clear error to indicate success
               break; // Exit retry loop
             }
@@ -2757,18 +2965,30 @@ async function getOSRMRoute(waypoints) {
             retryCount++;
           }
         }
-        
+
         // If all retries failed, throw error instead of using straight line
         if (lastError) {
-          console.error(`[OSRM] Segment ${i}->${i+1} failed after ${maxRetries} retries: ${lastError.message}`);
-          throw new Error(`OSRM route segment ${i}->${i+1} failed after ${maxRetries} retries: ${lastError.message}`);
+          console.error(
+            `[OSRM] Segment ${i}->${
+              i + 1
+            } failed after ${maxRetries} retries: ${lastError.message}`
+          );
+          throw new Error(
+            `OSRM route segment ${i}->${
+              i + 1
+            } failed after ${maxRetries} retries: ${lastError.message}`
+          );
         }
       }
     }
 
     // Combine all segments into one route
     if (allCoordinates.length > 0) {
-      console.log(`[OSRM] Fallback route created: ${Math.round(totalDistance)}m, ${allCoordinates.length} coordinates`);
+      console.log(
+        `[OSRM] Fallback route created: ${Math.round(totalDistance)}m, ${
+          allCoordinates.length
+        } coordinates`
+      );
       return {
         geometry: {
           type: "LineString",
@@ -2784,7 +3004,10 @@ async function getOSRMRoute(waypoints) {
   } catch (error) {
     console.warn(`[OSRM] Route calculation failed: ${error.message}`);
     if (error.response) {
-      console.warn(`[OSRM] Response status: ${error.response.status}, data:`, error.response.data);
+      console.warn(
+        `[OSRM] Response status: ${error.response.status}, data:`,
+        error.response.data
+      );
     }
     return null;
   }
@@ -2796,10 +3019,11 @@ async function getOSRMRoute(waypoints) {
 app.get("/api/vrp/districts", async (req, res) => {
   try {
     const { date } = req.query;
-    const scheduledDate = date || new Date().toISOString().split('T')[0];
-    
+    const scheduledDate = date || new Date().toISOString().split("T")[0];
+
     // Get districts from depots AND count actual schedules for each district
-    const { rows } = await db.query(`
+    const { rows } = await db.query(
+      `
       WITH depot_districts AS (
         SELECT DISTINCT
           CASE 
@@ -2844,8 +3068,10 @@ app.get("/api/vrp/districts", async (req, res) => {
         COALESCE(sc.schedule_count, 0) as point_count
       FROM schedule_counts sc
       ORDER BY sc.district
-    `, [scheduledDate]);
-    
+    `,
+      [scheduledDate]
+    );
+
     res.json({ ok: true, data: rows });
   } catch (error) {
     console.error("[VRP] Get districts error:", error);
@@ -2856,7 +3082,14 @@ app.get("/api/vrp/districts", async (req, res) => {
 // VRP optimization endpoint
 app.post("/api/vrp/optimize", async (req, res) => {
   try {
-    const { vehicles = [], points = [], depot, dump, timeWindow, dumps: dumpsList } = req.body;
+    const {
+      vehicles = [],
+      points = [],
+      depot,
+      dump,
+      timeWindow,
+      dumps: dumpsList,
+    } = req.body;
 
     if (!vehicles || vehicles.length === 0) {
       return res.status(400).json({
@@ -2877,44 +3110,58 @@ app.post("/api/vrp/optimize", async (req, res) => {
     let selectedDump = dump;
     if (!selectedDump && dumpsList && dumpsList.length > 0) {
       selectedDump = await findBestDumpForDistrict(depot, points, dumpsList);
-      console.log(`[VRP] Auto-selected dump: ${selectedDump?.name || 'None'}`);
+      console.log(`[VRP] Auto-selected dump: ${selectedDump?.name || "None"}`);
     } else if (!selectedDump) {
-      console.warn(`[VRP] No dump provided - routes will end at last stop (no dump destination)`);
+      console.warn(
+        `[VRP] No dump provided - routes will end at last stop (no dump destination)`
+      );
     }
 
     // SMART VRP algorithm với Clustering: Phân cụm trước, sau đó tối ưu từng cụm
     // Logic: All points -> Clustering (Sweep Line) -> Mỗi cụm -> Tối ưu với Hybrid CI-SA
     // Điều này giúp tránh việc xe phải băng qua đường nhiều lần
-    
+
     // CRITICAL FIX: Ensure defaultVehicleCapacity is always a number
-    const defaultVehicleCapacity = parseFloat(vehicles[0]?.capacity || vehicles[0]?.capacity_kg || 5000);
-    
+    const defaultVehicleCapacity = parseFloat(
+      vehicles[0]?.capacity || vehicles[0]?.capacity_kg || 5000
+    );
+
     // 1. SMART CLUSTERING: Phân cụm điểm theo góc từ depot (Sweep Line)
     // Số cụm = Số xe (hoặc có thể điều chỉnh)
     const numClusters = vehicles.length;
-    console.log(`[VRP] Clustering ${points.length} points into ${numClusters} zones using Sweep Line algorithm...`);
-    
+    console.log(
+      `[VRP] Clustering ${points.length} points into ${numClusters} zones using Sweep Line algorithm...`
+    );
+
     let clusteredPoints = [];
     try {
       // Sử dụng Sweep Line để phân cụm (phù hợp với bài toán VRP)
       clusteredPoints = clusterPointsBySweepLine(points, depot, numClusters);
-      console.log(`[VRP] Clustering completed: ${clusteredPoints.length} clusters created`);
+      console.log(
+        `[VRP] Clustering completed: ${clusteredPoints.length} clusters created`
+      );
       clusteredPoints.forEach((cluster, idx) => {
         console.log(`[VRP] Cluster ${idx + 1}: ${cluster.length} points`);
       });
     } catch (error) {
-      console.warn(`[VRP] Sweep Line clustering failed: ${error.message}, falling back to K-Means`);
+      console.warn(
+        `[VRP] Sweep Line clustering failed: ${error.message}, falling back to K-Means`
+      );
       try {
         clusteredPoints = clusterPointsByKMeans(points, numClusters);
-        console.log(`[VRP] K-Means clustering completed: ${clusteredPoints.length} clusters`);
+        console.log(
+          `[VRP] K-Means clustering completed: ${clusteredPoints.length} clusters`
+        );
       } catch (e2) {
-        console.warn(`[VRP] K-Means also failed: ${e2.message}, using simple distance-based grouping`);
+        console.warn(
+          `[VRP] K-Means also failed: ${e2.message}, using simple distance-based grouping`
+        );
         // Fallback: Chia đều theo khoảng cách
         const sortedPoints = [...points].sort((a, b) => {
           const distA = getHaversineDistance(depot, a);
           const distB = getHaversineDistance(depot, b);
-      return distA - distB;
-    });
+          return distA - distB;
+        });
         const chunkSize = Math.ceil(sortedPoints.length / numClusters);
         for (let i = 0; i < sortedPoints.length; i += chunkSize) {
           clusteredPoints.push(sortedPoints.slice(i, i + chunkSize));
@@ -2927,9 +3174,13 @@ app.post("/api/vrp/optimize", async (req, res) => {
 
     // 2. XỬ LÝ TỪNG CỤM: Mỗi cụm được gán cho một xe và tối ưu riêng biệt
     // Điều này đảm bảo xe không phải băng qua đường nhiều lần
-    for (let clusterIdx = 0; clusterIdx < clusteredPoints.length; clusterIdx++) {
+    for (
+      let clusterIdx = 0;
+      clusterIdx < clusteredPoints.length;
+      clusterIdx++
+    ) {
       const cluster = clusteredPoints[clusterIdx];
-      
+
       if (cluster.length === 0) {
         console.log(`[VRP] Cluster ${clusterIdx + 1} is empty, skipping`);
         continue;
@@ -2942,62 +3193,73 @@ app.post("/api/vrp/optimize", async (req, res) => {
         continue;
       }
 
-      const vehicleCapacity = parseFloat(vehicle.capacity || vehicle.capacity_kg || defaultVehicleCapacity);
-      
+      const vehicleCapacity = parseFloat(
+        vehicle.capacity || vehicle.capacity_kg || defaultVehicleCapacity
+      );
+
       // Nếu cụm quá lớn, chia nhỏ theo capacity
       let remainingPoints = [...cluster];
       let subRouteIndex = 0;
-      
+
       while (remainingPoints.length > 0) {
         // Tạo route mới cho phần cụm này
-      const route = {
-        vehicleId: vehicle.id,
-        vehiclePlate: vehicle.plate,
-        stops: [],
+        const route = {
+          vehicleId: vehicle.id,
+          vehiclePlate: vehicle.plate,
+          stops: [],
           currentLoad: 0,
           currentLocation: depot,
-          clusterIndex: clusterIdx
-      };
+          clusterIndex: clusterIdx,
+        };
 
         // Thêm điểm vào route theo capacity (trong cùng cụm)
-        const unassignedInCluster = remainingPoints.map(p => ({ ...p, assigned: false }));
-      let pointsAdded = 0;
-      
-        while (unassignedInCluster.some(p => !p.assigned)) {
-          const availablePoints = unassignedInCluster.filter(p => !p.assigned);
+        const unassignedInCluster = remainingPoints.map((p) => ({
+          ...p,
+          assigned: false,
+        }));
+        let pointsAdded = 0;
+
+        while (unassignedInCluster.some((p) => !p.assigned)) {
+          const availablePoints = unassignedInCluster.filter(
+            (p) => !p.assigned
+          );
           if (availablePoints.length === 0) break;
-          
+
           // Tìm điểm gần nhất từ vị trí hiện tại (trong cụm)
-        let nearestPoint = null;
-        let minDistance = Infinity;
+          let nearestPoint = null;
+          let minDistance = Infinity;
           let nearestIdx = -1;
-          
+
           for (let i = 0; i < unassignedInCluster.length; i++) {
             const point = unassignedInCluster[i];
             if (point.assigned) continue;
-            
+
             const distance = getHaversineDistance(route.currentLocation, point);
-          if (distance < minDistance) {
-            minDistance = distance;
-            nearestPoint = point;
+            if (distance < minDistance) {
+              minDistance = distance;
+              nearestPoint = point;
               nearestIdx = i;
             }
           }
-          
+
           if (!nearestPoint) break;
-          
+
           // Kiểm tra capacity
-        const demand = parseFloat(nearestPoint.demand) || 0;
-        const currentLoad = parseFloat(route.currentLoad) || 0;
-        const totalLoad = currentLoad + demand;
-          
-          if (totalLoad <= vehicleCapacity || demand === 0 || !nearestPoint.demand) {
-          route.stops.push(nearestPoint);
+          const demand = parseFloat(nearestPoint.demand) || 0;
+          const currentLoad = parseFloat(route.currentLoad) || 0;
+          const totalLoad = currentLoad + demand;
+
+          if (
+            totalLoad <= vehicleCapacity ||
+            demand === 0 ||
+            !nearestPoint.demand
+          ) {
+            route.stops.push(nearestPoint);
             route.currentLoad = totalLoad;
-          route.currentLocation = nearestPoint;
+            route.currentLocation = nearestPoint;
             unassignedInCluster[nearestIdx].assigned = true;
-          pointsAdded++;
-        } else {
+            pointsAdded++;
+          } else {
             // Không thể thêm điểm này, dừng route này
             break;
           }
@@ -3005,28 +3267,40 @@ app.post("/api/vrp/optimize", async (req, res) => {
 
         // Chỉ thêm route nếu có ít nhất 1 điểm
         if (route.stops.length > 0) {
-      routes.push(route);
-      routeIndex++;
-      
+          routes.push(route);
+          routeIndex++;
+
           // Cập nhật remainingPoints (loại bỏ các điểm đã được gán)
-          remainingPoints = unassignedInCluster.filter(p => !p.assigned).map(p => {
-            const { assigned, ...point } = p;
-            return point;
-          });
-          
-          console.log(`[VRP] Created Route ${String.fromCharCode(65 + routeIndex - 1)} from Cluster ${clusterIdx + 1} (${vehicle.plate}): ${route.stops.length} points, ${Math.round(route.currentLoad)}kg`);
+          remainingPoints = unassignedInCluster
+            .filter((p) => !p.assigned)
+            .map((p) => {
+              const { assigned, ...point } = p;
+              return point;
+            });
+
+          console.log(
+            `[VRP] Created Route ${String.fromCharCode(
+              65 + routeIndex - 1
+            )} from Cluster ${clusterIdx + 1} (${vehicle.plate}): ${
+              route.stops.length
+            } points, ${Math.round(route.currentLoad)}kg`
+          );
         } else {
           break; // Không thể tạo route nào nữa từ cụm này
         }
       }
     }
 
-    console.log(`[VRP] Total routes created: ${routes.length} from ${points.length} points`);
+    console.log(
+      `[VRP] Total routes created: ${routes.length} from ${points.length} points`
+    );
 
     // 4. Optimize and process each route
     for (let routeIdx = 0; routeIdx < routes.length; routeIdx++) {
       const route = routes[routeIdx];
-      const vehicle = vehicles.find(v => v.id === route.vehicleId) || vehicles[routeIdx % vehicles.length];
+      const vehicle =
+        vehicles.find((v) => v.id === route.vehicleId) ||
+        vehicles[routeIdx % vehicles.length];
 
       // Get vehicle current location (or use depot as fallback)
       let vehicleStartLocation = depot;
@@ -3034,69 +3308,101 @@ app.post("/api/vrp/optimize", async (req, res) => {
         const currentLoc = await getVehicleCurrentLocation(vehicle.id);
         if (currentLoc && currentLoc.lon && currentLoc.lat) {
           vehicleStartLocation = currentLoc;
-          console.log(`[VRP] Vehicle ${vehicle.id} current location: ${currentLoc.lon}, ${currentLoc.lat}`);
+          console.log(
+            `[VRP] Vehicle ${vehicle.id} current location: ${currentLoc.lon}, ${currentLoc.lat}`
+          );
         }
       } catch (error) {
-        console.warn(`[VRP] Could not get current location for vehicle ${vehicle.id}, using depot`);
+        console.warn(
+          `[VRP] Could not get current location for vehicle ${vehicle.id}, using depot`
+        );
       }
 
       // 3. Optimize stop order using Hybrid CI-SA (Cheapest Insertion + Simulated Annealing)
       // OSRM will be used later for route drawing (getOSRMRoute) which gives actual road paths
       if (route.stops.length > 0) {
-        route.stops = await optimizeStopOrder(route.stops, vehicleStartLocation, selectedDump || vehicleStartLocation);
-        console.log(`[VRP] Vehicle ${vehicle.id}: Optimized ${route.stops.length} stops using Hybrid CI-SA`);
+        route.stops = await optimizeStopOrder(
+          route.stops,
+          vehicleStartLocation,
+          selectedDump || vehicleStartLocation
+        );
+        console.log(
+          `[VRP] Vehicle ${vehicle.id}: Optimized ${route.stops.length} stops using Hybrid CI-SA`
+        );
       }
 
       // Build waypoints: vehicle current location -> optimized stops -> dump
       // IMPORTANT: Keep the optimized order - Route will go through ALL waypoints in order
       const waypoints = [];
-      
+
       // 1. Start point (depot or vehicle current location)
-      if (vehicleStartLocation && vehicleStartLocation.lon && vehicleStartLocation.lat) {
+      if (
+        vehicleStartLocation &&
+        vehicleStartLocation.lon &&
+        vehicleStartLocation.lat
+      ) {
         waypoints.push([vehicleStartLocation.lon, vehicleStartLocation.lat]);
-        console.log(`[VRP] Vehicle ${vehicle.id}: Start point: ${vehicleStartLocation.lon}, ${vehicleStartLocation.lat}`);
+        console.log(
+          `[VRP] Vehicle ${vehicle.id}: Start point: ${vehicleStartLocation.lon}, ${vehicleStartLocation.lat}`
+        );
       }
-      
+
       // 2. All stops (in optimized order)
       route.stops.forEach((p, idx) => {
         if (p.lon && p.lat) {
           waypoints.push([p.lon, p.lat]);
-          console.log(`[VRP] Vehicle ${vehicle.id}: Stop ${idx + 1}: ${p.lon}, ${p.lat}`);
+          console.log(
+            `[VRP] Vehicle ${vehicle.id}: Stop ${idx + 1}: ${p.lon}, ${p.lat}`
+          );
         } else {
-          console.warn(`[VRP] Vehicle ${vehicle.id}: Stop ${idx + 1} missing coordinates`);
+          console.warn(
+            `[VRP] Vehicle ${vehicle.id}: Stop ${idx + 1} missing coordinates`
+          );
         }
       });
-      
+
       // 3. End point (dump) - ALWAYS add to ensure route has clear END point
       // Route must go: START -> stops -> END
       if (selectedDump && selectedDump.lon && selectedDump.lat) {
-        const dumpCoords = [parseFloat(selectedDump.lon), parseFloat(selectedDump.lat)];
+        const dumpCoords = [
+          parseFloat(selectedDump.lon),
+          parseFloat(selectedDump.lat),
+        ];
         const startCoords = waypoints[0];
-        
+
         // Check if dump is same as start point (within 10m tolerance)
-        const isSameAsStart = Math.abs(dumpCoords[0] - startCoords[0]) < 0.0001 &&
-                              Math.abs(dumpCoords[1] - startCoords[1]) < 0.0001;
-        
+        const isSameAsStart =
+          Math.abs(dumpCoords[0] - startCoords[0]) < 0.0001 &&
+          Math.abs(dumpCoords[1] - startCoords[1]) < 0.0001;
+
         if (isSameAsStart) {
-          console.warn(`[VRP] Vehicle ${vehicle.id}: Dump is same as start point, but still adding to ensure route has END point`);
+          console.warn(
+            `[VRP] Vehicle ${vehicle.id}: Dump is same as start point, but still adding to ensure route has END point`
+          );
           // Still add dump to ensure route has clear END point
           // OSRM will handle the route correctly even if start and end are close
         }
-        
+
         // ALWAYS add dump as END point to ensure route completeness
         waypoints.push(dumpCoords);
-        console.log(`[VRP] Vehicle ${vehicle.id}: End point (dump): ${selectedDump.name || 'Dump'} at [${dumpCoords[0]}, ${dumpCoords[1]}]`);
+        console.log(
+          `[VRP] Vehicle ${vehicle.id}: End point (dump): ${
+            selectedDump.name || "Dump"
+          } at [${dumpCoords[0]}, ${dumpCoords[1]}]`
+        );
       } else {
         // If no dump provided, use last stop as END point
         if (waypoints.length > 1) {
           const lastStop = waypoints[waypoints.length - 1];
-          console.log(`[VRP] Vehicle ${vehicle.id}: No dump provided, route will end at last stop: [${lastStop[0]}, ${lastStop[1]}]`);
+          console.log(
+            `[VRP] Vehicle ${vehicle.id}: No dump provided, route will end at last stop: [${lastStop[0]}, ${lastStop[1]}]`
+          );
         }
       }
-      
+
       // VALIDATION: Ensure route is valid (START → END, no duplicates, no dead ends)
       const validationErrors = [];
-      
+
       // 1. Validate START point exists
       if (!waypoints || waypoints.length === 0) {
         validationErrors.push("No waypoints defined");
@@ -3104,42 +3410,56 @@ app.post("/api/vrp/optimize", async (req, res) => {
         const startPoint = waypoints[0];
         if (!startPoint || startPoint.length !== 2) {
           validationErrors.push("Invalid START point");
-        } else if (startPoint[0] === vehicleStartLocation.lon && startPoint[1] === vehicleStartLocation.lat) {
+        } else if (
+          startPoint[0] === vehicleStartLocation.lon &&
+          startPoint[1] === vehicleStartLocation.lat
+        ) {
           // START point matches vehicle location - OK
         } else {
-          validationErrors.push(`START point [${startPoint[0]}, ${startPoint[1]}] does not match vehicle location [${vehicleStartLocation.lon}, ${vehicleStartLocation.lat}]`);
+          validationErrors.push(
+            `START point [${startPoint[0]}, ${startPoint[1]}] does not match vehicle location [${vehicleStartLocation.lon}, ${vehicleStartLocation.lat}]`
+          );
         }
       }
-      
+
       // 2. Validate END point exists (if dump is provided)
       if (selectedDump && selectedDump.lon && selectedDump.lat) {
         const endPoint = waypoints[waypoints.length - 1];
         if (!endPoint || endPoint.length !== 2) {
           validationErrors.push("Invalid END point");
         } else {
-          const dumpCoords = [parseFloat(selectedDump.lon), parseFloat(selectedDump.lat)];
-          const isSameAsEnd = Math.abs(endPoint[0] - dumpCoords[0]) < 0.0001 &&
-                              Math.abs(endPoint[1] - dumpCoords[1]) < 0.0001;
+          const dumpCoords = [
+            parseFloat(selectedDump.lon),
+            parseFloat(selectedDump.lat),
+          ];
+          const isSameAsEnd =
+            Math.abs(endPoint[0] - dumpCoords[0]) < 0.0001 &&
+            Math.abs(endPoint[1] - dumpCoords[1]) < 0.0001;
           if (!isSameAsEnd) {
-            validationErrors.push(`END point [${endPoint[0]}, ${endPoint[1]}] does not match dump location [${dumpCoords[0]}, ${dumpCoords[1]}]`);
+            validationErrors.push(
+              `END point [${endPoint[0]}, ${endPoint[1]}] does not match dump location [${dumpCoords[0]}, ${dumpCoords[1]}]`
+            );
           }
         }
       }
-      
+
       // 3. Validate no duplicate consecutive waypoints
       const duplicateWaypoints = [];
       for (let i = 0; i < waypoints.length - 1; i++) {
         const wp1 = waypoints[i];
         const wp2 = waypoints[i + 1];
         const dist = Math.abs(wp1[0] - wp2[0]) + Math.abs(wp1[1] - wp2[1]);
-        if (dist < 0.0001) { // Less than ~10m apart
-          duplicateWaypoints.push(`Waypoints ${i} and ${i+1} are duplicates`);
+        if (dist < 0.0001) {
+          // Less than ~10m apart
+          duplicateWaypoints.push(`Waypoints ${i} and ${i + 1} are duplicates`);
         }
       }
       if (duplicateWaypoints.length > 0) {
-        validationErrors.push(`Duplicate waypoints detected: ${duplicateWaypoints.join(', ')}`);
+        validationErrors.push(
+          `Duplicate waypoints detected: ${duplicateWaypoints.join(", ")}`
+        );
       }
-      
+
       // 4. Validate no duplicate stops (non-consecutive duplicates)
       const stopIds = new Set();
       for (const stop of route.stops) {
@@ -3149,28 +3469,48 @@ app.post("/api/vrp/optimize", async (req, res) => {
         }
         stopIds.add(stopId);
       }
-      
+
       // 5. Validate waypoints count matches expected (START + stops + END)
       const expectedWaypoints = 1 + route.stops.length + (selectedDump ? 1 : 0);
       if (waypoints.length !== expectedWaypoints) {
-        validationErrors.push(`Waypoints count mismatch: expected ${expectedWaypoints} (START + ${route.stops.length} stops + ${selectedDump ? '1' : '0'} END), got ${waypoints.length}`);
+        validationErrors.push(
+          `Waypoints count mismatch: expected ${expectedWaypoints} (START + ${
+            route.stops.length
+          } stops + ${selectedDump ? "1" : "0"} END), got ${waypoints.length}`
+        );
       }
-      
+
       // Log validation results
       if (validationErrors.length > 0) {
-        console.warn(`[VRP] Vehicle ${vehicle.id}: Route validation warnings:`, validationErrors);
+        console.warn(
+          `[VRP] Vehicle ${vehicle.id}: Route validation warnings:`,
+          validationErrors
+        );
       } else {
         console.log(`[VRP] Vehicle ${vehicle.id}: Route validation passed ✅`);
       }
-      
+
       // Validate waypoints minimum
       if (waypoints.length < 2) {
-        console.warn(`[VRP] Vehicle ${vehicle.id}: Not enough waypoints (${waypoints.length}), skipping route`);
+        console.warn(
+          `[VRP] Vehicle ${vehicle.id}: Not enough waypoints (${waypoints.length}), skipping route`
+        );
         continue;
       }
-      
-      console.log(`[VRP] Vehicle ${vehicle.id}: Total waypoints: ${waypoints.length} (1 START + ${route.stops.length} stops + ${selectedDump ? '1' : '0'} END)`);
-      console.log(`[VRP] Vehicle ${vehicle.id}: Waypoints order:`, waypoints.map(wp => `[${wp[0].toFixed(4)},${wp[1].toFixed(4)}]`).join(' -> '));
+
+      console.log(
+        `[VRP] Vehicle ${vehicle.id}: Total waypoints: ${
+          waypoints.length
+        } (1 START + ${route.stops.length} stops + ${
+          selectedDump ? "1" : "0"
+        } END)`
+      );
+      console.log(
+        `[VRP] Vehicle ${vehicle.id}: Waypoints order:`,
+        waypoints
+          .map((wp) => `[${wp[0].toFixed(4)},${wp[1].toFixed(4)}]`)
+          .join(" -> ")
+      );
 
       // Get route from OSRM (road network routing)
       let routeGeometry = null;
@@ -3179,13 +3519,22 @@ app.post("/api/vrp/optimize", async (req, res) => {
 
       try {
         const osrmRoute = await getOSRMRoute(waypoints);
-        if (osrmRoute && osrmRoute.distance > 0 && osrmRoute.duration > 0 && osrmRoute.geometry) {
+        if (
+          osrmRoute &&
+          osrmRoute.distance > 0 &&
+          osrmRoute.duration > 0 &&
+          osrmRoute.geometry
+        ) {
           routeGeometry = osrmRoute.geometry;
           totalDistance = Math.round(osrmRoute.distance);
           totalDuration = Math.round(osrmRoute.duration);
           const coordCount = osrmRoute.geometry.coordinates?.length || 0;
-          console.log(`[VRP] Vehicle ${vehicle.id}: OSRM route - ${totalDistance}m, ${totalDuration}s, ${coordCount} coordinates`);
-          console.log(`[VRP] Vehicle ${vehicle.id}: Route geometry type: ${routeGeometry.type}, coordinates: ${coordCount}`);
+          console.log(
+            `[VRP] Vehicle ${vehicle.id}: OSRM route - ${totalDistance}m, ${totalDuration}s, ${coordCount} coordinates`
+          );
+          console.log(
+            `[VRP] Vehicle ${vehicle.id}: Route geometry type: ${routeGeometry.type}, coordinates: ${coordCount}`
+          );
         } else {
           // OSRM returned null or invalid data - don't use fallback
           console.error(
@@ -3208,11 +3557,15 @@ app.post("/api/vrp/optimize", async (req, res) => {
 
       // Ensure distance and duration are valid numbers
       if (!totalDistance || totalDistance <= 0) {
-        console.warn(`[VRP] Invalid distance for vehicle ${vehicle.id}, setting default`);
+        console.warn(
+          `[VRP] Invalid distance for vehicle ${vehicle.id}, setting default`
+        );
         totalDistance = 1000; // Default 1km
       }
       if (!totalDuration || totalDuration <= 0 || isNaN(totalDuration)) {
-        console.warn(`[VRP] Invalid duration for vehicle ${vehicle.id}, calculating from distance`);
+        console.warn(
+          `[VRP] Invalid duration for vehicle ${vehicle.id}, calculating from distance`
+        );
         totalDuration = Math.round(totalDistance / 8.33); // Recalculate from distance
       }
 
@@ -3223,7 +3576,9 @@ app.post("/api/vrp/optimize", async (req, res) => {
 
       // Final validation before updating route
       if (totalDistance <= 0 || isNaN(totalDistance)) {
-        console.error(`[VRP] Invalid distance ${totalDistance} for vehicle ${vehicle.id}, skipping route`);
+        console.error(
+          `[VRP] Invalid distance ${totalDistance} for vehicle ${vehicle.id}, skipping route`
+        );
         // Remove this route from routes array
         routes.splice(routeIdx, 1);
         routeIdx--; // Adjust index after removal
@@ -3234,51 +3589,63 @@ app.post("/api/vrp/optimize", async (req, res) => {
       route.distance = totalDistance; // in meters
       route.eta = eta; // format: "H:MM"
       route.geojson = {
-      type: "FeatureCollection",
-      features: [
-        {
-          type: "Feature",
-              geometry: routeGeometry,
-              properties: {
-                vehicleId: vehicle.id,
-                vehiclePlate: vehicle.plate,
-                distance: totalDistance,
-                duration: totalDuration,
-              },
-        },
-      ],
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            geometry: routeGeometry,
+            properties: {
+              vehicleId: vehicle.id,
+              vehiclePlate: vehicle.plate,
+              distance: totalDistance,
+              duration: totalDuration,
+            },
+          },
+        ],
       };
       route.stops = route.stops.map((p, idx) => ({
-          id: p.id,
-          seq: idx + 1,
-          lat: p.lat,
-          lon: p.lon,
-          demand: p.demand || 0,
+        id: p.id,
+        seq: idx + 1,
+        lat: p.lat,
+        lon: p.lon,
+        demand: p.demand || 0,
       }));
-      route.depot = depot && depot.lat && depot.lon ? { 
-          id: depot.id, 
-          name: depot.name || 'Depot', 
-          lat: parseFloat(depot.lat), 
-          lon: parseFloat(depot.lon) 
-        } : (vehicleStartLocation && vehicleStartLocation.lat && vehicleStartLocation.lon ? {
-          id: depot?.id || 'unknown',
-          name: depot?.name || 'Start Point',
-          lat: parseFloat(vehicleStartLocation.lat),
-          lon: parseFloat(vehicleStartLocation.lon)
-      } : null);
-      route.dump = selectedDump && selectedDump.lat && selectedDump.lon ? { 
-          id: selectedDump.id, 
-          name: selectedDump.name || 'Dump', 
-          lat: parseFloat(selectedDump.lat), 
-          lon: parseFloat(selectedDump.lon) 
-      } : null;
+      route.depot =
+        depot && depot.lat && depot.lon
+          ? {
+              id: depot.id,
+              name: depot.name || "Depot",
+              lat: parseFloat(depot.lat),
+              lon: parseFloat(depot.lon),
+            }
+          : vehicleStartLocation &&
+            vehicleStartLocation.lat &&
+            vehicleStartLocation.lon
+          ? {
+              id: depot?.id || "unknown",
+              name: depot?.name || "Start Point",
+              lat: parseFloat(vehicleStartLocation.lat),
+              lon: parseFloat(vehicleStartLocation.lon),
+            }
+          : null;
+      route.dump =
+        selectedDump && selectedDump.lat && selectedDump.lon
+          ? {
+              id: selectedDump.id,
+              name: selectedDump.name || "Dump",
+              lat: parseFloat(selectedDump.lat),
+              lon: parseFloat(selectedDump.lon),
+            }
+          : null;
       route.depot_id = depot?.id || null;
       route.dump_id = selectedDump?.id || null;
     }
 
     // Filter out any invalid routes (should not happen, but safety check)
-    const validRoutes = routes.filter(r => r && r.stops && r.stops.length > 0 && r.distance > 0);
-    
+    const validRoutes = routes.filter(
+      (r) => r && r.stops && r.stops.length > 0 && r.distance > 0
+    );
+
     if (validRoutes.length === 0 && routes.length > 0) {
       console.warn("[VRP] All routes were invalid after optimization");
     }
@@ -3287,7 +3654,10 @@ app.post("/api/vrp/optimize", async (req, res) => {
       `✅ VRP optimization completed: ${validRoutes.length} valid routes from ${routes.length} total routes, ${vehicles.length} vehicles`
     );
 
-  res.json({ ok: true, data: { routes: validRoutes.length > 0 ? validRoutes : routes } });
+    res.json({
+      ok: true,
+      data: { routes: validRoutes.length > 0 ? validRoutes : routes },
+    });
   } catch (error) {
     console.error("[VRP] Optimize error:", error);
     res.status(500).json({ ok: false, error: error.message });
@@ -3325,7 +3695,9 @@ app.post("/api/vrp/save-routes", async (req, res) => {
           routeData.dump_id || null,
           now,
           routeData.driver_id ? "assigned" : "planned", // If driver assigned, status = assigned, else planned
-          routeData.distance ? parseFloat((routeData.distance / 1000).toFixed(2)) : null, // Convert meters to km
+          routeData.distance
+            ? parseFloat((routeData.distance / 1000).toFixed(2))
+            : null, // Convert meters to km
           JSON.stringify({
             optimized: true,
             distance: routeData.distance,
@@ -3505,7 +3877,7 @@ app.post("/api/alerts/:alertId/dispatch", async (req, res) => {
     if (isNaN(alertIdInt)) {
       return res.status(400).json({
         ok: false,
-        error: "Invalid alert ID format. Expected integer."
+        error: "Invalid alert ID format. Expected integer.",
       });
     }
 
@@ -3526,7 +3898,8 @@ app.post("/api/alerts/:alertId/dispatch", async (req, res) => {
     if (alertResult.rows.length === 0) {
       return res.status(404).json({
         ok: false,
-        error: "Alert not found, point not found, or point has no location data"
+        error:
+          "Alert not found, point not found, or point has no location data",
       });
     }
     const alertData = alertResult.rows[0];
@@ -3551,9 +3924,9 @@ app.post("/api/alerts/:alertId/dispatch", async (req, res) => {
         AND (vt.geom IS NOT NULL OR d.geom IS NOT NULL)
       ORDER BY v.id, COALESCE(vt.recorded_at, '1970-01-01'::timestamptz) DESC NULLS LAST
     `;
-    
+
     const vehiclesResult = await db.query(vehiclesQuery);
-    const activeVehicles = vehiclesResult.rows.map(row => ({
+    const activeVehicles = vehiclesResult.rows.map((row) => ({
       id: row.id,
       lat: parseFloat(row.lat) || 10.78,
       lon: parseFloat(row.lon) || 106.7,
@@ -3583,15 +3956,18 @@ app.post("/api/alerts/:alertId/dispatch", async (req, res) => {
 
     res.json({ ok: true, data: suggestedVehicles });
   } catch (err) {
-    console.error(`[Dispatch] Error processing dispatch for alert ${alertId}:`, err);
+    console.error(
+      `[Dispatch] Error processing dispatch for alert ${alertId}:`,
+      err
+    );
     console.error(`[Dispatch] Error details:`, {
       message: err.message,
       stack: err.stack,
-      alertId: alertId
+      alertId: alertId,
     });
     res.status(500).json({
       ok: false,
-      error: err.message || "Failed to process dispatch request"
+      error: err.message || "Failed to process dispatch request",
     });
   }
 });
@@ -3826,24 +4202,24 @@ app.get("/api/analytics/timeseries", async (req, res) => {
 function simpleLinearRegression(x, y) {
   const n = x.length;
   if (n < 2) return null;
-  
+
   const sumX = x.reduce((a, b) => a + b, 0);
   const sumY = y.reduce((a, b) => a + b, 0);
   const sumXY = x.reduce((sum, xi, i) => sum + xi * y[i], 0);
   const sumXX = x.reduce((sum, xi) => sum + xi * xi, 0);
-  
+
   const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
   const intercept = (sumY - slope * sumX) / n;
-  
+
   return { slope, intercept, predict: (xValue) => slope * xValue + intercept };
 }
 
 app.get("/api/analytics/predict", async (req, res) => {
   try {
-  const days = Number(req.query.days || 7);
+    const days = Number(req.query.days || 7);
     const point_id = req.query.point_id || null;
     const waste_type = req.query.waste_type || null;
-  const today = new Date();
+    const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     // Get historical data (60 days for better trend analysis)
@@ -3857,19 +4233,19 @@ app.get("/api/analytics/predict", async (req, res) => {
     `;
     const params = [];
     let paramIndex = 1;
-    
+
     if (point_id) {
       query += ` AND point_id = $${paramIndex++}`;
       params.push(point_id);
     }
-    
+
     if (waste_type) {
       query += ` AND waste_type = $${paramIndex++}`;
       params.push(waste_type);
     }
-    
+
     query += ` GROUP BY day ORDER BY day ASC`;
-    
+
     const historyData = await db.query(query, params);
 
     // Get actual data for past N days (for display)
@@ -3881,20 +4257,25 @@ app.get("/api/analytics/predict", async (req, res) => {
       WHERE completed_at >= NOW() - INTERVAL '1 day' * $${paramIndex++}
         AND status = 'completed'
     `;
-    
+
     if (point_id) {
       actualQuery += ` AND point_id = $${paramIndex++}`;
       params.push(point_id);
     }
-    
+
     if (waste_type) {
       actualQuery += ` AND waste_type = $${paramIndex++}`;
       params.push(waste_type);
     }
-    
+
     actualQuery += ` GROUP BY day ORDER BY day ASC`;
-    
-    const actualData = await db.query(actualQuery, [days, ...params.slice(params.length - (point_id ? 1 : 0) - (waste_type ? 1 : 0))]);
+
+    const actualData = await db.query(actualQuery, [
+      days,
+      ...params.slice(
+        params.length - (point_id ? 1 : 0) - (waste_type ? 1 : 0)
+      ),
+    ]);
 
     // Create actual array with all days
     const actual = [];
@@ -3916,150 +4297,171 @@ app.get("/api/analytics/predict", async (req, res) => {
     // Use ARIMA AI model if we have enough historical data
     let forecast = [];
     let modelInfo = { model: "simple_average", reason: "insufficient_data" };
-    
+
     if (historyData.rows.length >= 14) {
       // Prepare time series data for ARIMA
-      const Y = historyData.rows.map(row => parseFloat(row.total_tons) || 0);
-      
+      const Y = historyData.rows.map((row) => parseFloat(row.total_tons) || 0);
+
       try {
         // Initialize ARIMA model with auto parameter selection
         const arima = new ARIMA({
-          auto: true,        // Auto-select best (p,d,q) parameters
-          method: 0,         // Maximum likelihood estimation
-          optimizer: 6,      // Use Nelder-Mead optimizer
-          verbose: false    // Disable verbose output
+          auto: true, // Auto-select best (p,d,q) parameters
+          method: 0, // Maximum likelihood estimation
+          optimizer: 6, // Use Nelder-Mead optimizer
+          verbose: false, // Disable verbose output
         });
-        
+
         // Train ARIMA model on historical data
         arima.train(Y);
-        
+
         // Predict future values
         const [predictions, errors] = arima.predict(days);
-        
-        if (predictions && predictions.length > 0 && !predictions.some(v => isNaN(v) || !isFinite(v))) {
+
+        if (
+          predictions &&
+          predictions.length > 0 &&
+          !predictions.some((v) => isNaN(v) || !isFinite(v))
+        ) {
           // Generate forecast using ARIMA predictions
           for (let i = 0; i < days; i++) {
             const dayDate = new Date(today.getTime() + i * 86400000);
             const dateStr = dayDate.toISOString().slice(0, 10);
-            
+
             // Get predicted value (ensure it's valid)
-            let predictedValue = predictions[i] || predictions[predictions.length - 1];
-            
+            let predictedValue =
+              predictions[i] || predictions[predictions.length - 1];
+
             // Ensure non-negative values and reasonable range
             const forecastValue = Math.max(0, Math.min(predictedValue, 1000)); // Cap at 1000 tons
-            
+
             forecast.push({
               d: dateStr,
               v: parseFloat(forecastValue.toFixed(1)),
             });
           }
-          
+
           // Calculate model metrics
-          const avgError = errors && errors.length > 0 
-            ? errors.reduce((sum, e) => sum + Math.abs(e), 0) / errors.length 
-            : null;
-          
+          const avgError =
+            errors && errors.length > 0
+              ? errors.reduce((sum, e) => sum + Math.abs(e), 0) / errors.length
+              : null;
+
           modelInfo = {
             model: "arima",
             training_days: historyData.rows.length,
             forecast_days: days,
             avg_error: avgError ? parseFloat(avgError.toFixed(4)) : null,
-            parameters: arima.params || "auto-selected"
+            parameters: arima.params || "auto-selected",
           };
         } else {
           throw new Error("ARIMA predictions invalid");
         }
       } catch (arimaError) {
-        console.warn("[Analytics] ARIMA failed, falling back to linear regression:", arimaError.message);
-        
+        console.warn(
+          "[Analytics] ARIMA failed, falling back to linear regression:",
+          arimaError.message
+        );
+
         // Fallback to Linear Regression if ARIMA fails
         const startDate = new Date(historyData.rows[0].day);
         startDate.setHours(0, 0, 0, 0);
-        
+
         const X = historyData.rows.map((row) => {
           const rowDate = new Date(row.day);
           rowDate.setHours(0, 0, 0, 0);
           return Math.floor((rowDate - startDate) / (1000 * 60 * 60 * 24));
         });
-        
+
         const regression = simpleLinearRegression(X, Y);
-        
-        if (regression && !isNaN(regression.slope) && !isNaN(regression.intercept)) {
+
+        if (
+          regression &&
+          !isNaN(regression.slope) &&
+          !isNaN(regression.intercept)
+        ) {
           const lastX = X[X.length - 1];
-          
+
           for (let i = 0; i < days; i++) {
             const dayDate = new Date(today.getTime() + i * 86400000);
             const dateStr = dayDate.toISOString().slice(0, 10);
             const futureX = lastX + 1 + i;
             const predictedValue = regression.predict(futureX);
             const forecastValue = Math.max(0, Math.min(predictedValue, 1000));
-            
+
             forecast.push({
               d: dateStr,
               v: parseFloat(forecastValue.toFixed(1)),
             });
           }
-          
+
           modelInfo = {
             model: "linear_regression",
             reason: "arima_fallback",
             training_days: historyData.rows.length,
             slope: parseFloat(regression.slope.toFixed(4)),
-            intercept: parseFloat(regression.intercept.toFixed(2))
+            intercept: parseFloat(regression.intercept.toFixed(2)),
           };
         } else {
           // Final fallback to simple average
-          const avgWeight = Y.reduce((sum, val) => sum + val, 0) / Y.length || 50;
+          const avgWeight =
+            Y.reduce((sum, val) => sum + val, 0) / Y.length || 50;
           const lastValue = Y[Y.length - 1] || avgWeight;
-          
+
           for (let i = 0; i < days; i++) {
             const dayDate = new Date(today.getTime() + i * 86400000);
             const dateStr = dayDate.toISOString().slice(0, 10);
-            const forecastValue = lastValue * (1 + (i * 0.01));
+            const forecastValue = lastValue * (1 + i * 0.01);
             forecast.push({
               d: dateStr,
               v: parseFloat(forecastValue.toFixed(1)),
             });
           }
-          modelInfo = { model: "simple_average", reason: "arima_and_regression_failed" };
+          modelInfo = {
+            model: "simple_average",
+            reason: "arima_and_regression_failed",
+          };
         }
       }
     } else if (historyData.rows.length >= 7) {
       // Not enough data for ARIMA (need 14+ days), use Linear Regression
       const startDate = new Date(historyData.rows[0].day);
       startDate.setHours(0, 0, 0, 0);
-      
+
       const X = historyData.rows.map((row) => {
         const rowDate = new Date(row.day);
         rowDate.setHours(0, 0, 0, 0);
         return Math.floor((rowDate - startDate) / (1000 * 60 * 60 * 24));
       });
-      const Y = historyData.rows.map(row => parseFloat(row.total_tons) || 0);
-      
+      const Y = historyData.rows.map((row) => parseFloat(row.total_tons) || 0);
+
       const regression = simpleLinearRegression(X, Y);
-      
-      if (regression && !isNaN(regression.slope) && !isNaN(regression.intercept)) {
+
+      if (
+        regression &&
+        !isNaN(regression.slope) &&
+        !isNaN(regression.intercept)
+      ) {
         const lastX = X[X.length - 1];
-        
+
         for (let i = 0; i < days; i++) {
           const dayDate = new Date(today.getTime() + i * 86400000);
           const dateStr = dayDate.toISOString().slice(0, 10);
           const futureX = lastX + 1 + i;
           const predictedValue = regression.predict(futureX);
           const forecastValue = Math.max(0, Math.min(predictedValue, 1000));
-          
+
           forecast.push({
             d: dateStr,
             v: parseFloat(forecastValue.toFixed(1)),
           });
         }
-        
+
         modelInfo = {
           model: "linear_regression",
           reason: "insufficient_data_for_arima",
           training_days: historyData.rows.length,
           slope: parseFloat(regression.slope.toFixed(4)),
-          intercept: parseFloat(regression.intercept.toFixed(2))
+          intercept: parseFloat(regression.intercept.toFixed(2)),
         };
       } else {
         // Fallback to simple average
@@ -4073,11 +4475,17 @@ app.get("/api/analytics/predict", async (req, res) => {
             v: parseFloat(forecastValue.toFixed(1)),
           });
         }
-        modelInfo = { model: "simple_average", reason: "regression_failed", data_points: historyData.rows.length };
+        modelInfo = {
+          model: "simple_average",
+          reason: "regression_failed",
+          data_points: historyData.rows.length,
+        };
       }
     } else {
       // Not enough data, use simple average with growth
-      const avgWeight = actual.reduce((sum, d) => sum + parseFloat(d.v), 0) / actual.length || 50;
+      const avgWeight =
+        actual.reduce((sum, d) => sum + parseFloat(d.v), 0) / actual.length ||
+        50;
       for (let i = 0; i < days; i++) {
         const dayDate = new Date(today.getTime() + i * 86400000);
         const dateStr = dayDate.toISOString().slice(0, 10);
@@ -4087,13 +4495,17 @@ app.get("/api/analytics/predict", async (req, res) => {
           v: parseFloat(forecastValue.toFixed(1)),
         });
       }
-      modelInfo = { model: "simple_average", reason: "insufficient_data", data_points: historyData.rows.length };
+      modelInfo = {
+        model: "simple_average",
+        reason: "insufficient_data",
+        data_points: historyData.rows.length,
+      };
     }
 
-    res.json({ 
-      ok: true, 
+    res.json({
+      ok: true,
       data: { actual, forecast },
-      model_info: modelInfo
+      model_info: modelInfo,
     });
   } catch (error) {
     console.error("[Analytics] Predict error:", error);
@@ -4293,11 +4705,11 @@ const MISSED_POINT_DISTANCE_THRESHOLD = 500; // meters
 
 cron.schedule("*/15 * * * * *", async () => {
   console.log("🛰️  Running Missed Point Detection...");
-  
+
   try {
     // Get active routes from database and in-memory store
     const activeRoutesFromStore = store.getActiveRoutes();
-    
+
     // Also get active routes from database
     const routesResult = await db.query(
       `SELECT r.id as route_id, r.vehicle_id, r.status
@@ -4305,25 +4717,26 @@ cron.schedule("*/15 * * * * *", async () => {
        WHERE r.status IN ('in_progress', 'assigned')
        ORDER BY r.start_at DESC`
     );
-    
+
     // Combine routes from store and database
     const allActiveRoutes = new Map();
-    activeRoutesFromStore.forEach(route => {
+    activeRoutesFromStore.forEach((route) => {
       allActiveRoutes.set(route.route_id, route);
     });
-    routesResult.rows.forEach(row => {
+    routesResult.rows.forEach((row) => {
       if (!allActiveRoutes.has(row.route_id)) {
         allActiveRoutes.set(row.route_id, {
           route_id: row.route_id,
           vehicle_id: row.vehicle_id,
           status: row.status,
-          points: new Map() // Will be populated from route_stops
+          points: new Map(), // Will be populated from route_stops
         });
       }
     });
 
     for (const route of allActiveRoutes.values()) {
-      if (route.status !== "inprogress" && route.status !== "in_progress") continue;
+      if (route.status !== "inprogress" && route.status !== "in_progress")
+        continue;
 
       // Get vehicle location from database
       const vehicleResult = await db.query(
@@ -4364,69 +4777,69 @@ cron.schedule("*/15 * * * * *", async () => {
            ORDER BY rs.seq`,
           [route.route_id]
         );
-        
+
         route.points = new Map();
-        stopsResult.rows.forEach(row => {
+        stopsResult.rows.forEach((row) => {
           route.points.set(row.point_id, {
             point_id: row.point_id,
             lat: parseFloat(row.lat),
             lon: parseFloat(row.lon),
-            checked: row.status === 'completed',
+            checked: row.status === "completed",
           });
         });
       }
 
-    for (const point of route.points.values()) {
-      if (point.checked) continue;
+      for (const point of route.points.values()) {
+        if (point.checked) continue;
 
-      const distance = getHaversineDistance(
-        { lat: vehicle.lat, lon: vehicle.lon },
-        { lat: point.lat, lon: point.lon }
-      );
+        const distance = getHaversineDistance(
+          { lat: vehicle.lat, lon: vehicle.lon },
+          { lat: point.lat, lon: point.lon }
+        );
 
-      // Basic check: if vehicle is far past the point, it's likely missed.
-      if (distance > MISSED_POINT_DISTANCE_THRESHOLD) {
-        try {
-          // Check if an open alert for this point on this route already exists
-          const { rows } = await db.query(
-            "SELECT 1 FROM alerts WHERE route_id = $1 AND point_id = $2 AND status = $3 LIMIT 1",
-            [route.route_id, point.point_id, "open"]
-          );
-
-          if (rows.length === 0) {
-            console.log(
-              `🚨 MISSED POINT DETECTED! Route: ${route.route_id}, Point: ${point.point_id}`
+        // Basic check: if vehicle is far past the point, it's likely missed.
+        if (distance > MISSED_POINT_DISTANCE_THRESHOLD) {
+          try {
+            // Check if an open alert for this point on this route already exists
+            const { rows } = await db.query(
+              "SELECT 1 FROM alerts WHERE route_id = $1 AND point_id = $2 AND status = $3 LIMIT 1",
+              [route.route_id, point.point_id, "open"]
             );
-            // Create a new alert in the database
-            const routeIdForInsert =
-              typeof route.route_id === "string" &&
-              /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
-                route.route_id
-              )
-                ? route.route_id
-                : null;
-            await db.query(
-              `INSERT INTO alerts (alert_type, point_id, vehicle_id, route_id, severity, status, details)
+
+            if (rows.length === 0) {
+              console.log(
+                `🚨 MISSED POINT DETECTED! Route: ${route.route_id}, Point: ${point.point_id}`
+              );
+              // Create a new alert in the database
+              const routeIdForInsert =
+                typeof route.route_id === "string" &&
+                /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
+                  route.route_id
+                )
+                  ? route.route_id
+                  : null;
+              await db.query(
+                `INSERT INTO alerts (alert_type, point_id, vehicle_id, route_id, severity, status, details)
                VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-              [
-                "missed_point",
-                point.point_id,
+                [
+                  "missed_point",
+                  point.point_id,
                   route.vehicle_id,
-                routeIdForInsert,
+                  routeIdForInsert,
                   "critical",
-                "open",
-                JSON.stringify({
-                  detected_at: new Date().toISOString(),
-                  vehicle_location: { lat: vehicle.lat, lon: vehicle.lon },
-                }),
-              ]
-            );
+                  "open",
+                  JSON.stringify({
+                    detected_at: new Date().toISOString(),
+                    vehicle_location: { lat: vehicle.lat, lon: vehicle.lon },
+                  }),
+                ]
+              );
+            }
+          } catch (err) {
+            console.error("Error creating missed point alert:", err);
           }
-        } catch (err) {
-          console.error("Error creating missed point alert:", err);
         }
       }
-    }
     }
   } catch (err) {
     console.error("Error in missed point detection cron:", err);
@@ -4439,7 +4852,7 @@ app.post("/api/test/start-route", async (req, res) => {
   try {
     const { route_id, vehicle_id = "V01" } = req.body || {};
     const testRouteId = route_id || require("uuid").v4();
-    
+
     // Get first 5 points from database
     const pointsResult = await db.query(
       `SELECT id as point_id, 
@@ -4457,7 +4870,7 @@ app.post("/api/test/start-route", async (req, res) => {
         .json({ ok: false, error: "No points available in database" });
     }
 
-    const points = pointsResult.rows.map(row => ({
+    const points = pointsResult.rows.map((row) => ({
       point_id: row.point_id,
       lat: parseFloat(row.lat),
       lon: parseFloat(row.lon),
@@ -4530,7 +4943,7 @@ app.get("/api/exceptions", async (req, res) => {
       meta: row.meta,
     }));
 
-  res.json({ ok: true, data: exceptions });
+    res.json({ ok: true, data: exceptions });
   } catch (error) {
     console.error("[Exceptions] Get error:", error);
     res.status(500).json({ ok: false, error: error.message });
@@ -4652,7 +5065,7 @@ app.get("/api/schedules", async (req, res) => {
         s.address LIKE $${paramIndex + 1}
       )`;
       // Use regex pattern for exact district match
-      const districtPattern = district.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const districtPattern = district.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       params.push(`.*${districtPattern}.*`, `%${district}%`);
       paramIndex += 2;
     }
@@ -5055,7 +5468,7 @@ app.get("/api/manager/personnel", async (req, res) => {
         d.address ~ $${paramIndex} OR
         d.address LIKE $${paramIndex + 1}
       )`;
-      const districtPattern = district.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const districtPattern = district.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       params.push(`.*${districtPattern}.*`, `%${district}%`);
       paramIndex += 2;
     }
@@ -5503,7 +5916,15 @@ app.post("/api/groups", async (req, res) => {
         id, name, code, description, vehicle_id, depot_id, operating_area, status
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')
       RETURNING *`,
-      [groupId, name, code || null, description || null, vehicle_id || null, depot_id || null, operating_area || null]
+      [
+        groupId,
+        name,
+        code || null,
+        description || null,
+        vehicle_id || null,
+        depot_id || null,
+        operating_area || null,
+      ]
     );
 
     // Add members
@@ -5536,7 +5957,7 @@ app.post("/api/groups", async (req, res) => {
 app.post("/api/groups/run-migration", async (req, res) => {
   try {
     console.log("[Migration] Starting migration 015: Create Groups Tables");
-    
+
     // Create groups table
     await db.query(`
       CREATE TABLE IF NOT EXISTS groups (
@@ -5554,7 +5975,7 @@ app.post("/api/groups/run-migration", async (req, res) => {
         updated_at timestamptz DEFAULT now()
       );
     `);
-    
+
     // Create group_members table
     await db.query(`
       CREATE TABLE IF NOT EXISTS group_members (
@@ -5567,14 +5988,14 @@ app.post("/api/groups/run-migration", async (req, res) => {
         status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive'))
       );
     `);
-    
+
     // Create unique constraint with WHERE clause separately
     await db.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS group_members_unique_active 
       ON group_members(group_id, personnel_id) 
       WHERE status = 'active';
     `);
-    
+
     // Create group_checkins table
     await db.query(`
       CREATE TABLE IF NOT EXISTS group_checkins (
@@ -5593,22 +6014,44 @@ app.post("/api/groups/run-migration", async (req, res) => {
         created_at timestamptz DEFAULT now()
       );
     `);
-    
+
     // Create indexes
-    await db.query(`CREATE INDEX IF NOT EXISTS groups_status_idx ON groups(status);`);
-    await db.query(`CREATE INDEX IF NOT EXISTS groups_route_idx ON groups(route_id) WHERE route_id IS NOT NULL;`);
-    await db.query(`CREATE INDEX IF NOT EXISTS groups_vehicle_idx ON groups(vehicle_id) WHERE vehicle_id IS NOT NULL;`);
-    await db.query(`CREATE INDEX IF NOT EXISTS groups_depot_idx ON groups(depot_id) WHERE depot_id IS NOT NULL;`);
-    await db.query(`CREATE INDEX IF NOT EXISTS groups_code_idx ON groups(code) WHERE code IS NOT NULL;`);
-    await db.query(`CREATE INDEX IF NOT EXISTS group_members_group_idx ON group_members(group_id);`);
-    await db.query(`CREATE INDEX IF NOT EXISTS group_members_personnel_idx ON group_members(personnel_id);`);
-    await db.query(`CREATE INDEX IF NOT EXISTS group_members_active_idx ON group_members(group_id, personnel_id) WHERE status = 'active';`);
-    await db.query(`CREATE INDEX IF NOT EXISTS group_checkins_group_idx ON group_checkins(group_id);`);
-    await db.query(`CREATE INDEX IF NOT EXISTS group_checkins_route_idx ON group_checkins(route_id);`);
-    await db.query(`CREATE INDEX IF NOT EXISTS group_checkins_checked_at_idx ON group_checkins(checked_at DESC);`);
-    
+    await db.query(
+      `CREATE INDEX IF NOT EXISTS groups_status_idx ON groups(status);`
+    );
+    await db.query(
+      `CREATE INDEX IF NOT EXISTS groups_route_idx ON groups(route_id) WHERE route_id IS NOT NULL;`
+    );
+    await db.query(
+      `CREATE INDEX IF NOT EXISTS groups_vehicle_idx ON groups(vehicle_id) WHERE vehicle_id IS NOT NULL;`
+    );
+    await db.query(
+      `CREATE INDEX IF NOT EXISTS groups_depot_idx ON groups(depot_id) WHERE depot_id IS NOT NULL;`
+    );
+    await db.query(
+      `CREATE INDEX IF NOT EXISTS groups_code_idx ON groups(code) WHERE code IS NOT NULL;`
+    );
+    await db.query(
+      `CREATE INDEX IF NOT EXISTS group_members_group_idx ON group_members(group_id);`
+    );
+    await db.query(
+      `CREATE INDEX IF NOT EXISTS group_members_personnel_idx ON group_members(personnel_id);`
+    );
+    await db.query(
+      `CREATE INDEX IF NOT EXISTS group_members_active_idx ON group_members(group_id, personnel_id) WHERE status = 'active';`
+    );
+    await db.query(
+      `CREATE INDEX IF NOT EXISTS group_checkins_group_idx ON group_checkins(group_id);`
+    );
+    await db.query(
+      `CREATE INDEX IF NOT EXISTS group_checkins_route_idx ON group_checkins(route_id);`
+    );
+    await db.query(
+      `CREATE INDEX IF NOT EXISTS group_checkins_checked_at_idx ON group_checkins(checked_at DESC);`
+    );
+
     console.log("[Migration] Migration 015 completed successfully");
-    
+
     res.json({
       ok: true,
       message: "Migration 015 completed successfully - Groups tables created",
@@ -5626,10 +6069,10 @@ app.post("/api/groups/run-migration", async (req, res) => {
 app.post("/api/groups/auto-create", async (req, res) => {
   try {
     const client = await db.connect();
-    
+
     try {
       await client.query("BEGIN");
-      
+
       // Helper function để extract operating area
       const extractOperatingArea = (person) => {
         if (person.operating_area) return person.operating_area;
@@ -5649,11 +6092,11 @@ app.post("/api/groups/auto-create", async (req, res) => {
         }
         return null;
       };
-      
+
       // Helper function để generate prefix
       const getGroupPrefix = (operatingArea) => {
         if (!operatingArea) return "GRP";
-        
+
         const prefixMap = {
           "Bình Thạnh": "A",
           "Bình Tân": "B",
@@ -5663,15 +6106,18 @@ app.post("/api/groups/auto-create", async (req, res) => {
           "Gò Vấp": "GV",
           "Thủ Đức": "TD",
         };
-        
+
         const quanMatch = operatingArea.match(/Quận\s*(\d+)/);
         if (quanMatch) {
           return `Q${quanMatch[1]}`;
         }
-        
-        return prefixMap[operatingArea] || operatingArea.substring(0, 2).toUpperCase();
+
+        return (
+          prefixMap[operatingArea] ||
+          operatingArea.substring(0, 2).toUpperCase()
+        );
       };
-      
+
       // Lấy tất cả nhân viên active
       const personnelResult = await client.query(`
         SELECT 
@@ -5685,18 +6131,18 @@ app.post("/api/groups/auto-create", async (req, res) => {
         WHERE p.status = 'active'
         ORDER BY p.meta->>'operating_area', p.depot_id, p.name
       `);
-      
+
       const allPersonnel = personnelResult.rows;
-      
+
       // Group personnel theo operating_area và depot_id
       const groupsMap = new Map();
-      
+
       for (const person of allPersonnel) {
         const operatingArea = extractOperatingArea(person);
         if (!operatingArea) continue; // Skip nếu không có khu vực
-        
-        const key = `${operatingArea}|${person.depot_id || 'null'}`;
-        
+
+        const key = `${operatingArea}|${person.depot_id || "null"}`;
+
         if (!groupsMap.has(key)) {
           groupsMap.set(key, {
             operating_area: operatingArea,
@@ -5704,93 +6150,99 @@ app.post("/api/groups/auto-create", async (req, res) => {
             personnel: [],
           });
         }
-        
+
         groupsMap.get(key).personnel.push(person);
       }
-      
+
       // Tạo groups
       let createdCount = 0;
       const groupsByArea = new Map(); // Track số thứ tự theo khu vực
-      
+
       for (const [key, groupData] of groupsMap) {
         if (groupData.personnel.length === 0) continue;
-        
+
         const prefix = getGroupPrefix(groupData.operating_area);
-        
+
         // Get next number cho khu vực này
         const areaKey = groupData.operating_area;
         if (!groupsByArea.has(areaKey)) {
           // Check existing groups
-          const existingResult = await client.query(`
+          const existingResult = await client.query(
+            `
             SELECT name FROM groups 
             WHERE operating_area = $1 AND status = 'active'
             ORDER BY name DESC
-          `, [areaKey]);
-          
+          `,
+            [areaKey]
+          );
+
           const existingNums = existingResult.rows
-            .map(r => {
+            .map((r) => {
               // Extract number from name (A01, B02, Q101, etc.)
               const match = r.name?.match(/(\d+)$/);
               return match ? parseInt(match[1]) : 0;
             })
-            .filter(n => !isNaN(n) && n > 0)
+            .filter((n) => !isNaN(n) && n > 0)
             .sort((a, b) => b - a);
-          
+
           const nextNum = existingNums.length > 0 ? existingNums[0] + 1 : 1;
           groupsByArea.set(areaKey, nextNum);
         } else {
           groupsByArea.set(areaKey, groupsByArea.get(areaKey) + 1);
         }
-        
+
         const groupNum = groupsByArea.get(areaKey).toString().padStart(2, "0");
         const groupName = `${prefix}${groupNum}`;
-        const today = new Date().toISOString().split('T')[0].replace(/-/g, '');
+        const today = new Date().toISOString().split("T")[0].replace(/-/g, "");
         const groupCode = `GRP-${prefix}-${groupNum}-${today}`;
-        
+
         const { v4: uuidv4 } = require("uuid");
         const groupId = uuidv4();
-        
+
         // Create group
-        const groupResult = await client.query(`
+        const groupResult = await client.query(
+          `
           INSERT INTO groups (id, name, code, operating_area, depot_id, status, description)
           VALUES ($1, $2, $3, $4, $5, 'active', $6)
           RETURNING id
-        `, [
-          groupId,
-          groupName,
-          groupCode,
-          groupData.operating_area,
-          groupData.depot_id,
-          `Nhóm tự động tạo từ ${groupData.personnel.length} nhân viên tại ${groupData.operating_area}`
-        ]);
-        
+        `,
+          [
+            groupId,
+            groupName,
+            groupCode,
+            groupData.operating_area,
+            groupData.depot_id,
+            `Nhóm tự động tạo từ ${groupData.personnel.length} nhân viên tại ${groupData.operating_area}`,
+          ]
+        );
+
         // Add members
         const leaderId = groupData.personnel[0].id; // First person as leader
-        
+
         for (let i = 0; i < groupData.personnel.length; i++) {
           const person = groupData.personnel[i];
           const memberId = uuidv4();
-          await client.query(`
+          await client.query(
+            `
             INSERT INTO group_members (id, group_id, personnel_id, role_in_group, status)
             VALUES ($1, $2, $3, $4, 'active')
-          `, [
-            memberId,
-            groupId,
-            person.id,
-            i === 0 ? 'leader' : 'member'
-          ]);
+          `,
+            [memberId, groupId, person.id, i === 0 ? "leader" : "member"]
+          );
         }
-        
+
         createdCount++;
-        console.log(`✅ Auto-created group: ${groupName} (${groupCode}) with ${groupData.personnel.length} members`);
+        console.log(
+          `✅ Auto-created group: ${groupName} (${groupCode}) with ${groupData.personnel.length} members`
+        );
       }
-      
+
       await client.query("COMMIT");
-      
+
       res.json({
         ok: true,
         message: `Đã tạo ${createdCount} nhóm tự động`,
-        data: { created: createdCount }
+        data: { created: createdCount },
       });
     } catch (error) {
       await client.query("ROLLBACK");
@@ -5802,7 +6254,7 @@ app.post("/api/groups/auto-create", async (req, res) => {
     console.error("[Groups] Auto-create error:", error);
     res.status(500).json({
       ok: false,
-      error: error.message || "Tạo nhóm tự động thất bại"
+      error: error.message || "Tạo nhóm tự động thất bại",
     });
   }
 });
@@ -5811,7 +6263,15 @@ app.post("/api/groups/auto-create", async (req, res) => {
 app.put("/api/groups/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, code, description, vehicle_id, depot_id, operating_area, status } = req.body;
+    const {
+      name,
+      code,
+      description,
+      vehicle_id,
+      depot_id,
+      operating_area,
+      status,
+    } = req.body;
 
     const updates = [];
     const params = [];
@@ -5860,7 +6320,9 @@ app.put("/api/groups/:id", async (req, res) => {
     params.push(id);
 
     const { rows } = await db.query(
-      `UPDATE groups SET ${updates.join(", ")} WHERE id = $${paramIndex} RETURNING *`,
+      `UPDATE groups SET ${updates.join(
+        ", "
+      )} WHERE id = $${paramIndex} RETURNING *`,
       params
     );
 
@@ -5976,7 +6438,9 @@ app.delete("/api/groups/:id/members/:personnel_id", async (req, res) => {
     );
 
     if (rows.length === 0) {
-      return res.status(404).json({ ok: false, error: "Member not found in group" });
+      return res
+        .status(404)
+        .json({ ok: false, error: "Member not found in group" });
     }
 
     console.log(`🗑️ Removed member ${personnel_id} from group ${id}`);
@@ -6036,7 +6500,9 @@ app.post("/api/groups/:id/checkins", async (req, res) => {
 
     if (lon !== undefined && lat !== undefined) {
       geomClause = `, geom`;
-      geomValue = `, ST_SetSRID(ST_MakePoint($${paramIndex}, $${paramIndex + 1}), 4326)`;
+      geomValue = `, ST_SetSRID(ST_MakePoint($${paramIndex}, $${
+        paramIndex + 1
+      }), 4326)`;
       params.push(lon, lat);
     }
 
@@ -6279,6 +6745,117 @@ app.post("/api/auth/login", async (req, res) => {
     });
   } catch (error) {
     console.error("[Auth] Login error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/auth/worker/login
+ * Worker login - authenticate personnel from database
+ */
+app.post("/api/auth/worker/login", async (req, res) => {
+  try {
+    const { phone, password } = req.body;
+
+    if (!phone || !password) {
+      return res.status(400).json({
+        ok: false,
+        error: "Phone and password are required",
+      });
+    }
+
+    // Query personnel by phone
+    const { rows } = await db.query(
+      `SELECT 
+        p.*,
+        d.name as depot_name,
+        ST_Y(d.geom::geometry) as depot_lat,
+        ST_X(d.geom::geometry) as depot_lon
+       FROM personnel p
+       LEFT JOIN depots d ON p.depot_id = d.id
+       WHERE p.phone = $1 AND p.status = 'active'`,
+      [phone]
+    );
+
+    if (rows.length === 0) {
+      return res.status(401).json({
+        ok: false,
+        error: "Invalid phone or password",
+      });
+    }
+
+    const personnel = rows[0];
+
+    // TODO: In production, verify password hash
+    // For now, accept '123456' or 'worker123' for demo
+    if (password !== "123456" && password !== "worker123") {
+      return res.status(401).json({
+        ok: false,
+        error: "Invalid phone or password",
+      });
+    }
+
+    // Get group information if assigned
+    const groupResult = await db.query(
+      `SELECT 
+        g.*,
+        gm.role_in_group,
+        v.plate as vehicle_plate,
+        v.type as vehicle_type,
+        v.capacity_kg as vehicle_capacity
+       FROM group_members gm
+       JOIN groups g ON gm.group_id = g.id
+       LEFT JOIN vehicles v ON g.vehicle_id = v.id
+       WHERE gm.personnel_id = $1 
+         AND gm.status = 'active'
+         AND g.status = 'active'
+       LIMIT 1`,
+      [personnel.id]
+    );
+
+    const group = groupResult.rows.length > 0 ? groupResult.rows[0] : null;
+
+    console.log(`🔐 Worker logged in: ${personnel.name} (${personnel.phone})`);
+
+    // Return worker data with group info
+    res.json({
+      ok: true,
+      data: {
+        id: personnel.id,
+        phone: personnel.phone,
+        email: personnel.email || "",
+        role: "worker", // Set role as 'worker' for mobile app
+        personnelRole: personnel.role, // driver, collector, etc.
+        fullName: personnel.name,
+        depotId: personnel.depot_id,
+        depotName: personnel.depot_name || "",
+        depotLocation:
+          personnel.depot_lat && personnel.depot_lon
+            ? {
+                latitude: personnel.depot_lat,
+                longitude: personnel.depot_lon,
+              }
+            : null,
+        groupId: group?.id || null,
+        groupName: group?.name || null,
+        groupCode: group?.code || null,
+        roleInGroup: group?.role_in_group || null,
+        operatingArea: group?.operating_area || null,
+        vehicleId: group?.vehicle_id || null,
+        vehiclePlate: group?.vehicle_plate || null,
+        vehicleType: group?.vehicle_type || null,
+        skills: personnel.meta?.skills || [],
+        experience: personnel.meta?.experience_years || 0,
+        license: personnel.meta?.license || null,
+        isVerified: true,
+        isActive: personnel.status === "active",
+        createdAt: personnel.created_at,
+        updatedAt: personnel.updated_at,
+      },
+      message: "Login successful",
+    });
+  } catch (error) {
+    console.error("[Auth] Worker login error:", error);
     res.status(500).json({ ok: false, error: error.message });
   }
 });
@@ -6751,18 +7328,18 @@ app.post("/api/incidents", async (req, res) => {
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending')
       RETURNING *`,
       [
-            reporter_id,
-            reporter_name,
-            reporter_phone,
-            report_category,
-            type,
-            description,
+        reporter_id,
+        reporter_name,
+        reporter_phone,
+        report_category,
+        type,
+        description,
         latitude || null,
         longitude || null,
         location_address || null,
-            image_urls,
-            priority,
-          ]
+        image_urls,
+        priority,
+      ]
     );
 
     console.log(
@@ -6904,6 +7481,363 @@ app.delete("/api/incidents/:id", async (req, res) => {
   }
 });
 
+// ============================================================================
+// WORKER APP APIS
+// ============================================================================
+
+/**
+ * GET /api/worker/profile/:id
+ * Get worker profile with group and vehicle information
+ */
+app.get("/api/worker/profile/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await db.query(
+      `
+      SELECT 
+        p.*,
+        d.name as depot_name,
+        d.geom as depot_location,
+        -- Group information
+        g.id as group_id,
+        g.name as group_name,
+        g.code as group_code,
+        g.operating_area,
+        g.vehicle_id,
+        gm.role_in_group,
+        -- Vehicle information
+        v.plate as vehicle_plate,
+        v.type as vehicle_type,
+        v.capacity_kg as vehicle_capacity,
+        v.status as vehicle_status
+      FROM personnel p
+      LEFT JOIN depots d ON p.depot_id = d.id
+      LEFT JOIN group_members gm ON p.id = gm.personnel_id AND gm.status = 'active'
+      LEFT JOIN groups g ON gm.group_id = g.id AND g.status = 'active'
+      LEFT JOIN vehicles v ON g.vehicle_id = v.id
+      WHERE p.id = $1
+    `,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "Personnel not found" });
+    }
+
+    res.json({ ok: true, data: result.rows[0] });
+  } catch (error) {
+    console.error("[Worker] Get profile error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/worker/group/:personnelId
+ * Get worker's current group with all members
+ */
+app.get("/api/worker/group/:personnelId", async (req, res) => {
+  try {
+    const { personnelId } = req.params;
+
+    // Get group info
+    const groupResult = await db.query(
+      `
+      SELECT 
+        g.*,
+        v.plate as vehicle_plate,
+        v.type as vehicle_type,
+        v.capacity_kg as vehicle_capacity,
+        d.name as depot_name
+      FROM groups g
+      JOIN group_members gm ON g.id = gm.group_id
+      LEFT JOIN vehicles v ON g.vehicle_id = v.id
+      LEFT JOIN depots d ON g.depot_id = d.id
+      WHERE gm.personnel_id = $1 
+        AND gm.status = 'active'
+        AND g.status = 'active'
+      LIMIT 1
+    `,
+      [personnelId]
+    );
+
+    if (groupResult.rows.length === 0) {
+      return res.json({ ok: true, data: null, message: "No active group" });
+    }
+
+    const group = groupResult.rows[0];
+
+    // Get all members
+    const membersResult = await db.query(
+      `
+      SELECT 
+        p.id,
+        p.name,
+        p.role,
+        p.phone,
+        p.email,
+        gm.role_in_group,
+        gm.joined_at
+      FROM group_members gm
+      JOIN personnel p ON gm.personnel_id = p.id
+      WHERE gm.group_id = $1 AND gm.status = 'active'
+      ORDER BY 
+        CASE gm.role_in_group WHEN 'leader' THEN 1 ELSE 2 END,
+        p.name
+    `,
+      [group.id]
+    );
+
+    group.members = membersResult.rows;
+
+    res.json({ ok: true, data: group });
+  } catch (error) {
+    console.error("[Worker] Get group error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/worker/schedule/:personnelId
+ * Get worker's schedule for today or specified date
+ */
+app.get("/api/worker/schedule/:personnelId", async (req, res) => {
+  try {
+    const { personnelId } = req.params;
+    const { date } = req.query;
+    const targetDate = date || new Date().toISOString().split("T")[0];
+
+    const result = await db.query(
+      `
+      SELECT 
+        s.*,
+        p.name as point_name,
+        p.address,
+        ST_Y(p.geom::geometry) as lat,
+        ST_X(p.geom::geometry) as lon,
+        u.phone as citizen_phone,
+        ua.label as citizen_address_label
+      FROM schedules s
+      JOIN points p ON s.point_id = p.id
+      LEFT JOIN user_addresses ua ON s.citizen_address_id = ua.id
+      LEFT JOIN users u ON ua.user_id = u.id
+      WHERE s.assigned_to = $1
+        AND DATE(s.scheduled_date) = $2
+      ORDER BY s.scheduled_time
+    `,
+      [personnelId, targetDate]
+    );
+
+    res.json({ ok: true, data: result.rows });
+  } catch (error) {
+    console.error("[Worker] Get schedule error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/worker/route/:routeId
+ * Get route details with stops for worker
+ */
+app.get("/api/worker/route/:routeId", async (req, res) => {
+  try {
+    const { routeId } = req.params;
+
+    // Get route info
+    const routeResult = await db.query(
+      `
+      SELECT 
+        r.*,
+        v.plate as vehicle_plate,
+        v.type as vehicle_type,
+        d1.name as depot_name,
+        d2.name as dump_name
+      FROM routes r
+      LEFT JOIN vehicles v ON r.vehicle_id = v.id
+      LEFT JOIN depots d1 ON r.depot_id = d1.id
+      LEFT JOIN dumps d2 ON r.dump_id = d2.id
+      WHERE r.id = $1
+    `,
+      [routeId]
+    );
+
+    if (routeResult.rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "Route not found" });
+    }
+
+    const route = routeResult.rows[0];
+
+    // Get route stops
+    const stopsResult = await db.query(
+      `
+      SELECT 
+        rs.*,
+        p.name as point_name,
+        p.address,
+        p.waste_type,
+        ST_Y(p.geom::geometry) as lat,
+        ST_X(p.geom::geometry) as lon
+      FROM route_stops rs
+      JOIN points p ON rs.point_id = p.id
+      WHERE rs.route_id = $1
+      ORDER BY rs.stop_order
+    `,
+      [routeId]
+    );
+
+    route.stops = stopsResult.rows;
+
+    res.json({ ok: true, data: route });
+  } catch (error) {
+    console.error("[Worker] Get route error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/worker/checkin
+ * Worker check-in at a point (group checkin)
+ */
+app.post("/api/worker/checkin", async (req, res) => {
+  try {
+    const {
+      group_id,
+      route_id,
+      route_stop_id,
+      checked_by,
+      point_id,
+      waste_type,
+      collected_weight_kg,
+      quantity_bags,
+      notes,
+      photo_urls,
+      lat,
+      lon,
+    } = req.body;
+
+    const result = await db.query(
+      `
+      INSERT INTO group_checkins (
+        group_id, route_id, route_stop_id, checked_by, 
+        waste_type, collected_weight_kg, quantity_bags,
+        notes, photo_urls, geom
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, ST_GeogFromText($10))
+      RETURNING *
+    `,
+      [
+        group_id,
+        route_id,
+        route_stop_id,
+        checked_by,
+        waste_type,
+        collected_weight_kg || 0,
+        quantity_bags || 0,
+        notes,
+        photo_urls || [],
+        lat && lon ? `POINT(${lon} ${lat})` : null,
+      ]
+    );
+
+    // Update route stop status if provided
+    if (route_stop_id) {
+      await db.query(
+        `
+        UPDATE route_stops 
+        SET status = 'completed', 
+            completed_at = NOW(),
+            actual_weight_kg = $1
+        WHERE id = $2
+      `,
+        [collected_weight_kg, route_stop_id]
+      );
+    }
+
+    // Emit real-time update via Socket.IO
+    io.emit("checkin:created", result.rows[0]);
+
+    res.json({
+      ok: true,
+      data: result.rows[0],
+      message: "Check-in recorded successfully",
+    });
+  } catch (error) {
+    console.error("[Worker] Check-in error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/worker/checkins/:groupId
+ * Get check-in history for a group
+ */
+app.get("/api/worker/checkins/:groupId", async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const { date, limit = 50 } = req.query;
+
+    let query = `
+      SELECT 
+        gc.*,
+        p.name as personnel_name,
+        ST_Y(gc.geom::geometry) as lat,
+        ST_X(gc.geom::geometry) as lon
+      FROM group_checkins gc
+      JOIN personnel p ON gc.checked_by = p.id
+      WHERE gc.group_id = $1
+    `;
+
+    const params = [groupId];
+
+    if (date) {
+      query += ` AND DATE(gc.checked_at) = $2`;
+      params.push(date);
+    }
+
+    query += ` ORDER BY gc.checked_at DESC LIMIT $${params.length + 1}`;
+    params.push(limit);
+
+    const result = await db.query(query, params);
+
+    res.json({ ok: true, data: result.rows });
+  } catch (error) {
+    console.error("[Worker] Get checkins error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/worker/stats/:personnelId
+ * Get worker statistics
+ */
+app.get("/api/worker/stats/:personnelId", async (req, res) => {
+  try {
+    const { personnelId } = req.params;
+    const { period = "30" } = req.query; // days
+
+    const stats = await db.query(
+      `
+      SELECT 
+        COUNT(DISTINCT gc.id) as total_checkins,
+        COALESCE(SUM(gc.collected_weight_kg), 0) as total_weight_kg,
+        COALESCE(SUM(gc.quantity_bags), 0) as total_bags,
+        COUNT(DISTINCT DATE(gc.checked_at)) as days_worked,
+        COUNT(DISTINCT gc.route_id) as routes_completed
+      FROM group_checkins gc
+      JOIN group_members gm ON gc.group_id = gm.group_id
+      WHERE gm.personnel_id = $1
+        AND gm.status = 'active'
+        AND gc.checked_at >= NOW() - INTERVAL '${period} days'
+    `,
+      [personnelId]
+    );
+
+    res.json({ ok: true, data: stats.rows[0] });
+  } catch (error) {
+    console.error("[Worker] Get stats error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 // Scheduled tasks for data collection
 cron.schedule("*/5 * * * *", () => {
   console.log("Running scheduled environmental data collection...");
@@ -6931,17 +7865,21 @@ app.use("*", (req, res) => {
 });
 
 // Start server (HTTP + Socket.IO)
-server.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 EcoCheck Backend started on port ${PORT}`);
   console.log(`📊 Health check: http://localhost:${PORT}/health`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || "development"}`);
 });
 
 // Handle EADDRINUSE error gracefully
-server.on('error', (err) => {
-  if (err.code === 'EADDRINUSE') {
-    console.error(`❌ Port ${PORT} is already in use. Please wait a few seconds and try again.`);
-    console.error(`   Or kill the process using: netstat -ano | findstr :${PORT}`);
+server.on("error", (err) => {
+  if (err.code === "EADDRINUSE") {
+    console.error(
+      `❌ Port ${PORT} is already in use. Please wait a few seconds and try again.`
+    );
+    console.error(
+      `   Or kill the process using: netstat -ano | findstr :${PORT}`
+    );
     process.exit(1);
   } else {
     throw err;

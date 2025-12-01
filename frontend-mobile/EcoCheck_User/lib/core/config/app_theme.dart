@@ -31,11 +31,16 @@ class AppTheme {
     // App Bar
     appBarTheme: const AppBarTheme(
       elevation: 0,
-      centerTitle: true,
-      backgroundColor: AppColors.white,
-      foregroundColor: AppColors.black,
-      iconTheme: IconThemeData(color: AppColors.black),
-      titleTextStyle: AppTextStyles.h4,
+      centerTitle: false,
+      backgroundColor: AppColors.primary,
+      foregroundColor: AppColors.white,
+      iconTheme: IconThemeData(color: AppColors.white),
+      titleTextStyle: TextStyle(
+        color: AppColors.white,
+        fontSize: 18,
+        fontWeight: FontWeight.bold,
+        fontFamily: AppTextStyles.fontFamily,
+      ),
     ),
 
     // Text Theme

@@ -58,34 +58,126 @@ class _ScheduleListViewState extends State<_ScheduleListView>
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text(AppStrings.schedule),
+        backgroundColor: AppColors.primary,
         elevation: 0,
-        flexibleSpace: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [AppColors.primary, AppColors.primaryDark],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+        title: const Text(
+          'Yêu cầu thu gom',
+          style: TextStyle(
+            color: AppColors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
           ),
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.search, color: AppColors.white),
             onPressed: () {
-              context.read<ScheduleBloc>().add(const SchedulesLoaded());
+              // TODO: Implement search
             },
-            tooltip: 'Làm mới',
+            tooltip: 'Tìm kiếm',
+          ),
+          IconButton(
+            icon: const Icon(Icons.filter_list, color: AppColors.white),
+            onPressed: () {
+              // TODO: Implement filter
+            },
+            tooltip: 'Lọc',
           ),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: AppColors.white,
-          indicatorWeight: 3,
-          tabs: const [
-            Tab(icon: Icon(Icons.schedule), text: 'Chờ thu gom'),
-            Tab(icon: Icon(Icons.check_circle), text: 'Hoàn thành'),
-          ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(48),
+          child: Container(
+            color: AppColors.primary,
+            child: TabBar(
+              controller: _tabController,
+              indicatorColor: AppColors.white,
+              indicatorWeight: 3,
+              dividerColor: Colors.transparent,
+              labelColor: AppColors.white,
+              unselectedLabelColor: AppColors.white.withOpacity(0.7),
+              labelStyle: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+              tabs: [
+                Tab(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text('Tất cả'),
+                      const SizedBox(width: 4),
+                      BlocBuilder<ScheduleBloc, ScheduleState>(
+                        builder: (context, state) {
+                          final schedules = state is ScheduleLoaded
+                              ? state.schedules
+                              : <ScheduleModel>[];
+                          final count = _getSchedulesByStatuses(schedules, [
+                            AppConstants.statusScheduled,
+                            AppConstants.statusConfirmed,
+                            AppConstants.statusAssigned,
+                            AppConstants.statusInProgress,
+                          ]).length;
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '($count)',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                Tab(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text('Đang xử lý'),
+                      const SizedBox(width: 4),
+                      BlocBuilder<ScheduleBloc, ScheduleState>(
+                        builder: (context, state) {
+                          final schedules = state is ScheduleLoaded
+                              ? state.schedules
+                              : <ScheduleModel>[];
+                          final count = _getSchedulesByStatuses(schedules, [
+                            AppConstants.statusInProgress,
+                          ]).length;
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '($count)',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
       body: BlocBuilder<ScheduleBloc, ScheduleState>(
@@ -129,7 +221,7 @@ class _ScheduleListViewState extends State<_ScheduleListView>
           return TabBarView(
             controller: _tabController,
             children: [
-              // Tab 1: Đã xác nhận (scheduled, confirmed, assigned, in_progress)
+              // Tab 1: Tất cả (scheduled, confirmed, assigned, in_progress)
               _ScheduleList(
                 schedules: _getSchedulesByStatuses(schedules, [
                   AppConstants.statusScheduled,
@@ -137,14 +229,14 @@ class _ScheduleListViewState extends State<_ScheduleListView>
                   AppConstants.statusAssigned,
                   AppConstants.statusInProgress,
                 ]),
-                emptyMessage: 'Không có lịch chờ xác nhận',
+                emptyMessage: 'Không có yêu cầu thu gom nào',
               ),
-              // Tab 2: Hoàn thành (completed)
+              // Tab 2: Đang xử lý (in_progress)
               _ScheduleList(
                 schedules: _getSchedulesByStatuses(schedules, [
-                  AppConstants.statusCompleted,
+                  AppConstants.statusInProgress,
                 ]),
-                emptyMessage: 'Chưa có lịch hoàn thành',
+                emptyMessage: 'Không có yêu cầu đang xử lý',
               ),
             ],
           );

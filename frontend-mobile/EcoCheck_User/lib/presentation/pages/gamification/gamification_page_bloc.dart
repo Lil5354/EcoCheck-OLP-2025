@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:eco_check/core/constants/color_constants.dart';
 import 'package:eco_check/core/constants/text_constants.dart';
+import 'package:eco_check/presentation/blocs/auth/auth_bloc.dart';
+import 'package:eco_check/presentation/blocs/auth/auth_state.dart';
 import 'package:eco_check/presentation/blocs/gamification/gamification_bloc.dart';
 import 'package:eco_check/presentation/blocs/gamification/gamification_event.dart';
 import 'package:eco_check/presentation/blocs/gamification/gamification_state.dart';
@@ -25,7 +27,12 @@ class _GamificationPageBlocState extends State<GamificationPageBloc>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    context.read<GamificationBloc>().add(const LoadUserStats('user-123'));
+
+    // Get userId from auth state
+    final authState = context.read<AuthBloc>().state;
+    if (authState is Authenticated) {
+      context.read<GamificationBloc>().add(LoadUserStats(authState.user.id));
+    }
   }
 
   @override
@@ -41,6 +48,9 @@ class _GamificationPageBlocState extends State<GamificationPageBloc>
         title: const Text('Điểm xanh & Bảng xếp hạng'),
         bottom: TabBar(
           controller: _tabController,
+          indicatorColor: AppColors.white,
+          labelColor: AppColors.white,
+          unselectedLabelColor: AppColors.white.withOpacity(0.7),
           tabs: const [
             Tab(text: 'Huy hiệu'),
             Tab(text: 'Xếp hạng'),
@@ -85,9 +95,14 @@ class _GamificationPageBlocState extends State<GamificationPageBloc>
           }
 
           return _ErrorView(
-            onRetry: () => context.read<GamificationBloc>().add(
-              const LoadUserStats('user-123'),
-            ),
+            onRetry: () {
+              final authState = context.read<AuthBloc>().state;
+              if (authState is Authenticated) {
+                context.read<GamificationBloc>().add(
+                  LoadUserStats(authState.user.id),
+                );
+              }
+            },
           );
         },
       ),
