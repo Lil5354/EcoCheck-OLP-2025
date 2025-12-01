@@ -1,0 +1,206 @@
+# MIT License
+# Copyright (c) 2025 Lil5354
+# EcoCheck-OLP-2025 Docker Compose Configuration - PRODUCTION OPTIMIZED
+# Tối ưu dung lượng và hiệu suất cho production
+
+version: '3.8'
+
+services:
+  # PostgreSQL for application data
+  postgres:
+    image: timescale/timescaledb-ha:pg15-all
+    container_name: ecocheck-postgres-prod
+    environment:
+      POSTGRES_DB: ecocheck
+      POSTGRES_USER: ecocheck_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-ecocheck_pass}
+      TIMESCALEDB_TELEMETRY: "off"
+      # Tối ưu memory
+      POSTGRES_SHARED_BUFFERS: 256MB
+      POSTGRES_EFFECTIVE_CACHE_SIZE: 1GB
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+      - ./db:/app/db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ecocheck_user -d ecocheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - ecocheck-network
+    restart: unless-stopped
+    # Tối ưu resources
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+
+  redis:
+    image: redis:7-alpine
+    container_name: ecocheck-redis-prod
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    networks:
+      - ecocheck-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+  # FIWARE Orion-LD Context Broker (NGSI-LD)
+  orion-ld:
+    image: fiware/orion-ld:latest
+    platform: linux/amd64
+    hostname: orion-ld
+    container_name: ecocheck-orion-ld-prod
+    depends_on:
+      mongo-db:
+        condition: service_healthy
+    ports:
+      - "${ORION_PORT:-1026}:1026"
+    environment:
+      - ORIONLD_MONGO_HOST=mongo-db:27017
+    command: -dbURI mongodb://ecocheck-mongodb:27017/orion -logLevel INFO -dbTimeout 30000
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:1026/version || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    links:
+      - mongo-db:ecocheck-mongodb
+    networks:
+      - ecocheck-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  # MongoDB for Orion Context Broker
+  mongo-db:
+    image: mongo:4.4
+    hostname: mongo-db
+    container_name: ecocheck-mongodb-prod
+    command: --bind_ip_all --wiredTigerCacheSizeGB 0.5
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    volumes:
+      - mongo-db-data:/data/db
+      - mongo-db-config:/data/configdb
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongo localhost:27017/test --quiet
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      ecocheck-network:
+        aliases:
+          - mongo-db
+          - mongodb
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  # EcoCheck Backend (Node.js)
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      args:
+        NODE_ENV: production
+    container_name: ecocheck-backend-prod
+    depends_on:
+      orion-ld:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - ORION_LD_URL=http://orion-ld:1026
+      - FIWARE_SERVICE=ecocheck
+      - FIWARE_SERVICE_PATH=/hcm
+      - DATABASE_URL=postgresql://ecocheck_user:${DB_PASSWORD:-ecocheck_pass}@postgres:5432/ecocheck
+      - REDIS_URL=redis://redis:6379
+      # Variables for migration script
+      - DB_HOST=postgres
+      - DB_USER=ecocheck_user
+      - DB_PASSWORD=${DB_PASSWORD:-ecocheck_pass}
+      - DB_NAME=ecocheck
+      - DB_PORT=5432
+      # API Keys (nếu có)
+      - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY:-}
+      - AIRQUALITY_API_KEY=${AIRQUALITY_API_KEY:-}
+    volumes:
+      - ./backend/public/uploads:/app/public/uploads:rw
+    healthcheck:
+      test: curl --fail -s http://localhost:3000/health || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - ecocheck-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  # Frontend Web Manager (React)
+  frontend-web:
+    build:
+      context: ./frontend-web-manager
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+    container_name: ecocheck-frontend-web-prod
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${FRONTEND_PORT:-3001}:80"
+    networks:
+      - ecocheck-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M
+
+volumes:
+  mongo-db-data:
+    driver: local
+  mongo-db-config:
+    driver: local
+  postgres-data:
+    driver: local
+
+networks:
+  ecocheck-network:
+    driver: bridge
+
