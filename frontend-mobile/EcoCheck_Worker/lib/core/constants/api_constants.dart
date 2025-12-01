@@ -5,9 +5,9 @@ import 'package:flutter/foundation.dart';
 class ApiConstants {
   ApiConstants._();
 
-  // Base URL
+  // Base URL - Railway Production
   static const String baseUrl =
-      'https://api.ecocheck.vn'; // TODO: Update with actual URL
+      'https://ecocheck-olp-2025-production.up.railway.app';
 
   // Development Base URL - Platform specific
   static String get devBaseUrl {
@@ -88,7 +88,7 @@ class ApiConstants {
   static const String uploadImage = '$apiPrefix/upload/image';
 
   // WebSocket
-  static const String wsBaseUrl = 'wss://api.ecocheck.vn';
+  static const String wsBaseUrl = 'wss://ecocheck-olp-2025-production.up.railway.app';
   static const String wsTracking = '/tracking';
 
   // Google Maps API
