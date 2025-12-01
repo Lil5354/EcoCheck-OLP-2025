@@ -1,0 +1,3 @@
+# Force Railway to use Dockerfile instead of Railpack
+# This file tells Railway to skip Railpack auto-detection
+

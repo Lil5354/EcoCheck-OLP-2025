@@ -5,6 +5,7 @@
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile.railway"
+watchPatterns = ["**"]
 
 [deploy]
 startCommand = "node src/index.js"
