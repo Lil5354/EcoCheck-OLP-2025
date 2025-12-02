@@ -223,7 +223,10 @@ export default function DepotsDumps() {
             {modalOpen && editItem && (
               <MapPicker
                 key={`${editItem.id || 'new'}-${editItem.lon}-${editItem.lat}`}
-                center={[editItem.lon || 106.7, editItem.lat || 10.78]}
+                center={[
+                  typeof editItem.lon === 'number' ? editItem.lon : parseFloat(editItem.lon) || 106.7,
+                  typeof editItem.lat === 'number' ? editItem.lat : parseFloat(editItem.lat) || 10.78
+                ]}
                 address={editItem.address || ''}
                 onPick={(coords) => setEditItem({ ...editItem, lon: coords[0], lat: coords[1] })}
                 onAddressChange={(address) => setEditItem({ ...editItem, address })}

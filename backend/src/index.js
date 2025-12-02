@@ -982,6 +982,16 @@ app.post("/api/master/fleet", async (req, res) => {
       });
     }
 
+    // CRITICAL FIX: Validate and map status
+    // Database constraint requires: 'available', 'in_use', 'maintenance', 'retired'
+    let dbStatus = status || 'available';
+    if (dbStatus === 'ready') {
+      dbStatus = 'available';
+    } else if (!['available', 'in_use', 'maintenance', 'retired'].includes(dbStatus)) {
+      console.warn(`[Fleet] Invalid status "${dbStatus}", defaulting to 'available'`);
+      dbStatus = 'available';
+    }
+
     // Generate vehicle ID
     const vehicleId = `VH${Date.now().toString().slice(-6)}`;
 
@@ -996,7 +1006,7 @@ app.post("/api/master/fleet", async (req, res) => {
         type,
         capacity,
         types || [],
-        status || "available",
+        dbStatus,
         depot_id || null,
         fuel_type || "diesel",
       ]
@@ -1067,8 +1077,18 @@ app.patch("/api/master/fleet/:id", async (req, res) => {
     }
 
     if (status !== undefined) {
+      // CRITICAL FIX: Map frontend status to database values
+      // Database constraint requires: 'available', 'in_use', 'maintenance', 'retired'
+      let dbStatus = status;
+      if (status === 'ready') {
+        dbStatus = 'available';
+      } else if (!['available', 'in_use', 'maintenance', 'retired'].includes(status)) {
+        // Invalid status, default to 'available'
+        console.warn(`[Fleet] Invalid status "${status}", defaulting to 'available'`);
+        dbStatus = 'available';
+      }
       updates.push(`status = $${paramIndex++}`);
-      params.push(status);
+      params.push(dbStatus);
     }
 
     if (depot_id !== undefined) {
@@ -3133,13 +3153,15 @@ app.post("/api/vrp/optimize", async (req, res) => {
       });
     }
 
-    // If dump is not provided, find best dump automatically
-    // NOTE: Dump is NOT required for grouping points, only for route optimization
-    let selectedDump = dump;
-    if (!selectedDump && dumpsList && dumpsList.length > 0) {
-      selectedDump = await findBestDumpForDistrict(depot, points, dumpsList);
-      console.log(`[VRP] Auto-selected dump: ${selectedDump?.name || "None"}`);
-    } else if (!selectedDump) {
+    // If dump is not provided, we'll select best dump per route after optimization
+    // NOTE: Dump selection is done per route based on last stop (after optimization)
+    // This ensures dump is closest to the actual last collection point
+    let globalSelectedDump = dump;
+    if (!globalSelectedDump && dumpsList && dumpsList.length > 0) {
+      // Pre-select a dump for initial clustering (will be refined per route later)
+      globalSelectedDump = await findBestDumpForDistrict(depot, points, dumpsList);
+      console.log(`[VRP] Pre-selected dump for clustering: ${globalSelectedDump?.name || "None"}`);
+    } else if (!globalSelectedDump) {
       console.warn(
         `[VRP] No dump provided - routes will end at last stop (no dump destination)`
       );
@@ -3393,11 +3415,45 @@ app.post("/api/vrp/optimize", async (req, res) => {
         route.stops = await optimizeStopOrder(
           route.stops,
           vehicleStartLocation,
-          selectedDump || vehicleStartLocation
+          globalSelectedDump || vehicleStartLocation
         );
         console.log(
           `[VRP] Vehicle ${vehicle.id}: Optimized ${route.stops.length} stops using Hybrid CI-SA`
         );
+      }
+      
+      // CRITICAL FIX: Select best dump for THIS route based on LAST stop (after optimization)
+      // This ensures dump is closest to the actual last collection point in the route
+      let selectedDump = globalSelectedDump;
+      if (dumpsList && dumpsList.length > 0 && route.stops.length > 0) {
+        // Find last stop in optimized route
+        const lastStop = route.stops[route.stops.length - 1];
+        if (lastStop && lastStop.lat && lastStop.lon) {
+          // Find dump closest to last stop
+          let nearestDump = null;
+          let minDistance = Infinity;
+          
+          for (const dump of dumpsList) {
+            if (!dump.lat || !dump.lon || (dump.status && dump.status !== 'active')) continue;
+            
+            const distance = getHaversineDistance(
+              { lat: lastStop.lat, lon: lastStop.lon },
+              { lat: dump.lat, lon: dump.lon }
+            );
+            
+            if (distance < minDistance) {
+              minDistance = distance;
+              nearestDump = dump;
+            }
+          }
+          
+          if (nearestDump) {
+            selectedDump = nearestDump;
+            console.log(
+              `[VRP] Vehicle ${vehicle.id}: Selected dump "${nearestDump.name}" closest to last stop (${Math.round(minDistance)}m away)`
+            );
+          }
+        }
       }
 
       // Build waypoints: vehicle current location -> optimized stops -> dump
@@ -3655,12 +3711,20 @@ app.post("/api/vrp/optimize", async (req, res) => {
       }
 
       // CRITICAL FIX: Ensure route geometry ALWAYS includes depot and dump
-      // Create a new geometry array that definitely includes START and END
-      if (routeGeometry && routeGeometry.coordinates && routeGeometry.coordinates.length > 0) {
-        const depotCoords = vehicleStartLocation ? [vehicleStartLocation.lon, vehicleStartLocation.lat] : null;
-        const dumpCoords = selectedDump ? [selectedDump.lon, selectedDump.lat] : null;
+      // Handle ALL cases: routeGeometry null, empty, or valid
+      const depotCoords = vehicleStartLocation ? [vehicleStartLocation.lon, vehicleStartLocation.lat] : null;
+      const dumpCoords = selectedDump ? [selectedDump.lon, selectedDump.lat] : null;
+      
+      // Check if routeGeometry is valid (has coordinates)
+      const hasValidGeometry = routeGeometry && 
+                               routeGeometry.coordinates && 
+                               Array.isArray(routeGeometry.coordinates) &&
+                               routeGeometry.coordinates.length > 0;
+      
+      if (hasValidGeometry) {
+        // Case 1: OSRM returned valid route - ensure depot and dump are included
+        console.log(`[VRP] Vehicle ${vehicle.id}: OSRM returned valid route with ${routeGeometry.coordinates.length} coordinates`);
         
-        // Create new coordinates array that ALWAYS starts with depot and ends with dump
         const newCoordinates = [];
         
         // 1. ALWAYS start with depot
@@ -3678,7 +3742,7 @@ app.post("/api/vrp/optimize", async (req, res) => {
           ) * 111000;
           
           if (distToDepot < 50) {
-            // Route already starts at depot, skip first coordinate
+            // Route already starts at depot, skip first coordinate to avoid duplicate
             newCoordinates.push(...routeGeometry.coordinates.slice(1));
           } else {
             // Route doesn't start at depot, add all coordinates
@@ -3713,36 +3777,60 @@ app.post("/api/vrp/optimize", async (req, res) => {
         };
         
         console.log(`[VRP] Route geometry updated: ${newCoordinates.length} coordinates (START + route + END)`);
-      } else if (!routeGeometry && waypoints.length >= 2) {
-        // Fallback: Create straight line from waypoints if OSRM failed
-        console.warn(`[VRP] OSRM failed, creating fallback straight line from waypoints`);
+      } else if (waypoints.length >= 2) {
+        // Case 2: OSRM failed or returned empty/invalid geometry - create fallback from waypoints
+        // waypoints already includes depot (first) and dump (last if exists)
+        console.warn(`[VRP] Vehicle ${vehicle.id}: OSRM failed or returned empty geometry, creating fallback from ${waypoints.length} waypoints`);
+        console.log(`[VRP] Fallback waypoints:`, waypoints.map(wp => `[${wp[0].toFixed(4)}, ${wp[1].toFixed(4)}]`).join(' -> '));
+        
         routeGeometry = {
           type: "LineString",
-          coordinates: waypoints
+          coordinates: waypoints // waypoints already includes depot and dump
         };
+        
+        console.log(`[VRP] Fallback route created with ${waypoints.length} waypoints (includes START and END)`);
+      } else {
+        // Case 3: No waypoints - cannot create route
+        console.error(`[VRP] Vehicle ${vehicle.id}: Cannot create route - no valid geometry and insufficient waypoints (${waypoints.length})`);
+        routeGeometry = null;
       }
 
       // Update route object with optimized data (don't push new, update existing)
       route.distance = totalDistance; // in meters
       route.eta = eta; // format: "H:MM"
-      route.geojson = {
-        type: "FeatureCollection",
-        features: [
-          {
-            type: "Feature",
-            geometry: routeGeometry || {
-              type: "LineString",
-              coordinates: waypoints // Fallback: use waypoints as straight line if OSRM fails
+      
+      // Ensure routeGeometry is valid before creating geojson
+      // If routeGeometry is still null, use waypoints as final fallback
+      const finalGeometry = routeGeometry || (waypoints.length >= 2 ? {
+        type: "LineString",
+        coordinates: waypoints
+      } : null);
+      
+      if (!finalGeometry || !finalGeometry.coordinates || finalGeometry.coordinates.length < 2) {
+        console.error(`[VRP] Vehicle ${vehicle.id}: Cannot create route geojson - invalid geometry`);
+        // Still create route object but mark as incomplete
+        route.geojson = {
+          type: "FeatureCollection",
+          features: []
+        };
+      } else {
+        route.geojson = {
+          type: "FeatureCollection",
+          features: [
+            {
+              type: "Feature",
+              geometry: finalGeometry,
+              properties: {
+                vehicleId: vehicle.id,
+                vehiclePlate: vehicle.plate,
+                distance: totalDistance,
+                duration: totalDuration,
+              },
             },
-            properties: {
-              vehicleId: vehicle.id,
-              vehiclePlate: vehicle.plate,
-              distance: totalDistance,
-              duration: totalDuration,
-            },
-          },
-        ],
-      };
+          ],
+        };
+        console.log(`[VRP] Vehicle ${vehicle.id}: Route geojson created with ${finalGeometry.coordinates.length} coordinates`);
+      }
       route.stops = route.stops.map((p, idx) => ({
         id: p.id,
         seq: idx + 1,
@@ -3750,24 +3838,34 @@ app.post("/api/vrp/optimize", async (req, res) => {
         lon: p.lon,
         demand: p.demand || 0,
       }));
+      // CRITICAL FIX: route.depot must match vehicleStartLocation used in route geometry
+      // Use vehicleStartLocation (actual start point) instead of depot (original depot)
+      // This ensures START marker matches the actual route start point
       route.depot =
-        depot && depot.lat && depot.lon
+        vehicleStartLocation &&
+        vehicleStartLocation.lat &&
+        vehicleStartLocation.lon
+          ? {
+              id: depot?.id || vehicleStartLocation.id || "unknown",
+              name: depot?.name || vehicleStartLocation.name || "Start Point",
+              lat: parseFloat(vehicleStartLocation.lat),
+              lon: parseFloat(vehicleStartLocation.lon),
+            }
+          : depot && depot.lat && depot.lon
           ? {
               id: depot.id,
               name: depot.name || "Depot",
               lat: parseFloat(depot.lat),
               lon: parseFloat(depot.lon),
             }
-          : vehicleStartLocation &&
-            vehicleStartLocation.lat &&
-            vehicleStartLocation.lon
-          ? {
-              id: depot?.id || "unknown",
-              name: depot?.name || "Start Point",
-              lat: parseFloat(vehicleStartLocation.lat),
-              lon: parseFloat(vehicleStartLocation.lon),
-            }
           : null;
+      
+      console.log(`[VRP] Vehicle ${vehicle.id}: route.depot set to:`, {
+        lat: route.depot?.lat,
+        lon: route.depot?.lon,
+        name: route.depot?.name,
+        matchesVehicleStart: route.depot?.lat === vehicleStartLocation?.lat && route.depot?.lon === vehicleStartLocation?.lon
+      });
       route.dump =
         selectedDump && selectedDump.lat && selectedDump.lon
           ? {

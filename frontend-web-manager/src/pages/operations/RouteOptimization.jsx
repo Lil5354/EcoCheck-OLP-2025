@@ -322,21 +322,36 @@ export default function RouteOptimization() {
     // Display route path from geojson
     // Backend already ensures route includes START and END, so just display it
     console.log('[RouteOptimization] Route geojson:', route.geojson)
-    if (route.geojson && route.geojson.features && route.geojson.features.length > 0) {
+    
+    // Validate route geometry before displaying
+    const hasValidGeometry = route.geojson && 
+                             route.geojson.features && 
+                             route.geojson.features.length > 0 &&
+                             route.geojson.features[0]?.geometry &&
+                             route.geojson.features[0].geometry.coordinates &&
+                             Array.isArray(route.geojson.features[0].geometry.coordinates) &&
+                             route.geojson.features[0].geometry.coordinates.length >= 2
+    
+    if (hasValidGeometry) {
       const source = routeSourceRef.current || mapObj.current.getSource('route')
       if (source) {
         source.setData(route.geojson)
-        console.log('[RouteOptimization] Route displayed on map (START and END already included by backend)')
+        const coordCount = route.geojson.features[0].geometry.coordinates.length
+        console.log(`[RouteOptimization] Route displayed on map with ${coordCount} coordinates (START and END included by backend)`)
+      } else {
+        console.error('[RouteOptimization] Route source not found')
       }
       
       // Fit map to route bounds - include all waypoints (depot, stops, dump)
-      const coordinates = route.geojson.features[0]?.geometry?.coordinates || []
+      const coordinates = route.geojson.features[0].geometry.coordinates
       const bounds = new maplibregl.LngLatBounds()
       
       // Add route coordinates
       if (coordinates.length > 0) {
         coordinates.forEach(coord => {
-          bounds.extend(coord)
+          if (Array.isArray(coord) && coord.length >= 2) {
+            bounds.extend(coord)
+          }
         })
       }
       
@@ -362,7 +377,14 @@ export default function RouteOptimization() {
         })
       }
     } else {
-      console.warn('[RouteOptimization] No route geometry to display')
+      console.warn('[RouteOptimization] No valid route geometry to display', {
+        hasGeojson: !!route.geojson,
+        hasFeatures: !!(route.geojson?.features),
+        featuresCount: route.geojson?.features?.length || 0,
+        hasGeometry: !!(route.geojson?.features?.[0]?.geometry),
+        hasCoordinates: !!(route.geojson?.features?.[0]?.geometry?.coordinates),
+        coordinatesCount: route.geojson?.features?.[0]?.geometry?.coordinates?.length || 0
+      })
     }
     
     // Add marker for depot (start point) - Improved styling with clear START label
