@@ -65,7 +65,7 @@ docker compose exec postgres bash -c "cd /app/db && bash ./run_migrations.sh"
 Your environment is now ready! You can verify that all services are running correctly:
 
 ### Web Platform
-- **Frontend Web Manager**: `http://localhost:3001` - The EcoCheck login page
+- **Frontend Web Manager**: `http://localhost:5173` - The EcoCheck web manager (Vite dev server)
 - **Backend API**: `http://localhost:3000` - Backend API server
 - **Health Check**: `http://localhost:3000/health` - JSON response `{"status":"ok"}`
 
