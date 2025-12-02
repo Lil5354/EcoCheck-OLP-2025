@@ -20,6 +20,10 @@ import {
   MdWarehouse,
   MdWarningAmber,
   MdCalendarToday,
+  MdAir,
+  MdLocationOn,
+  MdSensors,
+  MdEmojiEvents,
 } from "react-icons/md";
 
 const groups = [
@@ -47,6 +51,21 @@ const groups = [
         label: "Điều phối động",
         icon: <MdOutlineMap />,
       },
+      {
+        to: "/operations/air-quality",
+        label: "Chất lượng không khí",
+        icon: <MdAir />,
+      },
+      {
+        to: "/operations/poi",
+        label: "Điểm quan tâm",
+        icon: <MdLocationOn />,
+      },
+      {
+        to: "/operations/sensor-alerts",
+        label: "Cảnh báo cảm biến",
+        icon: <MdSensors />,
+      },
     ],
   },
   {
@@ -56,6 +75,11 @@ const groups = [
         to: "/analytics",
         label: "Phân tích & Dự đoán",
         icon: <MdOutlineAnalytics />,
+      },
+      {
+        to: "/gamification",
+        label: "Gamification",
+        icon: <MdEmojiEvents />,
       },
     ],
   },

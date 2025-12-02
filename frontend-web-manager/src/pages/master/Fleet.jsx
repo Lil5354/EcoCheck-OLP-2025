@@ -34,12 +34,15 @@ export default function Fleet() {
     try {
       if (editItem.id) {
         // Update existing
+        // CRITICAL FIX: Ensure status is valid database value
+        // Map 'ready' to 'available' for database constraint
+        const dbStatus = editItem.status === 'ready' ? 'available' : (editItem.status || 'available');
         const res = await api.updateVehicle(editItem.id, {
           plate: editItem.plate,
           type: editItem.type,
           capacity: editItem.capacity,
           types: editItem.types || [],
-          status: editItem.status || 'ready',
+          status: dbStatus,
         })
         if (res.ok) {
           setModalOpen(false)
@@ -50,12 +53,15 @@ export default function Fleet() {
         }
       } else {
         // Create new
+        // CRITICAL FIX: Ensure status is valid database value
+        // Map 'ready' to 'available' for database constraint
+        const dbStatus = editItem.status === 'ready' ? 'available' : (editItem.status || 'available');
         const res = await api.createVehicle({
           plate: editItem.plate,
           type: editItem.type,
           capacity: editItem.capacity,
           types: editItem.types || [],
-          status: editItem.status || 'ready',
+          status: dbStatus,
         })
         if (res.ok) {
           setModalOpen(false)

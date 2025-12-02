@@ -36,8 +36,64 @@ export function AreaChart({
   const w = width, h = height, pad=16
   const xs = data.map((d,i)=>i)
   const ys = data.map(d=>d.value ?? d)
-  const min = Math.min(...ys)
-  const max = Math.max(...ys)
+  
+  // Improved min/max calculation for better visualization with few data points
+  const rawMin = Math.min(...ys)
+  const rawMax = Math.max(...ys)
+  
+  // For single data point, create a visual representation with area chart
+  if (data.length === 1) {
+    const singleValue = Number(ys[0]) || 0
+    const minValue = Math.max(0, singleValue * 0.3)
+    const maxValue = singleValue * 1.2
+    const range = maxValue - minValue || 1
+    // Position at 70% from top (30% from bottom) for better visibility
+    const yPos = h - pad - ((singleValue - minValue) / range) * (h-2*pad) * 0.7
+    const xPos = pad + (w-2*pad) * 0.5
+    
+    // Create area path for single point - wider area for better visibility
+    const areaWidth = Math.min(60, (w-2*pad) * 0.3)
+    const areaPath = `M${pad},${h-pad} L${xPos-areaWidth},${h-pad} L${xPos-areaWidth},${yPos} L${xPos+areaWidth},${yPos} L${xPos+areaWidth},${h-pad} L${w-pad},${h-pad} Z`
+    const linePath = `M${xPos-areaWidth},${yPos} L${xPos+areaWidth},${yPos}`
+    
+    return (
+      <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ display: 'block' }}>
+        {gradient && (
+          <defs>
+            <linearGradient id={id} x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity="0.35"/>
+              <stop offset="100%" stopColor={color} stopOpacity="0"/>
+            </linearGradient>
+          </defs>
+        )}
+        {gradient && <path d={areaPath} fill={`url(#${id})`} vectorEffect="non-scaling-stroke" />}
+        <path d={linePath} fill="none" stroke={color} strokeWidth={stroke+2} strokeLinecap="round" vectorEffect="non-scaling-stroke"/>
+        <circle cx={xPos} cy={yPos} r={stroke+3} fill={color} stroke="#fff" strokeWidth="2" vectorEffect="non-scaling-stroke"/>
+        <text
+          x={xPos}
+          y={yPos - 15}
+          textAnchor="middle"
+          fontSize="12"
+          fill={color}
+          fontWeight="600"
+        >
+          {labelFormatter(singleValue)}
+        </text>
+        <text x={pad+4} y={h-pad-4} fontSize="9" fill="#999" textAnchor="start">
+          {labelFormatter(minValue)}
+        </text>
+        <text x={w-pad-4} y={pad+12} fontSize="9" fill="#999" textAnchor="end">
+          {labelFormatter(maxValue)}
+        </text>
+      </svg>
+    )
+  }
+  
+  // For multiple data points, use normal calculation
+  const range = rawMax - rawMin
+  const padding = range > 0 ? (range * 0.1) : (rawMax > 0 ? rawMax * 0.2 : 10)
+  const min = Math.max(0, rawMin - padding)
+  const max = rawMax + padding
   const nx = xs.map(x => pad + x*( (w-2*pad) / (xs.length-1 || 1) ))
   const ny = ys.map(y => h - pad - ( (y-min)/(max-min || 1) ) * (h-2*pad))
   const path = nx.map((x,i)=>`${i?'L':'M'}${x},${ny[i]}`).join(' ')

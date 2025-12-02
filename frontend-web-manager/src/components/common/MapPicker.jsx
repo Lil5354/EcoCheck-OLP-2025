@@ -9,7 +9,15 @@ export default function MapPicker({ center = [106.7, 10.78], zoom = 12, onPick, 
   const mapRef = useRef(null)
   const mapObj = useRef(null)
   const markerRef = useRef(null)
-  const [coords, setCoords] = useState(center)
+  // CRITICAL FIX: Ensure coords are always numbers, not strings
+  const normalizeCoords = (coords) => {
+    if (!Array.isArray(coords) || coords.length < 2) return [106.7, 10.78]
+    return [
+      typeof coords[0] === 'number' ? coords[0] : parseFloat(coords[0]) || 106.7,
+      typeof coords[1] === 'number' ? coords[1] : parseFloat(coords[1]) || 10.78
+    ]
+  }
+  const [coords, setCoords] = useState(() => normalizeCoords(center))
   const [address, setAddress] = useState(initialAddress)
   
   // Update address when prop changes
@@ -125,7 +133,7 @@ export default function MapPicker({ center = [106.7, 10.78], zoom = 12, onPick, 
     })
     
     setAddress(suggestion.display_name)
-    setCoords(newCoords)
+    setCoords(normalizeCoords(newCoords))
     setSuggestions([])
     setShowSuggestions(false)
     
@@ -176,7 +184,7 @@ export default function MapPicker({ center = [106.7, 10.78], zoom = 12, onPick, 
         lat
       })
       
-      setCoords(center)
+      setCoords(normalizeCoords(center))
       
       const updateMap = () => {
         if (markerRef.current && mapObj.current) {
@@ -248,7 +256,7 @@ export default function MapPicker({ center = [106.7, 10.78], zoom = 12, onPick, 
         markerRef.current.on('dragend', async () => {
       const lngLat = markerRef.current.getLngLat()
           const newCoords = [lngLat.lng, lngLat.lat] // [longitude, latitude]
-          setCoords(newCoords)
+          setCoords(normalizeCoords(newCoords))
           onPick?.(newCoords)
           // Reverse geocode to get address (skip if address already exists)
           await reverseGeocode(lngLat.lng, lngLat.lat, true)
@@ -259,7 +267,7 @@ export default function MapPicker({ center = [106.7, 10.78], zoom = 12, onPick, 
       const { lng, lat } = e.lngLat
           const newCoords = [lng, lat] // [longitude, latitude]
           markerRef.current.setLngLat(newCoords)
-          setCoords(newCoords)
+          setCoords(normalizeCoords(newCoords))
           onPick?.(newCoords)
           // Reverse geocode to get address (skip if address already exists)
           await reverseGeocode(lng, lat, true)
@@ -376,7 +384,11 @@ export default function MapPicker({ center = [106.7, 10.78], zoom = 12, onPick, 
       />
       <div style={{ marginTop: 8, fontSize: 12, color: '#888' }}>
         <div style={{ marginBottom: 4 }}>
-          <strong>Tọa độ:</strong> {coords[1]?.toFixed(5) || '0.00000'} (Vĩ độ), {coords[0]?.toFixed(5) || '0.00000'} (Kinh độ)
+          <strong>Tọa độ:</strong> {
+            (typeof coords[1] === 'number' ? coords[1] : parseFloat(coords[1]) || 0).toFixed(5)
+          } (Vĩ độ), {
+            (typeof coords[0] === 'number' ? coords[0] : parseFloat(coords[0]) || 0).toFixed(5)
+          } (Kinh độ)
         </div>
         <span style={{ fontSize: 11, color: '#aaa' }}>
           💡 Nhấp vào bản đồ hoặc kéo marker để chọn vị trí. Nhập địa chỉ để tìm kiếm tự động.

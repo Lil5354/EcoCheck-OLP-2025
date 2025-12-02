@@ -12,11 +12,15 @@ import App from "./App.jsx";
 import Schedules from "./pages/operations/Schedules.jsx";
 import RouteOptimization from "./pages/operations/RouteOptimization.jsx";
 import DynamicDispatch from "./pages/operations/DynamicDispatch.jsx";
+import AirQuality from "./pages/operations/AirQuality.jsx";
+import POI from "./pages/operations/POI.jsx";
+import SensorAlerts from "./pages/operations/SensorAlerts.jsx";
 import AnalyticsPage from "./pages/analytics/Analytics.jsx";
 import Fleet from "./pages/master/Fleet.jsx";
 import Personnel from "./pages/master/Personnel.jsx";
 import DepotsDumps from "./pages/master/DepotsDumps.jsx";
 import Reports from "./pages/reports/Reports.jsx";
+import GamificationDashboard from "./pages/gamification/GamificationDashboard.jsx";
 
 export default function AppRouter() {
   return (
@@ -32,7 +36,20 @@ export default function AppRouter() {
           path="/operations/dynamic-dispatch"
           element={<DynamicDispatch />}
         />
+        <Route
+          path="/operations/air-quality"
+          element={<AirQuality />}
+        />
+        <Route
+          path="/operations/poi"
+          element={<POI />}
+        />
+        <Route
+          path="/operations/sensor-alerts"
+          element={<SensorAlerts />}
+        />
         <Route path="/analytics" element={<AnalyticsPage />} />
+        <Route path="/gamification" element={<GamificationDashboard />} />
         <Route path="/master/fleet" element={<Fleet />} />
         <Route path="/master/personnel" element={<Personnel />} />
         <Route path="/master/depots-dumps" element={<DepotsDumps />} />

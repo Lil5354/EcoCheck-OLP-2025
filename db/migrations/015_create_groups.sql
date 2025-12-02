@@ -31,8 +31,7 @@ CREATE TABLE IF NOT EXISTS group_members (
   role_in_group text DEFAULT 'member' CHECK (role_in_group IN ('leader', 'member')),
   joined_at timestamptz DEFAULT now(),
   left_at timestamptz,
-  status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
-  UNIQUE(group_id, personnel_id) WHERE status = 'active'
+  status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive'))
 );
 
 -- ============================================================================
@@ -65,6 +64,7 @@ CREATE INDEX IF NOT EXISTS groups_code_idx ON groups(code) WHERE code IS NOT NUL
 
 CREATE INDEX IF NOT EXISTS group_members_group_idx ON group_members(group_id);
 CREATE INDEX IF NOT EXISTS group_members_personnel_idx ON group_members(personnel_id);
+CREATE UNIQUE INDEX IF NOT EXISTS group_members_unique_active ON group_members(group_id, personnel_id) WHERE status = 'active';
 CREATE INDEX IF NOT EXISTS group_members_active_idx ON group_members(group_id, personnel_id) WHERE status = 'active';
 CREATE INDEX IF NOT EXISTS group_members_status_idx ON group_members(status);
 
