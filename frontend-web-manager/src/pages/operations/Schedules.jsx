@@ -33,8 +33,15 @@ export default function Schedules() {
     loadPersonnel();
 
     // Connect to Socket.IO for real-time updates
-    const SOCKET_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
-    const socket = io(SOCKET_URL);
+    // Always use relative path (empty string) so it goes through Vite proxy
+    // Don't use VITE_API_URL for socket.io as it may point to Docker service name
+    const socket = io('', {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5,
+      path: '/socket.io'
+    });
 
     socket.on("connect", () => {
       console.log("✅ Connected to Socket.IO server");

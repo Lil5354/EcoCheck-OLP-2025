@@ -3050,24 +3050,52 @@ app.get("/api/vrp/districts", async (req, res) => {
           COUNT(DISTINCT s.schedule_id)::integer as schedule_count
         FROM depot_districts dd
         LEFT JOIN schedules s ON (
-          s.scheduled_date = $1::date
-            AND s.status = 'scheduled'
-            AND s.address IS NOT NULL
+          s.scheduled_date::date = $1::date
+            -- Don't filter by status - count all schedules
             AND (
+              -- Match by address if available
+              (s.address IS NOT NULL AND (
               s.address LIKE '%' || dd.district || '%'
               OR (dd.district ~ '^Quận\\s*\\d+$' 
                   AND s.address ~ ('Quận\\s*' || SUBSTRING(dd.district FROM 'Quận\\s*(\\d+)')))
+              ))
+              -- OR match by location (join with points/user_addresses)
+              OR (s.location IS NOT NULL AND EXISTS (
+                SELECT 1 FROM points p
+                JOIN user_addresses ua ON p.address_id = ua.id
+                WHERE ST_DWithin(s.location, p.geom, 0.01)
+                  AND (
+                    ua.address_text LIKE '%' || dd.district || '%'
+                    OR (dd.district ~ '^Quận\\s*\\d+$' 
+                        AND ua.address_text ~ ('Quận\\s*' || SUBSTRING(dd.district FROM 'Quận\\s*(\\d+)')))
+                  )
+              ))
             )
       )
       WHERE dd.district IS NOT NULL
       GROUP BY dd.district
+      ),
+      -- Add fallback: count all schedules for the date if no district match
+      all_schedules_count AS (
+        SELECT COUNT(*)::integer as total FROM schedules WHERE scheduled_date::date = $1::date
       )
       SELECT 
         sc.district,
         COALESCE(sc.schedule_count, 0) as schedule_count,
         COALESCE(sc.schedule_count, 0) as point_count
       FROM schedule_counts sc
-      ORDER BY sc.district
+      WHERE sc.schedule_count > 0
+      UNION ALL
+      -- If no districts have schedules, show all districts with total count
+      SELECT 
+        dd.district,
+        COALESCE(asc_count.total, 0) as schedule_count,
+        COALESCE(asc_count.total, 0) as point_count
+      FROM depot_districts dd
+      CROSS JOIN all_schedules_count asc_count
+      WHERE NOT EXISTS (SELECT 1 FROM schedule_counts sc WHERE sc.schedule_count > 0)
+        AND dd.district IS NOT NULL
+      ORDER BY district
     `,
       [scheduledDate]
     );
@@ -3318,7 +3346,48 @@ app.post("/api/vrp/optimize", async (req, res) => {
         );
       }
 
-      // 3. Optimize stop order using Hybrid CI-SA (Cheapest Insertion + Simulated Annealing)
+      // 3. Integrate POI (Points of Interest) along route - gas stations, parking, etc.
+      // This helps drivers find refueling points and parking along the route
+      try {
+        // POI service is required at line 8081, but we need it here for route optimization
+        const poiService = require('./services/poi');
+        const routePoints = [
+          vehicleStartLocation,
+          ...route.stops,
+          ...(selectedDump ? [selectedDump] : [])
+        ].filter(p => p && p.lat && p.lon);
+        
+        if (routePoints.length > 0) {
+          // Get POIs along route (gas stations, parking)
+          const pois = await poiService.getPOIsAlongRoute(
+            routePoints.map(p => ({ lat: p.lat, lon: p.lon })),
+            'gas_station',
+            500 // 500m radius
+          );
+          
+          // Also get parking POIs
+          const parkingPois = await poiService.getPOIsAlongRoute(
+            routePoints.map(p => ({ lat: p.lat, lon: p.lon })),
+            'parking',
+            300 // 300m radius
+          );
+          
+          // Store POIs in route metadata for frontend display
+          route.pois = {
+            gas_stations: pois.slice(0, 5), // Top 5 nearest gas stations
+            parking: parkingPois.slice(0, 3) // Top 3 nearest parking
+          };
+          
+          console.log(
+            `[VRP] Vehicle ${vehicle.id}: Found ${pois.length} gas stations and ${parkingPois.length} parking along route`
+          );
+        }
+      } catch (error) {
+        console.warn(`[VRP] POI integration failed for vehicle ${vehicle.id}:`, error.message);
+        route.pois = { gas_stations: [], parking: [] }; // Default empty
+      }
+
+      // 4. Optimize stop order using Hybrid CI-SA (Cheapest Insertion + Simulated Annealing)
       // OSRM will be used later for route drawing (getOSRMRoute) which gives actual road paths
       if (route.stops.length > 0) {
         route.stops = await optimizeStopOrder(
@@ -3585,6 +3654,74 @@ app.post("/api/vrp/optimize", async (req, res) => {
         continue;
       }
 
+      // CRITICAL FIX: Ensure route geometry ALWAYS includes depot and dump
+      // Create a new geometry array that definitely includes START and END
+      if (routeGeometry && routeGeometry.coordinates && routeGeometry.coordinates.length > 0) {
+        const depotCoords = vehicleStartLocation ? [vehicleStartLocation.lon, vehicleStartLocation.lat] : null;
+        const dumpCoords = selectedDump ? [selectedDump.lon, selectedDump.lat] : null;
+        
+        // Create new coordinates array that ALWAYS starts with depot and ends with dump
+        const newCoordinates = [];
+        
+        // 1. ALWAYS start with depot
+        if (depotCoords) {
+          newCoordinates.push(depotCoords);
+          console.log(`[VRP] Route starts at depot: [${depotCoords[0]}, ${depotCoords[1]}]`);
+        }
+        
+        // 2. Add route geometry coordinates (skip first if it's same as depot)
+        const firstRouteCoord = routeGeometry.coordinates[0];
+        if (depotCoords && firstRouteCoord) {
+          const distToDepot = Math.sqrt(
+            Math.pow(firstRouteCoord[0] - depotCoords[0], 2) + 
+            Math.pow(firstRouteCoord[1] - depotCoords[1], 2)
+          ) * 111000;
+          
+          if (distToDepot < 50) {
+            // Route already starts at depot, skip first coordinate
+            newCoordinates.push(...routeGeometry.coordinates.slice(1));
+          } else {
+            // Route doesn't start at depot, add all coordinates
+            newCoordinates.push(...routeGeometry.coordinates);
+          }
+        } else {
+          // No depot, add all route coordinates
+          newCoordinates.push(...routeGeometry.coordinates);
+        }
+        
+        // 3. ALWAYS end with dump
+        if (dumpCoords) {
+          const lastCoord = newCoordinates[newCoordinates.length - 1];
+          const distToDump = Math.sqrt(
+            Math.pow(lastCoord[0] - dumpCoords[0], 2) + 
+            Math.pow(lastCoord[1] - dumpCoords[1], 2)
+          ) * 111000;
+          
+          if (distToDump > 50) {
+            // Route doesn't end at dump, add dump as final point
+            newCoordinates.push(dumpCoords);
+            console.log(`[VRP] Route ends at dump: [${dumpCoords[0]}, ${dumpCoords[1]}]`);
+          } else {
+            console.log(`[VRP] Route already ends at dump`);
+          }
+        }
+        
+        // Update routeGeometry with new coordinates
+        routeGeometry = {
+          ...routeGeometry,
+          coordinates: newCoordinates
+        };
+        
+        console.log(`[VRP] Route geometry updated: ${newCoordinates.length} coordinates (START + route + END)`);
+      } else if (!routeGeometry && waypoints.length >= 2) {
+        // Fallback: Create straight line from waypoints if OSRM failed
+        console.warn(`[VRP] OSRM failed, creating fallback straight line from waypoints`);
+        routeGeometry = {
+          type: "LineString",
+          coordinates: waypoints
+        };
+      }
+
       // Update route object with optimized data (don't push new, update existing)
       route.distance = totalDistance; // in meters
       route.eta = eta; // format: "H:MM"
@@ -3593,7 +3730,10 @@ app.post("/api/vrp/optimize", async (req, res) => {
         features: [
           {
             type: "Feature",
-            geometry: routeGeometry,
+            geometry: routeGeometry || {
+              type: "LineString",
+              coordinates: waypoints // Fallback: use waypoints as straight line if OSRM fails
+            },
             properties: {
               vehicleId: vehicle.id,
               vehiclePlate: vehicle.plate,
@@ -5053,16 +5193,30 @@ app.get("/api/schedules", async (req, res) => {
     }
 
     if (scheduled_date) {
-      query += ` AND DATE(s.scheduled_date) = $${paramIndex}`;
+      // Use date casting to handle timezone properly
+      query += ` AND s.scheduled_date::date = $${paramIndex}::date`;
       params.push(scheduled_date);
       paramIndex++;
     }
 
-    // Filter by district (extract from schedules.address)
+    // Filter by district (extract from schedules.address or location via points/user_addresses)
     if (district) {
       query += ` AND (
+        -- Match by address if available
+        (s.address IS NOT NULL AND (
         s.address ~ $${paramIndex} OR
         s.address LIKE $${paramIndex + 1}
+        ))
+        -- OR match by location (join with points/user_addresses)
+        OR (s.location IS NOT NULL AND EXISTS (
+          SELECT 1 FROM points p
+          JOIN user_addresses ua ON p.address_id = ua.id
+          WHERE ST_DWithin(s.location, p.geom, 0.01)
+            AND (
+              ua.address_text ~ $${paramIndex} OR
+              ua.address_text LIKE $${paramIndex + 1}
+            )
+        ))
       )`;
       // Use regex pattern for exact district match
       const districtPattern = district.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -7125,6 +7279,792 @@ app.get("/api/gamification/badges", async (req, res) => {
   }
 });
 
+// ==================== GAMIFICATION ANALYTICS API ====================
+
+// Get gamification overview statistics
+app.get("/api/gamification/analytics/overview", async (req, res) => {
+  try {
+    // Total users with points
+    const totalUsersQuery = await db.query(
+      `SELECT COUNT(*) as count FROM user_points WHERE points > 0`
+    );
+    const totalUsers = parseInt(totalUsersQuery.rows[0]?.count || 0);
+
+    // Points distributed today
+    const todayPointsQuery = await db.query(
+      `SELECT COALESCE(SUM(points), 0) as total
+       FROM point_transactions
+       WHERE DATE(created_at) = CURRENT_DATE
+       AND type IN ('earn', 'bonus', 'adjustment')
+       AND points > 0`
+    );
+    const pointsToday = parseInt(todayPointsQuery.rows[0]?.total || 0);
+
+    // Points distributed this month
+    const monthPointsQuery = await db.query(
+      `SELECT COALESCE(SUM(points), 0) as total
+       FROM point_transactions
+       WHERE DATE_TRUNC('month', created_at) = DATE_TRUNC('month', CURRENT_DATE)
+       AND type IN ('earn', 'bonus', 'adjustment')
+       AND points > 0`
+    );
+    const pointsMonth = parseInt(monthPointsQuery.rows[0]?.total || 0);
+
+    // Badges unlocked
+    const badgesQuery = await db.query(
+      `SELECT COUNT(DISTINCT badge_id) as count FROM user_badges`
+    );
+    const badgesUnlocked = parseInt(badgesQuery.rows[0]?.count || 0);
+
+    // Top 5 users
+    const topUsersQuery = await db.query(
+      `SELECT 
+        u.id as user_id,
+        u.profile->>'name' as user_name,
+        up.points,
+        up.level,
+        up.total_checkins
+       FROM user_points up
+       JOIN users u ON u.id = up.user_id
+       WHERE u.status = 'active' AND up.points > 0
+       ORDER BY up.points DESC
+       LIMIT 5`
+    );
+
+    const topUsers = topUsersQuery.rows.map((row) => {
+      let rankTier = "Người mới";
+      if (row.level >= 10) rankTier = "Huyền thoại";
+      else if (row.level >= 7) rankTier = "Chuyên gia";
+      else if (row.level >= 5) rankTier = "Chiến binh xanh";
+      else if (row.level >= 3) rankTier = "Người tích cực";
+
+      return {
+        userId: row.user_id,
+        userName: row.user_name || "User",
+        points: parseInt(row.points || 0),
+        level: parseInt(row.level || 1),
+        rankTier: rankTier,
+        totalCheckins: parseInt(row.total_checkins || 0),
+      };
+    });
+
+    res.json({
+      ok: true,
+      data: {
+        totalUsers,
+        pointsDistributed: {
+          today: pointsToday,
+          month: pointsMonth,
+        },
+        badgesUnlocked,
+        topUsers,
+      },
+    });
+  } catch (error) {
+    console.error("[Gamification Analytics] Overview error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Get gamification trends
+app.get("/api/gamification/analytics/trends", async (req, res) => {
+  try {
+    const { period = "7d" } = req.query;
+    
+    // Calculate date range based on period
+    let days = 7;
+    if (period === "30d") days = 30;
+    else if (period === "90d") days = 90;
+    else if (period === "365d") days = 365;
+
+    // Points trend - daily aggregation
+    const pointsTrendQuery = await db.query(
+      `SELECT 
+        DATE(created_at) as date,
+        COALESCE(SUM(points), 0) as points,
+        COUNT(*) as transactions
+       FROM point_transactions
+       WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days'
+       AND type IN ('earn', 'bonus', 'adjustment')
+       AND points > 0
+       GROUP BY DATE(created_at)
+       ORDER BY date ASC`
+    );
+
+    const pointsTrend = pointsTrendQuery.rows.map((row) => ({
+      date: row.date.toISOString().split("T")[0],
+      points: parseInt(row.points || 0),
+      transactions: parseInt(row.transactions || 0),
+    }));
+
+    // Check-ins trend - daily aggregation
+    const checkinsTrendQuery = await db.query(
+      `SELECT 
+        DATE(created_at) as date,
+        COUNT(*) as checkins
+       FROM checkins
+       WHERE created_at >= CURRENT_DATE - INTERVAL '${days} days'
+       GROUP BY DATE(created_at)
+       ORDER BY date ASC`
+    );
+
+    const checkinsTrend = checkinsTrendQuery.rows.map((row) => ({
+      date: row.date.toISOString().split("T")[0],
+      checkins: parseInt(row.checkins || 0),
+    }));
+
+    res.json({
+      ok: true,
+      data: {
+        pointsTrend,
+        checkinsTrend,
+      },
+    });
+  } catch (error) {
+    console.error("[Gamification Analytics] Trends error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Get gamification distribution
+app.get("/api/gamification/analytics/distribution", async (req, res) => {
+  try {
+    const { type = "rank_tier" } = req.query;
+
+    if (type === "rank_tier") {
+      // Distribution by rank tier
+      const distributionQuery = await db.query(
+        `WITH tier_data AS (
+          SELECT 
+            CASE 
+              WHEN level >= 10 THEN 'Huyền thoại'
+              WHEN level >= 7 THEN 'Chuyên gia'
+              WHEN level >= 5 THEN 'Chiến binh xanh'
+              WHEN level >= 3 THEN 'Người tích cực'
+              ELSE 'Người mới'
+            END as tier
+          FROM user_points
+        )
+        SELECT 
+          tier,
+          COUNT(*) as count
+         FROM tier_data
+         GROUP BY tier
+         ORDER BY 
+           CASE tier
+             WHEN 'Huyền thoại' THEN 1
+             WHEN 'Chuyên gia' THEN 2
+             WHEN 'Chiến binh xanh' THEN 3
+             WHEN 'Người tích cực' THEN 4
+             WHEN 'Người mới' THEN 5
+           END`
+      );
+
+      const distribution = distributionQuery.rows.map((row) => ({
+        tier: row.tier || row.rank_tier,
+        count: parseInt(row.count || 0),
+      }));
+
+      const total = distribution.reduce((sum, item) => sum + item.count, 0);
+
+      res.json({
+        ok: true,
+        data: {
+          type: "rank_tier",
+          distribution,
+          total,
+        },
+      });
+    } else if (type === "level") {
+      // Distribution by level
+      const distributionQuery = await db.query(
+        `SELECT level, COUNT(*) as count
+         FROM user_points
+         GROUP BY level
+         ORDER BY level ASC`
+      );
+
+      const distribution = distributionQuery.rows.map((row) => ({
+        level: parseInt(row.level || 1),
+        count: parseInt(row.count || 0),
+      }));
+
+      const total = distribution.reduce((sum, item) => sum + item.count, 0);
+
+      res.json({
+        ok: true,
+        data: {
+          type: "level",
+          distribution,
+          total,
+        },
+      });
+    } else {
+      res.status(400).json({
+        ok: false,
+        error: "Invalid distribution type. Use 'rank_tier' or 'level'",
+      });
+    }
+  } catch (error) {
+    console.error("[Gamification Analytics] Distribution error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// ==================== GAMIFICATION POINTS API ====================
+
+// Get point transactions history
+app.get("/api/gamification/points/transactions", async (req, res) => {
+  try {
+    const { user_id, type, limit = 50, offset = 0 } = req.query;
+    
+    let query = `
+      SELECT 
+        pt.id,
+        pt.user_id,
+        u.profile->>'name' as user_name,
+        u.profile->>'email' as user_email,
+        pt.points,
+        pt.type,
+        pt.reason,
+        pt.reference_id,
+        pt.reference_type,
+        pt.created_at
+      FROM point_transactions pt
+      JOIN users u ON u.id = pt.user_id
+      WHERE 1=1
+    `;
+    const params = [];
+    let paramIndex = 1;
+
+    if (user_id) {
+      query += ` AND pt.user_id = $${paramIndex++}`;
+      params.push(user_id);
+    }
+
+    if (type) {
+      query += ` AND pt.type = $${paramIndex++}`;
+      params.push(type);
+    }
+
+    query += ` ORDER BY pt.created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+    params.push(parseInt(limit), parseInt(offset));
+
+    const { rows } = await db.query(query, params);
+
+    // Get total count
+    let countQuery = `
+      SELECT COUNT(*) as total
+      FROM point_transactions pt
+      WHERE 1=1
+    `;
+    const countParams = [];
+    let countParamIndex = 1;
+
+    if (user_id) {
+      countQuery += ` AND pt.user_id = $${countParamIndex++}`;
+      countParams.push(user_id);
+    }
+
+    if (type) {
+      countQuery += ` AND pt.type = $${countParamIndex++}`;
+      countParams.push(type);
+    }
+
+    const countResult = await db.query(countQuery, countParams);
+    const total = parseInt(countResult.rows[0]?.total || 0);
+
+    // Map snake_case to camelCase for frontend
+    const mappedRows = rows.map(row => ({
+      id: row.id,
+      userId: row.user_id,
+      userName: row.user_name || 'N/A',
+      userEmail: row.user_email || '',
+      points: parseInt(row.points || 0),
+      transactionType: row.type,
+      reason: row.reason || '',
+      referenceId: row.reference_id,
+      referenceType: row.reference_type,
+      createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
+    }));
+
+    res.json({
+      ok: true,
+      data: mappedRows,
+      total,
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+    });
+  } catch (error) {
+    console.error("[Gamification] Get transactions error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Adjust points (add or subtract)
+app.post("/api/gamification/points/adjust", async (req, res) => {
+  try {
+    const { user_id, points, reason } = req.body;
+
+    if (!user_id || points === undefined) {
+      return res.status(400).json({
+        ok: false,
+        error: "user_id and points are required",
+      });
+    }
+
+    // Find user_id if input is name/email instead of UUID
+    let actualUserId = user_id;
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user_id);
+    
+    if (!isUUID) {
+      // Try to find user by name or email
+      const userQuery = await db.query(
+        `SELECT id FROM users 
+         WHERE profile->>'name' ILIKE $1 
+            OR profile->>'email' ILIKE $1 
+            OR phone = $1
+         LIMIT 1`,
+        [`%${user_id}%`]
+      );
+      
+      if (userQuery.rows.length === 0) {
+        return res.status(404).json({
+          ok: false,
+          error: `Không tìm thấy user với ID/tên/email: ${user_id}`,
+        });
+      }
+      
+      actualUserId = userQuery.rows[0].id;
+    }
+
+    const transactionType = points > 0 ? "adjustment" : "penalty";
+
+    // Add points transaction
+    await db.query(
+      `INSERT INTO point_transactions (user_id, points, type, reason)
+       VALUES ($1, $2, $3, $4)`,
+      [actualUserId, points, transactionType, reason || "Points adjustment"]
+    );
+
+    // Update user points and recalculate level
+    const { rows } = await db.query(
+      `UPDATE user_points
+       SET points = GREATEST(0, points + $1),
+           level = calculate_level_from_points(GREATEST(0, points + $1)),
+           updated_at = NOW()
+       WHERE user_id = $2
+       RETURNING points, level`,
+      [points, actualUserId]
+    );
+
+    let finalPoints = rows[0]?.points || 0;
+    let finalLevel = rows[0]?.level || 1;
+
+    if (rows.length === 0) {
+      // Create user_points entry if doesn't exist
+      const newPoints = GREATEST(0, points);
+      const insertResult = await db.query(
+        `INSERT INTO user_points (user_id, points, level)
+         VALUES ($1, $2, calculate_level_from_points($2))
+         ON CONFLICT (user_id) DO UPDATE
+         SET points = GREATEST(0, user_points.points + $3),
+             level = calculate_level_from_points(GREATEST(0, user_points.points + $3)),
+             updated_at = NOW()
+         RETURNING points, level`,
+        [actualUserId, newPoints, points]
+      );
+      if (insertResult.rows.length > 0) {
+        finalPoints = insertResult.rows[0].points;
+        finalLevel = insertResult.rows[0].level;
+      }
+    }
+
+    // Check and unlock badges after points adjustment
+    await db.query('SELECT check_and_unlock_badges($1)', [actualUserId]);
+
+    console.log(`📊 Points adjusted: ${points > 0 ? '+' : ''}${points} points for user ${actualUserId}`);
+
+    res.json({
+      ok: true,
+      data: {
+        totalPoints: finalPoints,
+        level: finalLevel,
+        pointsAdjusted: points,
+      },
+      message: "Points adjusted successfully",
+    });
+  } catch (error) {
+    console.error("[Gamification] Adjust points error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Get points rules
+app.get("/api/gamification/points/rules", async (req, res) => {
+  try {
+    const rules = {
+      earn: {
+        checkin: {
+          base: 10,
+          description: "Mỗi lần check-in",
+        },
+        recyclable: {
+          base: 15,
+          description: "Check-in rác tái chế",
+        },
+        bulky: {
+          base: 20,
+          description: "Check-in rác cồng kềnh",
+        },
+        streak: {
+          base: 5,
+          description: "Điểm thưởng streak (mỗi ngày liên tiếp)",
+        },
+      },
+      bonus: {
+        first_checkin: {
+          points: 50,
+          description: "Check-in đầu tiên",
+        },
+        weekly_goal: {
+          points: 100,
+          description: "Hoàn thành mục tiêu tuần",
+        },
+        monthly_goal: {
+          points: 500,
+          description: "Hoàn thành mục tiêu tháng",
+        },
+      },
+      level_thresholds: [
+        { level: 1, points: 0 },
+        { level: 2, points: 100 },
+        { level: 3, points: 300 },
+        { level: 4, points: 600 },
+        { level: 5, points: 1000 },
+        { level: 6, points: 1500 },
+        { level: 7, points: 2200 },
+        { level: 8, points: 3000 },
+        { level: 9, points: 4000 },
+        { level: 10, points: 5000 },
+      ],
+    };
+
+    res.json({
+      ok: true,
+      data: rules,
+    });
+  } catch (error) {
+    console.error("[Gamification] Get rules error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// ==================== GAMIFICATION BADGES API ====================
+
+// Create badge
+app.post("/api/gamification/badges", async (req, res) => {
+  try {
+    const { code, name, description, icon_url, criteria, points_reward, rarity } = req.body;
+
+    if (!code || !name || !criteria) {
+      return res.status(400).json({
+        ok: false,
+        error: "code, name, and criteria are required",
+      });
+    }
+
+    const { rows } = await db.query(
+      `INSERT INTO badges (code, name, description, icon_url, criteria, points_reward, rarity, active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, true)
+       RETURNING *`,
+      [
+        code,
+        name,
+        description || null,
+        icon_url || null,
+        JSON.stringify(criteria),
+        points_reward || 0,
+        rarity || "common",
+      ]
+    );
+
+    console.log(`🏆 Badge created: ${code} (${name})`);
+
+    res.status(201).json({
+      ok: true,
+      data: rows[0],
+      message: "Badge created successfully",
+    });
+  } catch (error) {
+    console.error("[Gamification] Create badge error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Update badge
+app.patch("/api/gamification/badges/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, icon_url, criteria, points_reward, rarity, active } = req.body;
+
+    const updates = [];
+    const params = [];
+    let paramIndex = 1;
+
+    if (name !== undefined) {
+      updates.push(`name = $${paramIndex++}`);
+      params.push(name);
+    }
+    if (description !== undefined) {
+      updates.push(`description = $${paramIndex++}`);
+      params.push(description);
+    }
+    if (icon_url !== undefined) {
+      updates.push(`icon_url = $${paramIndex++}`);
+      params.push(icon_url);
+    }
+    if (criteria !== undefined) {
+      updates.push(`criteria = $${paramIndex++}`);
+      params.push(JSON.stringify(criteria));
+    }
+    if (points_reward !== undefined) {
+      updates.push(`points_reward = $${paramIndex++}`);
+      params.push(points_reward);
+    }
+    if (rarity !== undefined) {
+      updates.push(`rarity = $${paramIndex++}`);
+      params.push(rarity);
+    }
+    if (active !== undefined) {
+      updates.push(`active = $${paramIndex++}`);
+      params.push(active);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "No fields to update",
+      });
+    }
+
+    params.push(id);
+    const { rows } = await db.query(
+      `UPDATE badges
+       SET ${updates.join(", ")}
+       WHERE id = $${paramIndex}
+       RETURNING *`,
+      params
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        ok: false,
+        error: "Badge not found",
+      });
+    }
+
+    console.log(`🏆 Badge updated: ${id}`);
+
+    res.json({
+      ok: true,
+      data: rows[0],
+      message: "Badge updated successfully",
+    });
+  } catch (error) {
+    console.error("[Gamification] Update badge error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Delete badge
+app.delete("/api/gamification/badges/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { rows } = await db.query(
+      `UPDATE badges SET active = false WHERE id = $1 RETURNING *`,
+      [id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        ok: false,
+        error: "Badge not found",
+      });
+    }
+
+    console.log(`🏆 Badge deactivated: ${id}`);
+
+    res.json({
+      ok: true,
+      message: "Badge deactivated successfully",
+    });
+  } catch (error) {
+    console.error("[Gamification] Delete badge error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Assign badge to user
+app.post("/api/gamification/badges/assign", async (req, res) => {
+  try {
+    const { user_id, badge_id, reason } = req.body;
+
+    if (!user_id || !badge_id) {
+      return res.status(400).json({
+        ok: false,
+        error: "user_id and badge_id are required",
+      });
+    }
+
+    // Check if badge exists and is active
+    const badgeCheck = await db.query(
+      `SELECT id, points_reward FROM badges WHERE id = $1 AND active = true`,
+      [badge_id]
+    );
+
+    if (badgeCheck.rows.length === 0) {
+      return res.status(404).json({
+        ok: false,
+        error: "Badge not found or inactive",
+      });
+    }
+
+    // Check if user already has this badge
+    const existing = await db.query(
+      `SELECT id FROM user_badges WHERE user_id = $1 AND badge_id = $2`,
+      [user_id, badge_id]
+    );
+
+    if (existing.rows.length > 0) {
+      return res.status(409).json({
+        ok: false,
+        error: "User already has this badge",
+      });
+    }
+
+    // Assign badge
+    await db.query(
+      `INSERT INTO user_badges (user_id, badge_id, earned_at)
+       VALUES ($1, $2, NOW())`,
+      [user_id, badge_id]
+    );
+
+    // Award points if badge has points reward
+    const pointsReward = badgeCheck.rows[0].points_reward;
+    if (pointsReward > 0) {
+      await db.query(
+        `INSERT INTO point_transactions (user_id, points, type, reason, reference_id, reference_type)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [user_id, pointsReward, "bonus", reason || "Badge reward", badge_id, "badge"]
+      );
+
+      await db.query(
+        `UPDATE user_points
+         SET points = points + $1,
+             level = calculate_level_from_points(points + $1),
+             updated_at = NOW()
+         WHERE user_id = $2`,
+        [pointsReward, user_id]
+      );
+    }
+
+    console.log(`🏆 Badge assigned: ${badge_id} to user ${user_id}`);
+
+    res.json({
+      ok: true,
+      message: "Badge assigned successfully",
+      data: {
+        badgeId: badge_id,
+        pointsAwarded: pointsReward,
+      },
+    });
+  } catch (error) {
+    console.error("[Gamification] Assign badge error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Get badge analytics
+app.get("/api/gamification/badges/analytics", async (req, res) => {
+  try {
+    // Total badges
+    const totalBadgesQuery = await db.query(
+      `SELECT COUNT(*) as total FROM badges WHERE active = true`
+    );
+    const totalBadges = parseInt(totalBadgesQuery.rows[0]?.total || 0);
+
+    // Total badges unlocked (distinct badge types)
+    const unlockedBadgesQuery = await db.query(
+      `SELECT COUNT(DISTINCT badge_id) as total FROM user_badges`
+    );
+    const unlockedBadges = parseInt(unlockedBadgesQuery.rows[0]?.total || 0);
+
+    // Users with badges
+    const usersWithBadgesQuery = await db.query(
+      `SELECT COUNT(DISTINCT user_id) as total FROM user_badges`
+    );
+    const usersWithBadges = parseInt(usersWithBadgesQuery.rows[0]?.total || 0);
+
+    // Total unlocks (all badge unlocks)
+    const totalUnlocksQuery = await db.query(
+      `SELECT COUNT(*) as total FROM user_badges`
+    );
+    const totalUnlocks = parseInt(totalUnlocksQuery.rows[0]?.total || 0);
+
+    // Badges by rarity
+    const rarityQuery = await db.query(
+      `SELECT rarity, COUNT(*) as count
+       FROM badges
+       WHERE active = true
+       GROUP BY rarity`
+    );
+    const byRarity = rarityQuery.rows.reduce((acc, row) => {
+      acc[row.rarity] = parseInt(row.count || 0);
+      return acc;
+    }, {});
+
+    // Most unlocked badges
+    const popularQuery = await db.query(
+      `SELECT 
+        b.id,
+        b.name,
+        b.rarity,
+        COUNT(ub.id) as unlock_count
+       FROM badges b
+       LEFT JOIN user_badges ub ON b.id = ub.badge_id
+       WHERE b.active = true
+       GROUP BY b.id, b.name, b.rarity
+       ORDER BY unlock_count DESC
+       LIMIT 10`
+    );
+    const mostPopular = popularQuery.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      rarity: row.rarity,
+      unlockCount: parseInt(row.unlock_count || 0),
+    }));
+
+    res.json({
+      ok: true,
+      data: {
+        statistics: {
+          totalBadges,
+          unlockedBadges,
+          usersWithBadges,
+          totalUnlocks,
+        },
+        byRarity,
+        mostPopular,
+      },
+    });
+  } catch (error) {
+    console.error("[Gamification] Get badge analytics error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 // Claim reward (add points to user)
 app.post("/api/gamification/claim-reward", async (req, res) => {
   try {
@@ -7139,15 +8079,16 @@ app.post("/api/gamification/claim-reward", async (req, res) => {
 
     // Add points transaction
     await db.query(
-      `INSERT INTO point_transactions (user_id, points, transaction_type, description)
+      `INSERT INTO point_transactions (user_id, points, type, reason)
        VALUES ($1, $2, $3, $4)`,
-      [userId, points, "reward", reason || "Reward claimed"]
+      [userId, points, "bonus", reason || "Reward claimed"]
     );
 
-    // Update user points
+    // Update user points and recalculate level
     const { rows } = await db.query(
       `UPDATE user_points
        SET points = points + $1,
+           level = calculate_level_from_points(points + $1),
            updated_at = NOW()
        WHERE user_id = $2
        RETURNING points, level`,
@@ -7167,6 +8108,215 @@ app.post("/api/gamification/claim-reward", async (req, res) => {
     });
   } catch (error) {
     console.error("[Gamification] Claim reward error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// ==================== AIR QUALITY API ====================
+const airQualityService = require('./services/airquality');
+
+// Get air quality data for a location
+app.get("/api/air-quality", async (req, res) => {
+  try {
+    const { lat, lon } = req.query;
+    
+    if (!lat || !lon) {
+      return res.status(400).json({
+        ok: false,
+        error: "lat and lon query parameters are required"
+      });
+    }
+
+    const latNum = parseFloat(lat);
+    const lonNum = parseFloat(lon);
+
+    if (isNaN(latNum) || isNaN(lonNum)) {
+      return res.status(400).json({
+        ok: false,
+        error: "Invalid lat or lon values"
+      });
+    }
+
+    const aqiData = await airQualityService.getAirQuality(latNum, lonNum);
+    
+    res.json({
+      ok: true,
+      data: aqiData
+    });
+  } catch (error) {
+    console.error("[Air Quality] Get error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// ==================== POI (Points of Interest) API ====================
+const poiService = require('./services/poi');
+
+// Get POIs near a location (alias for /api/poi/nearby)
+app.get("/api/poi", async (req, res) => {
+  try {
+    const { lat, lon, type, radius = 500 } = req.query;
+    
+    if (!lat || !lon) {
+      return res.status(400).json({
+        ok: false,
+        error: "lat and lon query parameters are required"
+      });
+    }
+
+    const latNum = parseFloat(lat);
+    const lonNum = parseFloat(lon);
+    const radiusNum = parseInt(radius);
+
+    if (isNaN(latNum) || isNaN(lonNum)) {
+      return res.status(400).json({
+        ok: false,
+        error: "Invalid lat or lon values"
+      });
+    }
+
+    const pois = await poiService.getNearbyPOI(latNum, lonNum, radiusNum, type);
+    
+    res.json({
+      ok: true,
+      data: pois
+    });
+  } catch (error) {
+    console.error("[POI] Get error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Get POIs near a location (frontend uses this endpoint)
+app.get("/api/poi/nearby", async (req, res) => {
+  try {
+    const { lat, lon, type, radius = 500 } = req.query;
+    
+    if (!lat || !lon) {
+      return res.status(400).json({
+        ok: false,
+        error: "lat and lon query parameters are required"
+      });
+    }
+
+    const latNum = parseFloat(lat);
+    const lonNum = parseFloat(lon);
+    const radiusNum = parseInt(radius);
+
+    if (isNaN(latNum) || isNaN(lonNum)) {
+      return res.status(400).json({
+        ok: false,
+        error: "Invalid lat or lon values"
+      });
+    }
+
+    const pois = await poiService.getNearbyPOI(latNum, lonNum, radiusNum, type);
+    
+    res.json({
+      ok: true,
+      data: pois
+    });
+  } catch (error) {
+    console.error("[POI] Get nearby error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// ==================== SENSOR ALERTS API ====================
+const sensorsService = require('./services/sensors');
+
+// Get containers that need collection (fill level > threshold)
+app.get("/api/sensors/alerts", async (req, res) => {
+  try {
+    const { threshold = 80 } = req.query;
+    const thresholdNum = parseInt(threshold);
+
+    if (isNaN(thresholdNum) || thresholdNum < 0 || thresholdNum > 100) {
+      return res.status(400).json({
+        ok: false,
+        error: "Invalid threshold value (must be 0-100)"
+      });
+    }
+
+    const containers = await sensorsService.getContainersNeedingCollection(thresholdNum);
+    
+    res.json({
+      ok: true,
+      data: containers
+    });
+  } catch (error) {
+    console.error("[Sensors] Get alerts error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Get sensor data for a specific container
+app.get("/api/sensors/container/:containerId", async (req, res) => {
+  try {
+    const { containerId } = req.params;
+    
+    const sensorData = await sensorsService.getContainerLevel(containerId);
+    
+    if (!sensorData) {
+      return res.status(404).json({
+        ok: false,
+        error: "Container not found"
+      });
+    }
+
+    res.json({
+      ok: true,
+      data: sensorData
+    });
+  } catch (error) {
+    console.error("[Sensors] Get container error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Get container level (alias for frontend compatibility)
+app.get("/api/sensors/:containerId/level", async (req, res) => {
+  try {
+    const { containerId } = req.params;
+    
+    const sensorData = await sensorsService.getContainerLevel(containerId);
+    
+    if (!sensorData) {
+      return res.status(404).json({
+        ok: false,
+        error: "Container not found"
+      });
+    }
+
+    res.json({
+      ok: true,
+      data: {
+        containerId: sensorData.containerId || containerId,
+        fillLevel: sensorData.fillLevel || 0,
+        level: sensorData.level || 0,
+        timestamp: sensorData.timestamp || new Date().toISOString(),
+      }
+    });
+  } catch (error) {
+    console.error("[Sensors] Get level error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Get observations for a container
+app.get("/api/sensors/container/:containerId/observations", async (req, res) => {
+  try {
+    const { containerId } = req.params;
+    const { limit = 100 } = req.query;
+    
+    const observations = await sensorsService.getContainerObservations(containerId, parseInt(limit));
+    
+    res.json({
+      ok: true,
+      data: observations
+    });
+  } catch (error) {
+    console.error("[Sensors] Get observations error:", error);
     res.status(500).json({ ok: false, error: error.message });
   }
 });

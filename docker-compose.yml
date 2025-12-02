@@ -122,19 +122,20 @@ services:
     networks:
       - ecocheck-network
 
-  # Frontend Web Manager (React)
+  # Frontend Web Manager (React) - Dev Mode
   frontend-web:
     build:
       context: ./frontend-web-manager
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     container_name: ecocheck-frontend-web
     depends_on:
       backend:
         condition: service_healthy
     ports:
-      - "3001:80"
-    environment:
-      - REACT_APP_API_URL=http://localhost:3000/api
+      - "5173:5173"
+    volumes:
+      - ./frontend-web-manager:/app
+      - /app/node_modules
     networks:
       - ecocheck-network
 

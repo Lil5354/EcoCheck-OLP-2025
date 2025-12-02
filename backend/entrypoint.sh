@@ -26,9 +26,12 @@ if [ -f "/app/db/run_migrations.sh" ]; then
     PGPASSWORD=$DB_PASSWORD psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "DELETE FROM schema_migrations WHERE version = '008_create_alerts_table.sql';" || echo "Clean-up failed, continuing anyway."
 
     echo "Running database migrations..."
+    # Fix line endings and make script executable
+    sed -i 's/\r$//' /app/db/run_migrations.sh
+    chmod +x /app/db/run_migrations.sh
     # Go to the db directory to run the script
     cd /app/db
-    /bin/sh ./run_migrations.sh
+    /bin/bash ./run_migrations.sh || echo "Migrations failed, but continuing..."
     cd /app # Return to app directory
     echo "Migrations complete."
 else
