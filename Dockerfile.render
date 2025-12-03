@@ -68,6 +68,7 @@ COPY backend/entrypoint.sh ./backend/
 COPY --from=frontend-builder /app/frontend-web-manager/dist ./frontend/dist
 
 # Copy nginx configuration template
+# Script will generate complete nginx.conf with http block
 COPY nginx.render.conf /etc/nginx/conf.d/default.conf.template
 
 # Copy supervisor configuration
@@ -84,7 +85,7 @@ RUN chmod +x /usr/local/bin/start.sh
 # Fix line endings and make scripts executable
 RUN dos2unix backend/entrypoint.sh || sed -i 's/\r$//' backend/entrypoint.sh && \
     chmod +x backend/entrypoint.sh && \
-    mkdir -p /var/log/nginx /var/log/supervisor /app/backend/public/uploads && \
+    mkdir -p /var/log/nginx /var/log/supervisor /app/backend/public/uploads /tmp && \
     chmod -R 755 /app/backend/public/uploads
 
 # Expose port (Render will set PORT env variable)

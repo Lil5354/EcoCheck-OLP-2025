@@ -17,8 +17,8 @@ if ! /usr/local/bin/generate-nginx-config.sh; then
 fi
 
 # Verify nginx config exists
-if [ ! -f /etc/nginx/conf.d/default.conf ]; then
-    echo "ERROR: Nginx config file not found!"
+if [ ! -f /etc/nginx/nginx.conf ]; then
+    echo "ERROR: Nginx main config file not found!"
     exit 1
 fi
 
