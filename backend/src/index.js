@@ -8446,48 +8446,74 @@ app.get("/api/incidents", async (req, res) => {
       type,
       status,
       priority,
-      limit = 50,
+      limit = 1000,
       offset = 0,
     } = req.query;
 
-    let query = "SELECT * FROM incidents WHERE 1=1";
+    // Join with personnel to get reporter name and phone
+    let query = `
+      SELECT 
+        i.*,
+        p.name as personnel_name,
+        p.phone as personnel_phone,
+        p.role as personnel_role,
+        assigned_p.name as assigned_personnel_name
+      FROM incidents i
+      LEFT JOIN personnel p ON i.reporter_id = p.id
+      LEFT JOIN personnel assigned_p ON i.assigned_to = assigned_p.id
+      WHERE 1=1
+    `;
     const params = [];
     let paramIndex = 1;
 
     if (reporter_id) {
-      query += ` AND reporter_id = $${paramIndex++}`;
+      query += ` AND i.reporter_id = $${paramIndex++}`;
       params.push(reporter_id);
     }
 
     if (report_category) {
-      query += ` AND report_category = $${paramIndex++}`;
+      query += ` AND i.report_category = $${paramIndex++}`;
       params.push(report_category);
     }
 
     if (type) {
-      query += ` AND type = $${paramIndex++}`;
+      query += ` AND i.type = $${paramIndex++}`;
       params.push(type);
     }
 
     if (status) {
-      query += ` AND status = $${paramIndex++}`;
+      query += ` AND i.status = $${paramIndex++}`;
       params.push(status);
     }
 
     if (priority) {
-      query += ` AND priority = $${paramIndex++}`;
+      query += ` AND i.priority = $${paramIndex++}`;
       params.push(priority);
     }
 
-    query += ` ORDER BY created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
-    params.push(limit, offset);
+    query += ` ORDER BY i.created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex}`;
+    params.push(parseInt(limit), parseInt(offset));
 
     const { rows } = await db.query(query, params);
 
+    // Enrich data with reporter info
+    const enrichedRows = rows.map((row) => {
+      // Use personnel info if available, otherwise use incident reporter info
+      const reporterName = row.personnel_name || row.reporter_name || null;
+      const reporterPhone = row.personnel_phone || row.reporter_phone || null;
+
+      return {
+        ...row,
+        reporter_name: reporterName,
+        reporter_phone: reporterPhone,
+        is_worker: !!row.personnel_name, // Flag to identify if reporter is a worker
+      };
+    });
+
     res.json({
       ok: true,
-      data: rows,
-      total: rows.length,
+      data: enrichedRows,
+      total: enrichedRows.length,
     });
   } catch (error) {
     console.error("[Incidents] Get incidents error:", error);
@@ -8525,17 +8551,39 @@ app.get("/api/incidents/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
-    const { rows } = await db.query("SELECT * FROM incidents WHERE id = $1", [
-      id,
-    ]);
+    // Join with personnel to get reporter and assigned personnel info
+    const { rows } = await db.query(
+      `SELECT 
+        i.*,
+        p.name as personnel_name,
+        p.phone as personnel_phone,
+        p.role as personnel_role,
+        assigned_p.name as assigned_personnel_name,
+        assigned_p.phone as assigned_personnel_phone
+      FROM incidents i
+      LEFT JOIN personnel p ON i.reporter_id = p.id
+      LEFT JOIN personnel assigned_p ON i.assigned_to = assigned_p.id
+      WHERE i.id = $1`,
+      [id]
+    );
 
     if (rows.length === 0) {
       return res.status(404).json({ ok: false, error: "Incident not found" });
     }
 
+    const row = rows[0];
+    // Enrich data
+    const enrichedData = {
+      ...row,
+      reporter_name: row.personnel_name || row.reporter_name || null,
+      reporter_phone: row.personnel_phone || row.reporter_phone || null,
+      is_worker: !!row.personnel_name,
+      assigned_personnel_name: row.assigned_personnel_name || null,
+    };
+
     res.json({
       ok: true,
-      data: rows[0],
+      data: enrichedData,
     });
   } catch (error) {
     console.error("[Incidents] Get incident error:", error);
@@ -8680,6 +8728,148 @@ app.patch("/api/incidents/:id/status", async (req, res) => {
     });
   } catch (error) {
     console.error("[Incidents] Update status error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Update full incident (admin only)
+app.put("/api/incidents/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      report_category,
+      type,
+      description,
+      latitude,
+      longitude,
+      location_address,
+      image_urls,
+      priority,
+      status,
+      assigned_to,
+      resolution_notes,
+    } = req.body;
+
+    // Build update query dynamically
+    const updates = [];
+    const params = [];
+    let paramIndex = 1;
+
+    if (report_category !== undefined) {
+      if (!["violation", "damage"].includes(report_category)) {
+        return res.status(400).json({
+          ok: false,
+          error: "report_category must be 'violation' or 'damage'",
+        });
+      }
+      updates.push(`report_category = $${paramIndex++}`);
+      params.push(report_category);
+    }
+
+    if (type !== undefined) {
+      updates.push(`type = $${paramIndex++}`);
+      params.push(type);
+    }
+
+    if (description !== undefined) {
+      updates.push(`description = $${paramIndex++}`);
+      params.push(description);
+    }
+
+    if (latitude !== undefined) {
+      updates.push(`latitude = $${paramIndex++}`);
+      params.push(latitude);
+    }
+
+    if (longitude !== undefined) {
+      updates.push(`longitude = $${paramIndex++}`);
+      params.push(longitude);
+    }
+
+    if (location_address !== undefined) {
+      updates.push(`location_address = $${paramIndex++}`);
+      params.push(location_address);
+    }
+
+    if (image_urls !== undefined) {
+      updates.push(`image_urls = $${paramIndex++}`);
+      params.push(image_urls);
+    }
+
+    if (priority !== undefined) {
+      const validPriorities = ["low", "medium", "high", "urgent"];
+      if (!validPriorities.includes(priority)) {
+        return res.status(400).json({
+          ok: false,
+          error: `Invalid priority. Must be one of: ${validPriorities.join(", ")}`,
+        });
+      }
+      updates.push(`priority = $${paramIndex++}`);
+      params.push(priority);
+    }
+
+    if (status !== undefined) {
+      const validStatuses = [
+        "pending",
+        "open",
+        "in_progress",
+        "resolved",
+        "closed",
+        "rejected",
+      ];
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({
+          ok: false,
+          error: `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
+        });
+      }
+      updates.push(`status = $${paramIndex++}`);
+      params.push(status);
+
+      // Set resolved_at if status changes to resolved/closed
+      if (status === "resolved" || status === "closed") {
+        updates.push(`resolved_at = NOW()`);
+      }
+    }
+
+    if (assigned_to !== undefined) {
+      updates.push(`assigned_to = $${paramIndex++}`);
+      params.push(assigned_to || null);
+    }
+
+    if (resolution_notes !== undefined) {
+      updates.push(`resolution_notes = $${paramIndex++}`);
+      params.push(resolution_notes);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "No fields to update",
+      });
+    }
+
+    updates.push(`updated_at = NOW()`);
+    params.push(id);
+
+    const query = `UPDATE incidents 
+                   SET ${updates.join(", ")} 
+                   WHERE id = $${paramIndex} 
+                   RETURNING *`;
+
+    const { rows } = await db.query(query, params);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "Incident not found" });
+    }
+
+    res.json({
+      ok: true,
+      data: rows[0],
+      message: "Incident updated successfully",
+    });
+  } catch (error) {
+    console.error("[Incidents] Update incident error:", error);
     res.status(500).json({ ok: false, error: error.message });
   }
 });

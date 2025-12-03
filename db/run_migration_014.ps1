@@ -1,9 +1,9 @@
-# PowerShell script to run migration 015: Seed Citizen Incident Reports
+# PowerShell script to run migration 014: Seed Worker Incident Reports
 # MIT License - Copyright (c) 2025 Lil5354
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "  Seed Citizen Incident Reports" -ForegroundColor Green
+Write-Host "  Seed Worker Incident Reports" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -22,7 +22,7 @@ if ($env:DOCKER_CONTAINER) {
 }
 
 # Migration file path
-$migrationFile = "db/migrations/015_seed_citizen_incidents.sql"
+$migrationFile = "db/migrations/014_seed_worker_incidents.sql"
 
 if (-not (Test-Path $migrationFile)) {
     Write-Host "Error: Migration file not found: $migrationFile" -ForegroundColor Red
@@ -48,19 +48,19 @@ if ($dockerAvailable) {
         Write-Host "Running migration..." -ForegroundColor Yellow
         $env:PGPASSWORD = $DB_PASSWORD
         
-        docker exec -i ecocheck-postgres psql -U $DB_USER -d $DB_NAME -f /app/db/migrations/015_seed_citizen_incidents.sql
+        docker exec -i ecocheck-postgres psql -U $DB_USER -d $DB_NAME -f /app/db/migrations/014_seed_worker_incidents.sql
         
         if ($LASTEXITCODE -eq 0) {
             Write-Host ""
-            Write-Host "Migration completed successfully!" -ForegroundColor Green
+            Write-Host "✓ Migration completed successfully!" -ForegroundColor Green
             Write-Host ""
-            Write-Host "Da them du lieu test cho bao cao nguoi dan:" -ForegroundColor Cyan
-            Write-Host "  - 6 bao cao VI PHAM (violation)" -ForegroundColor Gray
-            Write-Host "  - 7 bao cao HU HONG (damage)" -ForegroundColor Gray
+            Write-Host "Đã thêm dữ liệu test cho báo cáo nhân viên:" -ForegroundColor Cyan
+            Write-Host "  - 5 báo cáo VI PHẠM (violation)" -ForegroundColor Gray
+            Write-Host "  - 7 báo cáo HƯ HỎNG (damage)" -ForegroundColor Gray
             Write-Host ""
         } else {
             Write-Host ""
-            Write-Host "Migration failed!" -ForegroundColor Red
+            Write-Host "✗ Migration failed!" -ForegroundColor Red
             exit 1
         }
     } else {
@@ -81,10 +81,10 @@ if ($dockerAvailable) {
         
         if ($LASTEXITCODE -eq 0) {
             Write-Host ""
-            Write-Host "Migration completed successfully!" -ForegroundColor Green
+            Write-Host "✓ Migration completed successfully!" -ForegroundColor Green
         } else {
             Write-Host ""
-            Write-Host "Migration failed!" -ForegroundColor Red
+            Write-Host "✗ Migration failed!" -ForegroundColor Red
             exit 1
         }
     } else {
@@ -95,3 +95,4 @@ if ($dockerAvailable) {
 }
 
 Write-Host ""
+

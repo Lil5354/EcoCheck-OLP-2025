@@ -212,6 +212,23 @@ const api = {
 
   // Incidents & Exceptions
   getIncidents: (params) => request('/incidents', { method: 'GET', params }),
+  getIncident: (id) => request(`/incidents/${id}`, { method: 'GET' }),
+  createIncident: (data) => 
+    request('/incidents', { 
+      method: 'POST', 
+      body: JSON.stringify(data) 
+    }),
+  updateIncidentStatus: (id, data) => 
+    request(`/incidents/${id}/status`, { 
+      method: 'PATCH', 
+      body: JSON.stringify(data) 
+    }),
+  updateIncident: (id, data) => 
+    request(`/incidents/${id}`, { 
+      method: 'PUT', 
+      body: JSON.stringify(data) 
+    }),
+  deleteIncident: (id) => request(`/incidents/${id}`, { method: 'DELETE' }),
   getExceptions: (params) => request('/exceptions', { method: 'GET', params }),
 
   // Analytics
