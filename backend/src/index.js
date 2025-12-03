@@ -20,7 +20,9 @@ dotenv.config();
 const app = express();
 const server = http.createServer(app);
 const io = require("socket.io")(server, { cors: { origin: "*" } });
-const PORT = process.env.PORT || 3000;
+// In unified deployment (with Nginx), backend should use BACKEND_PORT (3000)
+// Render's PORT (10000) is for Nginx only
+const PORT = process.env.BACKEND_PORT || process.env.PORT || 3000;
 // Performance middleware
 app.use(compression());
 

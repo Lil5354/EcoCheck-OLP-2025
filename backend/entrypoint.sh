@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # MIT License
 # Copyright (c) 2025 Lil5354
 # EcoCheck Backend Entrypoint Script
@@ -9,7 +9,9 @@
 echo "========================================="
 echo "Starting EcoCheck Backend..."
 echo "Environment: ${NODE_ENV:-development}"
-echo "Port: ${PORT:-3000}"
+# In unified deployment, backend uses BACKEND_PORT (3000), not Render's PORT (10000)
+BACKEND_PORT_VALUE=${BACKEND_PORT:-${PORT:-3000}}
+echo "Backend Port: $BACKEND_PORT_VALUE (Nginx will proxy from Render PORT)"
 echo "========================================="
 
 # Debug: Log database connection info (hide password)
