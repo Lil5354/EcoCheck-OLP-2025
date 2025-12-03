@@ -10,7 +10,7 @@ const API_BASE = '/api';
 
 // Generic fetch wrapper
 async function request(endpoint, options = {}) {
-  const url = `${API_BASE}${endpoint}`;
+  let url = `${API_BASE}${endpoint}`;
   const config = {
     headers: {
       'Content-Type': 'application/json',
