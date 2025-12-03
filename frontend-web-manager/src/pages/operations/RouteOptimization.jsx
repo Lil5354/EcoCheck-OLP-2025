@@ -808,7 +808,7 @@ export default function RouteOptimization() {
       <div className="content">
         <main className="main">
           <div className="container">
-            <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>Tối ưu tuyến đường (CN6)</h1>
+            <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>Tối ưu tuyến đường</h1>
             
             {/* Filters */}
             <div className="card" style={{ marginBottom: 16 }}>

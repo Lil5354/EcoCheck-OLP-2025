@@ -129,7 +129,7 @@ export default function DynamicDispatch() {
       <div className="content">
         <main className="main">
           <div className="container">
-            <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>Điều phối động (CN7)</h1>
+            <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>Điều phối động</h1>
             <div className="card">
               <h2>Cảnh báo thời gian thực</h2>
               <Table columns={columns} data={alerts} emptyText="Không có cảnh báo" />

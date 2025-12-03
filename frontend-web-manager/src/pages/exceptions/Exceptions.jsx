@@ -68,7 +68,7 @@ export default function Exceptions() {
       <div className="content">
         <main className="main">
           <div className="container">
-            <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>Xử lý ngoại lệ (CN15)</h1>
+            <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>Xử lý ngoại lệ</h1>
             <div className="card">
               <h2>Báo cáo ngoại lệ</h2>
               <Table columns={columns} data={exceptions} emptyText="Không có ngoại lệ" />

@@ -99,7 +99,7 @@ export default function Fleet() {
         <main className="main">
           <div className="container">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <h1 style={{ fontSize: 24, fontWeight: 600 }}>Quản lý đội xe (CN14)</h1>
+              <h1 style={{ fontSize: 24, fontWeight: 600 }}>Quản lý đội xe</h1>
               <button className="btn btn-primary" onClick={handleAdd}>
                 Thêm phương tiện
               </button>

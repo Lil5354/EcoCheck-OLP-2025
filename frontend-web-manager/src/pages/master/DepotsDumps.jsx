@@ -163,7 +163,7 @@ export default function DepotsDumps() {
       <div className="content">
         <main className="main">
           <div className="container">
-            <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>Quản lý Trạm thu gom (CN14)</h1>
+            <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>Quản lý Trạm thu gom</h1>
             
             {/* Filter by district */}
             <div className="card" style={{ marginBottom: 16 }}>

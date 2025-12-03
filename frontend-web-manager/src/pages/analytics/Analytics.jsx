@@ -212,7 +212,7 @@ export default function AnalyticsPage() {
       <div className="content">
         <main className="main">
           <div className="container">
-            <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>Phân tích & Dự đoán (CN8)</h1>
+            <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>Phân tích & Dự đoán</h1>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 24 }}>
               <div className="card" style={{ borderLeft: '4px solid #4caf50' }}>
                 <KPI 

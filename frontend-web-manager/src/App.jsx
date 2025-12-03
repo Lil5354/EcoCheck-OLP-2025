@@ -145,8 +145,12 @@ function App() {
                 <div className="card stat-card border-blue">
                     <div className="stat-body">
                         <h5 className="stat-title">Tuyến đang hoạt động</h5>
-                        <h2 className="stat-value">{kpis.routesActive || <span className="skeleton" style={{width:50}}/>}</h2>
-                        <p className="stat-trend text-success">+2.5%</p>
+                        <h2 className="stat-value">{kpis.routesActive !== undefined ? kpis.routesActive : <span className="skeleton" style={{width:50}}/>}</h2>
+                        {kpis.routesActiveChange !== undefined ? (
+                          <p className={`stat-trend ${kpis.routesActiveChange >= 0 ? 'text-success' : 'text-danger'}`}>
+                            {kpis.routesActiveChange >= 0 ? '+' : ''}{kpis.routesActiveChange.toFixed(1)}%
+                          </p>
+                        ) : null}
                     </div>
                     <div className="stat-icon">
                         {/* Placeholder for mini chart */}
@@ -157,8 +161,12 @@ function App() {
                 <div className="card stat-card border-green">
                     <div className="stat-body">
                         <h5 className="stat-title">Tỷ lệ thu gom</h5>
-                        <h2 className="stat-value">{kpis.collectionRate ? `${Math.round(kpis.collectionRate*100)}%` : <span className="skeleton" style={{width:60}}/>}</h2>
-                        <p className="stat-trend text-danger">-1.3%</p>
+                        <h2 className="stat-value">{kpis.collectionRate !== undefined ? `${Math.round(kpis.collectionRate*100)}%` : <span className="skeleton" style={{width:60}}/>}</h2>
+                        {kpis.collectionRateChange !== undefined ? (
+                          <p className={`stat-trend ${kpis.collectionRateChange >= 0 ? 'text-success' : 'text-danger'}`}>
+                            {kpis.collectionRateChange >= 0 ? '+' : ''}{kpis.collectionRateChange.toFixed(1)}%
+                          </p>
+                        ) : null}
                     </div>
                     <div className="stat-icon">
                         {/* Placeholder for mini chart */}
@@ -169,8 +177,12 @@ function App() {
                 <div className="card stat-card border-yellow">
                     <div className="stat-body">
                         <h5 className="stat-title">Thu gom hôm nay</h5>
-                        <h2 className="stat-value">{kpis.todayTons || <span className="skeleton" style={{width:50}}/>}t</h2>
-                        <p className="stat-trend text-success">+5.2%</p>
+                        <h2 className="stat-value">{kpis.todayTons !== undefined ? `${kpis.todayTons.toFixed(1)}` : <span className="skeleton" style={{width:50}}/>}t</h2>
+                        {kpis.todayTonsChange !== undefined ? (
+                          <p className={`stat-trend ${kpis.todayTonsChange >= 0 ? 'text-success' : 'text-danger'}`}>
+                            {kpis.todayTonsChange >= 0 ? '+' : ''}{kpis.todayTonsChange.toFixed(1)}%
+                          </p>
+                        ) : null}
                     </div>
                     <div className="stat-icon">
                         {/* Placeholder for mini chart */}

@@ -818,12 +818,32 @@ app.get("/api/analytics/summary", async (req, res) => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
 
-    // Count active routes
+    // Count active routes (today)
     const activeRoutesResult = await db.query(
       `SELECT COUNT(*) as count FROM routes WHERE status IN ('in_progress', 'planned')`
     );
     const routesActive = parseInt(activeRoutesResult.rows[0].count) || 0;
+
+    // Count routes that were active yesterday (using updated_at or start_at)
+    // We compare today's active routes with routes that were active yesterday
+    const routesActiveYesterdayResult = await db.query(
+      `SELECT COUNT(*) as count 
+       FROM routes 
+       WHERE status IN ('in_progress', 'planned')
+         AND (DATE(updated_at) = DATE($1) OR DATE(start_at) = DATE($1))`,
+      [yesterday]
+    );
+    const routesActiveYesterday = parseInt(routesActiveYesterdayResult.rows[0].count) || 0;
+    
+    // Calculate routes change percentage
+    // Compare today's active routes with yesterday's active routes
+    const routesActiveChange = routesActiveYesterday > 0
+      ? ((routesActive - routesActiveYesterday) / routesActiveYesterday) * 100
+      : routesActive > 0 ? 100 : 0;
 
     // Calculate collection rate (completed schedules vs total schedules today)
     const scheduleStats = await db.query(
@@ -840,6 +860,26 @@ app.get("/api/analytics/summary", async (req, res) => {
           parseFloat(scheduleStats.rows[0].total)
         : 0;
 
+    // Calculate collection rate (yesterday)
+    const scheduleStatsYesterday = await db.query(
+      `SELECT 
+        COUNT(*) FILTER (WHERE status = 'completed') as completed,
+        COUNT(*) as total
+      FROM schedules 
+      WHERE DATE(scheduled_date) = DATE($1)`,
+      [yesterday]
+    );
+    const collectionRateYesterday =
+      scheduleStatsYesterday.rows[0].total > 0
+        ? parseFloat(scheduleStatsYesterday.rows[0].completed) /
+          parseFloat(scheduleStatsYesterday.rows[0].total)
+        : 0;
+    
+    // Calculate collection rate change percentage
+    const collectionRateChange = collectionRateYesterday > 0
+      ? ((collectionRate - collectionRateYesterday) / collectionRateYesterday) * 100
+      : collectionRate > 0 ? 100 : 0;
+
     // Calculate total weight collected today
     const todayWeight = await db.query(
       `SELECT COALESCE(SUM(actual_weight), 0) as total
@@ -848,6 +888,20 @@ app.get("/api/analytics/summary", async (req, res) => {
       [today]
     );
     const todayTons = parseFloat(todayWeight.rows[0].total) / 1000 || 0;
+    
+    // Calculate total weight collected yesterday
+    const yesterdayWeight = await db.query(
+      `SELECT COALESCE(SUM(actual_weight), 0) as total
+      FROM schedules
+      WHERE DATE(completed_at) = DATE($1) AND status = 'completed'`,
+      [yesterday]
+    );
+    const yesterdayTons = parseFloat(yesterdayWeight.rows[0].total) / 1000 || 0;
+    
+    // Calculate todayTons change percentage
+    const todayTonsChange = yesterdayTons > 0
+      ? ((todayTons - yesterdayTons) / yesterdayTons) * 100
+      : todayTons > 0 ? 100 : 0;
 
     // Calculate total weight all time
     const totalWeight = await db.query(
@@ -862,31 +916,37 @@ app.get("/api/analytics/summary", async (req, res) => {
     );
     const completed = parseInt(completedCheckins.rows[0].count) || 0;
 
-    // Calculate waste by type (percentage)
+    // Calculate waste by type (percentage based on weight, not count)
     const wasteByType = await db.query(
       `SELECT 
         waste_type,
-        COUNT(*) as count
+        COALESCE(SUM(actual_weight), 0) as total_weight
       FROM schedules
       WHERE status = 'completed'
+        AND actual_weight IS NOT NULL
+        AND actual_weight > 0
       GROUP BY waste_type`
     );
     const total = wasteByType.rows.reduce(
-      (sum, row) => sum + parseInt(row.count),
+      (sum, row) => sum + parseFloat(row.total_weight || 0),
       0
     );
     const byType = {};
     wasteByType.rows.forEach((row) => {
+      const weight = parseFloat(row.total_weight || 0);
       byType[row.waste_type] =
-        total > 0 ? Math.round((parseInt(row.count) / total) * 100) : 0;
+        total > 0 ? Math.round((weight / total) * 100 * 10) / 10 : 0; // Round to 1 decimal
     });
 
     res.json({
       ok: true,
       data: {
         routesActive,
+        routesActiveChange: parseFloat(routesActiveChange.toFixed(1)),
         collectionRate: parseFloat(collectionRate.toFixed(2)),
+        collectionRateChange: parseFloat(collectionRateChange.toFixed(1)),
         todayTons: parseFloat(todayTons.toFixed(1)),
+        todayTonsChange: parseFloat(todayTonsChange.toFixed(1)),
         totalTons: parseFloat(totalTons.toFixed(1)),
         completed,
         fuelSaving: 0.09,
@@ -894,8 +954,11 @@ app.get("/api/analytics/summary", async (req, res) => {
       },
       // Also return flat for backward compatibility
       routesActive,
+      routesActiveChange: parseFloat(routesActiveChange.toFixed(1)),
       collectionRate: parseFloat(collectionRate.toFixed(2)),
+      collectionRateChange: parseFloat(collectionRateChange.toFixed(1)),
       todayTons: parseFloat(todayTons.toFixed(1)),
+      todayTonsChange: parseFloat(todayTonsChange.toFixed(1)),
       totalTons: parseFloat(totalTons.toFixed(1)),
       completed,
       fuelSaving: 0.09,
