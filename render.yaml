@@ -5,7 +5,7 @@
 
 services:
   # PostgreSQL Database
-  - type: pspg
+  - type: pg
     name: ecocheck-database
     plan: starter # Free tier PostgreSQL
     databaseName: ecocheck

@@ -38,18 +38,36 @@ fi
 # Run database migrations if the script exists
 # Note: This path assumes the db scripts are copied into the container
 if [ -f "/app/db/run_migrations.sh" ]; then
-    echo "Force-cleaning problematic migration entry before running..."
-    PGPASSWORD=$DB_PASSWORD psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -c "DELETE FROM schema_migrations WHERE version = '008_create_alerts_table.sql';" || echo "Clean-up failed, continuing anyway."
-
-    echo "Running database migrations..."
-    # Fix line endings and make script executable
-    sed -i 's/\r$//' /app/db/run_migrations.sh
-    chmod +x /app/db/run_migrations.sh
-    # Go to the db directory to run the script
-    cd /app/db
-    /bin/bash ./run_migrations.sh || echo "Migrations failed, but continuing..."
-    cd /app # Return to app directory
-    echo "Migrations complete."
+    # Check if we have database connection info
+    if [ -z "$DB_HOST" ] && [ -z "$DATABASE_URL" ]; then
+        echo "⚠ WARNING: No database connection info found (DB_HOST or DATABASE_URL)"
+        echo "⚠ Skipping migrations - database connection may fail later"
+    else
+        echo "Running database migrations..."
+        
+        # Force-cleaning problematic migration entry before running (only if DB_HOST is set)
+        if [ -n "$DB_HOST" ] && [ -n "$DB_PASSWORD" ] && [ -n "$DB_USER" ] && [ -n "$DB_NAME" ]; then
+            echo "Force-cleaning problematic migration entry before running..."
+            PGPASSWORD=$DB_PASSWORD psql -h "$DB_HOST" -p "${DB_PORT:-5432}" -U "$DB_USER" -d "$DB_NAME" -c "DELETE FROM schema_migrations WHERE version = '008_create_alerts_table.sql';" 2>/dev/null || echo "Clean-up skipped (table may not exist yet)"
+        fi
+        
+        # Fix line endings and make script executable
+        sed -i 's/\r$//' /app/db/run_migrations.sh
+        chmod +x /app/db/run_migrations.sh
+        
+        # Export DB_* variables so run_migrations.sh can use them
+        export DB_HOST
+        export DB_PORT
+        export DB_USER
+        export DB_PASSWORD
+        export DB_NAME
+        
+        # Go to the db directory to run the script
+        cd /app/db
+        /bin/bash ./run_migrations.sh || echo "Migrations failed, but continuing..."
+        cd /app # Return to app directory
+        echo "Migrations complete."
+    fi
 else
     echo "Migration script not found, skipping."
 fi
