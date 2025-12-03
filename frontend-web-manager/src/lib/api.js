@@ -45,11 +45,29 @@ async function request(endpoint, options = {}) {
       data = await response.text();
     }
 
+    // Backend returns {ok: true, data: [...]}, unwrap it
+    let unwrappedData = data;
+    let isOk = response.ok;
+    let error = null;
+
+    if (typeof data === 'object' && data !== null) {
+      // If backend response has {ok: true/false, data: ..., error: ...} structure
+      if ('ok' in data) {
+        isOk = data.ok && response.ok; // Both HTTP status and backend ok must be true
+        unwrappedData = data.data !== undefined ? data.data : data;
+        error = data.error || (isOk ? null : (data.message || 'Request failed'));
+      }
+    }
+
+    if (!isOk && !error) {
+      error = data.error || data.message || 'Request failed';
+    }
+
     return {
-      ok: response.ok,
+      ok: isOk,
       status: response.status,
-      data: data,
-      error: response.ok ? null : (data.error || data.message || 'Request failed'),
+      data: unwrappedData,
+      error: error,
     };
   } catch (error) {
     console.error(`API request failed: ${endpoint}`, error);
