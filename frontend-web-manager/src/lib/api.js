@@ -97,9 +97,19 @@ const api = {
 
   // Fleet
   getFleet: (params) => request('/master/fleet', { method: 'GET', params }),
+  createVehicle: (data) => 
+    request('/master/fleet', { 
+      method: 'POST', 
+      body: JSON.stringify(data) 
+    }),
 
   // Schedules
   getSchedules: (params) => request('/schedules', { method: 'GET', params }),
+  updateSchedule: (id, data) => 
+    request(`/schedules/${id}`, { 
+      method: 'PUT', 
+      body: JSON.stringify(data) 
+    }),
   deleteSchedule: (id) => request(`/schedules/${id}`, { method: 'DELETE' }),
 
   // Depots & Dumps
@@ -113,6 +123,23 @@ const api = {
 
   // Districts (for Route Optimization)
   getDistricts: (date) => request('/vrp/districts', { method: 'GET', params: { date } }),
+
+  // Route Optimization
+  optimizeVRP: (payload) => 
+    request('/vrp/optimize', { 
+      method: 'POST', 
+      body: JSON.stringify(payload) 
+    }),
+  saveRoutes: (payload) => 
+    request('/vrp/save-routes', { 
+      method: 'POST', 
+      body: JSON.stringify(payload) 
+    }),
+  sendRoutes: (payload) => 
+    request('/dispatch/send-routes', { 
+      method: 'POST', 
+      body: JSON.stringify(payload) 
+    }),
 
   // Route Assignment
   assignRoute: (routeId, employeeId) => 
@@ -150,6 +177,11 @@ const api = {
   // Analytics
   getSummary: () => request('/analytics/summary', { method: 'GET' }),
   getTimeseries: (params) => request('/analytics/timeseries', { method: 'GET', params }),
+  predict: (params) => 
+    request('/analytics/predict', { 
+      method: 'POST', 
+      body: JSON.stringify(params) 
+    }),
 
   // Gamification
   getGamificationOverview: () => request('/gamification/analytics/overview', { method: 'GET' }),
@@ -164,6 +196,11 @@ const api = {
   getPointTransactions: (params) => 
     request('/gamification/points/transactions', { method: 'GET', params }),
   getPointsRules: () => request('/gamification/points/rules', { method: 'GET' }),
+  adjustPoints: (userId, points, reason) => 
+    request('/gamification/points/adjust', { 
+      method: 'POST', 
+      body: JSON.stringify({ user_id: userId, points, reason }) 
+    }),
 };
 
 export default api;
