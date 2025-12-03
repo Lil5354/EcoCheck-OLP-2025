@@ -36,14 +36,24 @@ if [ -n "$DB_HOST" ]; then
 fi
 
 # Run database migrations if the script exists
-# Note: This path assumes the db scripts are copied into the container
+echo "========================================="
+echo "Checking for migration script..."
+echo "Current directory: $(pwd)"
+echo "Checking /app/db/run_migrations.sh..."
+
 if [ -f "/app/db/run_migrations.sh" ]; then
+    echo "✓ Migration script found at /app/db/run_migrations.sh"
+    
     # Check if we have database connection info
     if [ -z "$DB_HOST" ] && [ -z "$DATABASE_URL" ]; then
         echo "⚠ WARNING: No database connection info found (DB_HOST or DATABASE_URL)"
         echo "⚠ Skipping migrations - database connection may fail later"
     else
+        echo "========================================="
         echo "Running database migrations..."
+        echo "DB_HOST: ${DB_HOST:-not set}"
+        echo "DB_NAME: ${DB_NAME:-not set}"
+        echo "========================================="
         
         # Force-cleaning problematic migration entry before running (only if DB_HOST is set)
         if [ -n "$DB_HOST" ] && [ -n "$DB_PASSWORD" ] && [ -n "$DB_USER" ] && [ -n "$DB_NAME" ]; then
@@ -52,8 +62,10 @@ if [ -f "/app/db/run_migrations.sh" ]; then
         fi
         
         # Fix line endings and make script executable
+        echo "Preparing migration script..."
         sed -i 's/\r$//' /app/db/run_migrations.sh
         chmod +x /app/db/run_migrations.sh
+        echo "✓ Migration script is executable"
         
         # Export DB_* variables so run_migrations.sh can use them
         export DB_HOST
@@ -62,14 +74,41 @@ if [ -f "/app/db/run_migrations.sh" ]; then
         export DB_PASSWORD
         export DB_NAME
         
+        # Verify migration files exist
+        if [ -d "/app/db/migrations" ]; then
+            MIGRATION_COUNT=$(ls -1 /app/db/migrations/*.sql 2>/dev/null | wc -l)
+            echo "Found $MIGRATION_COUNT migration file(s) in /app/db/migrations"
+        else
+            echo "⚠ WARNING: /app/db/migrations directory not found!"
+        fi
+        
         # Go to the db directory to run the script
+        echo "Changing to /app/db directory..."
         cd /app/db
-        /bin/bash ./run_migrations.sh || echo "Migrations failed, but continuing..."
+        echo "Current directory: $(pwd)"
+        echo "Running migration script..."
+        
+        # Run migrations and capture exit code
+        if /bin/bash ./run_migrations.sh; then
+            MIGRATION_EXIT_CODE=$?
+            echo "========================================="
+            echo "✓ Migrations completed successfully!"
+            echo "========================================="
+        else
+            MIGRATION_EXIT_CODE=$?
+            echo "========================================="
+            echo "⚠ WARNING: Migration script exited with code: $MIGRATION_EXIT_CODE"
+            echo "⚠ Continuing anyway, but tables may not exist..."
+            echo "========================================="
+        fi
+        
         cd /app # Return to app directory
-        echo "Migrations complete."
     fi
 else
-    echo "Migration script not found, skipping."
+    echo "⚠ WARNING: Migration script not found at /app/db/run_migrations.sh"
+    echo "Listing /app/db contents:"
+    ls -la /app/db/ 2>/dev/null || echo "Directory /app/db does not exist!"
+    echo "Skipping migrations."
 fi
 
 # Ensure we're in the backend directory (supervisor sets directory, but migrations may have changed it)

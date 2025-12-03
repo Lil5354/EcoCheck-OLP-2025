@@ -63,4 +63,8 @@ services:
     
     healthCheckPath: /health
     region: singapore # Choose your preferred region
+    
+    # Pre-deploy command to run migrations (backup option if entrypoint fails)
+    # Uncomment if needed:
+    # preDeployCommand: cd /app/db && export PGPASSWORD=$DB_PASSWORD && bash ./run_migrations.sh
 
