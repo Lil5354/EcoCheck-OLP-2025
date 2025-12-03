@@ -154,6 +154,7 @@ export default function Schedules() {
     }
   }
 
+
   async function loadSchedules() {
     setLoading(true);
     try {
@@ -965,6 +966,7 @@ export default function Schedules() {
           </div>
         </FormModal>
       )}
+
     </div>
   );
 }

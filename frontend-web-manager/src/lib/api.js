@@ -185,7 +185,7 @@ const api = {
   assignRoute: (routeId, employeeId) => 
     request('/vrp/assign-route', { 
       method: 'POST', 
-      body: JSON.stringify({ route_id: routeId, employee_id: employeeId }) 
+      body: JSON.stringify({ route_id: routeId, driver_id: employeeId }) 
     }),
 
   // Sensors & Air Quality

@@ -821,7 +821,7 @@ app.get("/api/analytics/summary", async (req, res) => {
 
     // Count active routes
     const activeRoutesResult = await db.query(
-      `SELECT COUNT(*) as count FROM routes WHERE status IN ('in_progress', 'assigned')`
+      `SELECT COUNT(*) as count FROM routes WHERE status IN ('in_progress', 'planned')`
     );
     const routesActive = parseInt(activeRoutesResult.rows[0].count) || 0;
 
@@ -3936,6 +3936,7 @@ app.post("/api/vrp/save-routes", async (req, res) => {
     for (const routeData of routes) {
       const routeId = uuidv4();
       const now = new Date();
+      const scheduleIdsInRoute = []; // Track schedule IDs in this route
 
       // Create route (with optional driver_id if provided)
       await db.query(
@@ -3948,7 +3949,7 @@ app.post("/api/vrp/save-routes", async (req, res) => {
           routeData.depot_id || null,
           routeData.dump_id || null,
           now,
-          routeData.driver_id ? "assigned" : "planned", // If driver assigned, status = assigned, else planned
+          "planned", // Status: planned (ready to start), in_progress (active), completed, cancelled
           routeData.distance
             ? parseFloat((routeData.distance / 1000).toFixed(2))
             : null, // Convert meters to km
@@ -3962,20 +3963,127 @@ app.post("/api/vrp/save-routes", async (req, res) => {
         ]
       );
 
-      // Create route stops
+      // Create route stops and link schedules to route
       if (routeData.stops && Array.isArray(routeData.stops)) {
         for (let i = 0; i < routeData.stops.length; i++) {
           const stop = routeData.stops[i];
           const stopId = uuidv4();
 
-          // Get point_id from points table if stop.id is a point identifier
-          // For now, assume stop.id is already a valid point_id
+          // stop.id could be either:
+          // 1. schedule_id (when coming from RouteOptimization - schedules converted to points)
+          // 2. point_id (when coming from other sources)
+          
+          // Try to find or create point for this stop
+          let pointId = stop.id;
+          
+          // Check if stop.id is a schedule_id (UUID format)
+          // If it's a schedule_id, we need to:
+          // 1. Link schedule to route (update schedules.route_id)
+          // 2. Find or create a point for this schedule location
+          const isScheduleId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(stop.id);
+          
+          if (isScheduleId) {
+            // This is a schedule_id - link schedule to route
+            await db.query(
+              `UPDATE schedules 
+               SET route_id = $1, updated_at = NOW()
+               WHERE schedule_id = $2`,
+              [routeId, stop.id]
+            );
+            
+            scheduleIdsInRoute.push(stop.id);
+            
+            // Find or create point for this schedule
+            // First, try to find existing point by location
+            const scheduleResult = await db.query(
+              `SELECT 
+                latitude, 
+                longitude, 
+                location,
+                COALESCE(latitude, ST_Y(location::geometry)) as lat,
+                COALESCE(longitude, ST_X(location::geometry)) as lon,
+                address
+               FROM schedules
+               WHERE schedule_id = $1`,
+              [stop.id]
+            );
+            
+            if (scheduleResult.rows.length > 0) {
+              const schedule = scheduleResult.rows[0];
+              // Get lat/lon from schedule
+              const lat = schedule.lat;
+              const lon = schedule.lon;
+              
+              if (lat && lon) {
+                // Try to find existing point at this location (within 10m)
+                const pointResult = await db.query(
+                  `SELECT id FROM points
+                   WHERE ST_DWithin(
+                     geom,
+                     ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
+                     10
+                   )
+                   LIMIT 1`,
+                  [lon, lat]
+                );
+                
+                if (pointResult.rows.length > 0) {
+                  pointId = pointResult.rows[0].id;
+                } else {
+                  // Create new point for this schedule
+                  const newPointId = uuidv4();
+                  await db.query(
+                    `INSERT INTO points (id, geom, ghost, last_checkin_at)
+                     VALUES ($1, ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography, false, NOW())`,
+                    [newPointId, lon, lat]
+                  );
+                  pointId = newPointId;
+                }
+              }
+            }
+          }
+
+          // Create route stop
           await db.query(
             `INSERT INTO route_stops (id, route_id, point_id, seq, status, planned_eta)
              VALUES ($1, $2, $3, $4, $5, $6)`,
-            [stopId, routeId, stop.id, stop.seq || i + 1, "pending", now]
+            [stopId, routeId, pointId, stop.seq || i + 1, "pending", now]
           );
         }
+      }
+
+      // Sync employee_id from route to schedules (if driver was assigned)
+      if (routeData.driver_id && scheduleIdsInRoute.length > 0) {
+        await db.query(
+          `UPDATE schedules
+           SET employee_id = $1, status = 'assigned', updated_at = NOW()
+           WHERE schedule_id = ANY($2::uuid[])
+             AND route_id = $3`,
+          [routeData.driver_id, scheduleIdsInRoute, routeId]
+        );
+        
+        console.log(`✅ Synced employee_id ${routeData.driver_id} to ${scheduleIdsInRoute.length} schedules in route ${routeId}`);
+        
+        // Emit Socket.IO events for updated schedules
+        const { rows: updatedSchedules } = await db.query(
+          `SELECT 
+            s.*,
+            u.profile->>'name' as citizen_name,
+            u.phone as citizen_phone,
+            p.name as employee_name,
+            p.role as employee_role,
+            d.name as depot_name
+          FROM schedules s
+          LEFT JOIN users u ON s.citizen_id = u.id::text
+          LEFT JOIN personnel p ON s.employee_id = p.id
+          LEFT JOIN depots d ON p.depot_id = d.id
+          WHERE s.schedule_id = ANY($1::uuid[])`,
+          [scheduleIdsInRoute]
+        );
+        
+        updatedSchedules.forEach(schedule => {
+          io.emit("schedule:updated", schedule);
+        });
       }
 
       savedRoutes.push({
@@ -3985,6 +4093,7 @@ app.post("/api/vrp/save-routes", async (req, res) => {
         depot_id: routeData.depot_id || null,
         dump_id: routeData.dump_id || null,
         stops_count: routeData.stops?.length || 0,
+        schedules_count: scheduleIdsInRoute.length,
       });
     }
 
@@ -4023,9 +4132,11 @@ app.post("/api/vrp/assign-route", async (req, res) => {
     }
 
     // Update route with driver assignment
+    // Status remains 'planned' when driver is assigned (route is ready but not started yet)
+    // Status will change to 'in_progress' when route actually starts
     const { rows } = await db.query(
       `UPDATE routes 
-       SET driver_id = $1, status = 'assigned', updated_at = NOW()
+       SET driver_id = $1, updated_at = NOW()
        WHERE id = $2
        RETURNING id, vehicle_id, driver_id, depot_id, dump_id, status, planned_distance_km`,
       [driver_id, route_id]
@@ -4038,12 +4149,51 @@ app.post("/api/vrp/assign-route", async (req, res) => {
       });
     }
 
+    // OPTION 1: Sync employee_id from route to all schedules in this route
+    // This ensures schedules are automatically assigned when route is assigned
+    const { rows: scheduleUpdates } = await db.query(
+      `UPDATE schedules
+       SET employee_id = $1, status = 'assigned', updated_at = NOW()
+       WHERE route_id = $2
+         AND (employee_id IS NULL OR employee_id != $1)
+       RETURNING schedule_id`,
+      [driver_id, route_id]
+    );
+
     console.log(`✅ Assigned driver ${driver_id} to route ${route_id}`);
+    console.log(`✅ Synced employee_id to ${scheduleUpdates.length} schedules in route ${route_id}`);
+
+    // Emit Socket.IO events for updated schedules
+    if (scheduleUpdates.length > 0) {
+      const scheduleIds = scheduleUpdates.map(s => s.schedule_id);
+      const { rows: updatedSchedules } = await db.query(
+        `SELECT 
+          s.*,
+          u.profile->>'name' as citizen_name,
+          u.phone as citizen_phone,
+          p.name as employee_name,
+          p.role as employee_role,
+          d.name as depot_name
+        FROM schedules s
+        LEFT JOIN users u ON s.citizen_id = u.id::text
+        LEFT JOIN personnel p ON s.employee_id = p.id
+        LEFT JOIN depots d ON p.depot_id = d.id
+        WHERE s.schedule_id = ANY($1::uuid[])`,
+        [scheduleIds]
+      );
+      
+      updatedSchedules.forEach(schedule => {
+        io.emit("schedule:updated", schedule);
+      });
+    }
 
     res.json({
       ok: true,
-      data: rows[0],
-      message: "Route assigned successfully",
+      data: {
+        ...rows[0],
+        schedules_updated: scheduleUpdates.length
+      },
+      message: `Route assigned successfully. ${scheduleUpdates.length} schedules synced.`,
     });
   } catch (error) {
     console.error("[VRP] Assign route error:", error);
@@ -4063,12 +4213,16 @@ app.post("/api/dispatch/send-routes", async (req, res) => {
       });
     }
 
-    // Update route status to 'assigned' or 'in_progress'
+    // Update route status to 'planned' (ready to start) or 'in_progress' (active)
     // This marks routes as dispatched to drivers
     for (const route of routes) {
       if (route.route_id) {
+        // Keep status as 'planned' if not already 'in_progress'
+        // Routes will change to 'in_progress' when actually started
         await db.query(
-          `UPDATE routes SET status = 'assigned', updated_at = NOW() WHERE id = $1`,
+          `UPDATE routes 
+           SET status = COALESCE(NULLIF(status, 'planned'), 'planned'), updated_at = NOW() 
+           WHERE id = $1 AND status != 'in_progress'`,
           [route.route_id]
         );
       }
@@ -4968,7 +5122,7 @@ cron.schedule("*/15 * * * * *", async () => {
     const routesResult = await db.query(
       `SELECT r.id as route_id, r.vehicle_id, r.status
        FROM routes r
-       WHERE r.status IN ('in_progress', 'assigned')
+       WHERE r.status IN ('in_progress', 'planned')
        ORDER BY r.start_at DESC`
     );
 
