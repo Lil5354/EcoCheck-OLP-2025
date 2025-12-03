@@ -112,6 +112,12 @@ const api = {
       method: 'POST', 
       body: JSON.stringify(data) 
     }),
+  updateVehicle: (id, data) => 
+    request(`/master/fleet/${id}`, { 
+      method: 'PATCH', 
+      body: JSON.stringify(data) 
+    }),
+  deleteVehicle: (id) => request(`/master/fleet/${id}`, { method: 'DELETE' }),
 
   // Schedules
   getSchedules: (params) => request('/schedules', { method: 'GET', params }),
