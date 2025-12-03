@@ -30,28 +30,59 @@ const { store } = require("./realtime");
 // Database Connection
 const { Pool } = require("pg");
 
+// Build DATABASE_URL from environment variables
+let dbUrl = process.env.DATABASE_URL;
+
+// If DATABASE_URL is not set, try to build it from individual DB_* variables
+// This is useful for Render when using fromDatabase properties in render.yaml
+if (!dbUrl && process.env.DB_HOST) {
+  const dbHost = process.env.DB_HOST;
+  const dbPort = process.env.DB_PORT || "5432";
+  const dbUser = process.env.DB_USER || "ecocheck_user";
+  const dbPassword = process.env.DB_PASSWORD || "";
+  const dbName = process.env.DB_NAME || "ecocheck";
+  
+  dbUrl = `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${dbName}`;
+  console.log("🔧 Built DATABASE_URL from DB_* environment variables");
+}
+
 // Debug: Log database connection info (hide password)
-const dbUrl = process.env.DATABASE_URL;
 if (dbUrl) {
   const maskedUrl = dbUrl.replace(/:([^:@]+)@/, ':****@'); // Hide password
   console.log("🔗 DATABASE_URL: " + maskedUrl);
 } else {
-  console.warn("⚠ WARNING: DATABASE_URL environment variable is NOT set!");
-  console.warn("⚠ Using fallback localhost connection (this will likely fail on Render)");
-  console.warn("⚠ Please check environment variables in Render dashboard");
+  const isProduction = process.env.NODE_ENV === "production";
+  if (isProduction) {
+    console.error("❌ FATAL ERROR: DATABASE_URL is NOT set in production!");
+    console.error("❌ Please set DATABASE_URL or DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME");
+    console.error("❌ In Render: Link database service or add DATABASE_URL environment variable");
+    process.exit(1); // Fail early in production - better than trying localhost
+  } else {
+    console.warn("⚠ WARNING: DATABASE_URL environment variable is NOT set!");
+    console.warn("⚠ Using fallback localhost connection (development only)");
+    dbUrl = "postgresql://ecocheck_user:ecocheck_pass@localhost:5432/ecocheck";
+  }
 }
 
 const db = new Pool({
-  connectionString:
-    dbUrl ||
-    "postgresql://ecocheck_user:ecocheck_pass@localhost:5432/ecocheck",
+  connectionString: dbUrl,
+  // Connection pool settings for better reliability
+  max: 20, // Maximum number of clients in the pool
+  idleTimeoutMillis: 30000, // Close idle clients after 30 seconds
+  connectionTimeoutMillis: 10000, // Return error after 10 seconds if connection cannot be established
 });
 
 db.on("connect", () => console.log("🐘 Connected to PostgreSQL database"));
 db.on("error", (err) => {
   console.error("❌ PostgreSQL connection error:", err.message);
   if (err.code === "ECONNREFUSED") {
-    console.error("❌ Connection refused - check DATABASE_URL or DB_HOST");
+    console.error("❌ Connection refused - PostgreSQL is not listening or connection string is wrong");
+    console.error("❌ Current connection string:", dbUrl.replace(/:([^:@]+)@/, ':****@'));
+    if (dbUrl.includes("localhost") || dbUrl.includes("127.0.0.1") || dbUrl.includes("::1")) {
+      console.error("❌ ERROR: You are trying to connect to localhost!");
+      console.error("❌ In Render, you must use the internal database hostname, not localhost");
+      console.error("❌ Solution: Link database service or set DATABASE_URL with Render database hostname");
+    }
   }
 });
 
