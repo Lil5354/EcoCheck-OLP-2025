@@ -179,8 +179,8 @@ const api = {
   getTimeseries: (params) => request('/analytics/timeseries', { method: 'GET', params }),
   predict: (params) => 
     request('/analytics/predict', { 
-      method: 'POST', 
-      body: JSON.stringify(params) 
+      method: 'GET', 
+      params 
     }),
 
   // Gamification
