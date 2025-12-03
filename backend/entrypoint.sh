@@ -5,9 +5,25 @@
 
 set -e
 
+echo "========================================="
 echo "Starting EcoCheck Backend..."
 echo "Environment: ${NODE_ENV:-development}"
 echo "Port: ${PORT:-3000}"
+echo "========================================="
+
+# Debug: Log database connection info (hide password)
+echo "Database Configuration:"
+if [ -n "$DATABASE_URL" ]; then
+    echo "  DATABASE_URL: ${DATABASE_URL%%@*}@*** (hidden)"
+else
+    echo "  ⚠ WARNING: DATABASE_URL is NOT set!"
+fi
+echo "  DB_HOST: ${DB_HOST:-not set}"
+echo "  DB_PORT: ${DB_PORT:-not set}"
+echo "  DB_USER: ${DB_USER:-not set}"
+echo "  DB_NAME: ${DB_NAME:-not set}"
+echo "  DB_PASSWORD: ${DB_PASSWORD:+***hidden***}"
+echo "========================================="
 
 # Wait for the database to be ready
 if [ -n "$DB_HOST" ]; then

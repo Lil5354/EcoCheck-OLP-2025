@@ -29,12 +29,31 @@ const { store } = require("./realtime");
 
 // Database Connection
 const { Pool } = require("pg");
+
+// Debug: Log database connection info (hide password)
+const dbUrl = process.env.DATABASE_URL;
+if (dbUrl) {
+  const maskedUrl = dbUrl.replace(/:([^:@]+)@/, ':****@'); // Hide password
+  console.log("🔗 DATABASE_URL: " + maskedUrl);
+} else {
+  console.warn("⚠ WARNING: DATABASE_URL environment variable is NOT set!");
+  console.warn("⚠ Using fallback localhost connection (this will likely fail on Render)");
+  console.warn("⚠ Please check environment variables in Render dashboard");
+}
+
 const db = new Pool({
   connectionString:
-    process.env.DATABASE_URL ||
+    dbUrl ||
     "postgresql://ecocheck_user:ecocheck_pass@localhost:5432/ecocheck",
 });
+
 db.on("connect", () => console.log("🐘 Connected to PostgreSQL database"));
+db.on("error", (err) => {
+  console.error("❌ PostgreSQL connection error:", err.message);
+  if (err.code === "ECONNREFUSED") {
+    console.error("❌ Connection refused - check DATABASE_URL or DB_HOST");
+  }
+});
 
 // --- Utility Functions ---
 function getHaversineDistance(coords1, coords2) {
