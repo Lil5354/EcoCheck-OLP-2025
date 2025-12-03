@@ -123,7 +123,7 @@ const api = {
   getSchedules: (params) => request('/schedules', { method: 'GET', params }),
   updateSchedule: (id, data) => 
     request(`/schedules/${id}`, { 
-      method: 'PUT', 
+      method: 'PATCH', 
       body: JSON.stringify(data) 
     }),
   deleteSchedule: (id) => request(`/schedules/${id}`, { method: 'DELETE' }),

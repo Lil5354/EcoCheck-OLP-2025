@@ -5540,6 +5540,13 @@ app.patch("/api/schedules/:id", async (req, res) => {
     const { id } = req.params;
     const { status, employee_id, actual_weight, notes } = req.body;
 
+    console.log(`[Schedule] Update request for schedule_id: ${id}`, {
+      status,
+      employee_id,
+      actual_weight,
+      notes,
+    });
+
     const updates = [];
     const params = [];
     let paramIndex = 1;
@@ -5554,6 +5561,10 @@ app.patch("/api/schedules/:id", async (req, res) => {
       updates.push(`employee_id = $${paramIndex}`);
       params.push(employee_id);
       paramIndex++;
+      // Auto-update status to 'assigned' if employee is assigned and status is not explicitly set
+      if (!status) {
+        updates.push(`status = 'assigned'`);
+      }
     }
 
     if (actual_weight !== undefined) {
@@ -5582,9 +5593,14 @@ app.patch("/api/schedules/:id", async (req, res) => {
     const query = `UPDATE schedules SET ${updates.join(
       ", "
     )} WHERE schedule_id = $${paramIndex} RETURNING schedule_id`;
+    
+    console.log(`[Schedule] Executing query:`, query);
+    console.log(`[Schedule] With params:`, params);
+    
     const { rows: updateRows } = await db.query(query, params);
 
     if (updateRows.length === 0) {
+      console.log(`[Schedule] Schedule not found: ${id}`);
       return res.status(404).json({ ok: false, error: "Schedule not found" });
     }
 
