@@ -90,7 +90,8 @@ if [ -f "/app/db/run_migrations.sh" ]; then
         echo "Running migration script..."
         
         # Run migrations and capture exit code
-        if /bin/bash ./run_migrations.sh; then
+        # Use /bin/sh instead of bash (Alpine Linux doesn't have bash)
+        if /bin/sh ./run_migrations.sh; then
             MIGRATION_EXIT_CODE=$?
             echo "========================================="
             echo "✓ Migrations completed successfully!"
