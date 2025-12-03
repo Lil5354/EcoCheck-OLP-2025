@@ -3420,46 +3420,8 @@ app.post("/api/vrp/optimize", async (req, res) => {
         );
       }
 
-      // 3. Integrate POI (Points of Interest) along route - gas stations, parking, etc.
-      // This helps drivers find refueling points and parking along the route
-      try {
-        // POI service is required at line 8081, but we need it here for route optimization
-        const poiService = require('./services/poi');
-        const routePoints = [
-          vehicleStartLocation,
-          ...route.stops,
-          ...(selectedDump ? [selectedDump] : [])
-        ].filter(p => p && p.lat && p.lon);
-        
-        if (routePoints.length > 0) {
-          // Get POIs along route (gas stations, parking)
-          const pois = await poiService.getPOIsAlongRoute(
-            routePoints.map(p => ({ lat: p.lat, lon: p.lon })),
-            'gas_station',
-            500 // 500m radius
-          );
-          
-          // Also get parking POIs
-          const parkingPois = await poiService.getPOIsAlongRoute(
-            routePoints.map(p => ({ lat: p.lat, lon: p.lon })),
-            'parking',
-            300 // 300m radius
-          );
-          
-          // Store POIs in route metadata for frontend display
-          route.pois = {
-            gas_stations: pois.slice(0, 5), // Top 5 nearest gas stations
-            parking: parkingPois.slice(0, 3) // Top 3 nearest parking
-          };
-          
-          console.log(
-            `[VRP] Vehicle ${vehicle.id}: Found ${pois.length} gas stations and ${parkingPois.length} parking along route`
-          );
-        }
-      } catch (error) {
-        console.warn(`[VRP] POI integration failed for vehicle ${vehicle.id}:`, error.message);
-        route.pois = { gas_stations: [], parking: [] }; // Default empty
-      }
+      // POI display is now handled by frontend (like POI.jsx does)
+      // No need to fetch POIs in backend anymore
 
       // 4. Optimize stop order using Hybrid CI-SA (Cheapest Insertion + Simulated Annealing)
       // OSRM will be used later for route drawing (getOSRMRoute) which gives actual road paths
@@ -3944,9 +3906,11 @@ app.post("/api/vrp/optimize", async (req, res) => {
       `✅ VRP optimization completed: ${validRoutes.length} valid routes from ${routes.length} total routes, ${vehicles.length} vehicles`
     );
 
+    const finalRoutes = validRoutes.length > 0 ? validRoutes : routes;
+
     res.json({
       ok: true,
-      data: { routes: validRoutes.length > 0 ? validRoutes : routes },
+      data: { routes: finalRoutes },
     });
   } catch (error) {
     console.error("[VRP] Optimize error:", error);

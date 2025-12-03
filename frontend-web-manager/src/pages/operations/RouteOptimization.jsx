@@ -22,7 +22,8 @@ export default function RouteOptimization() {
   const routeSourceRef = useRef(null)
   const routeLayerRef = useRef(null)
   const stopMarkersRef = useRef([])
-  const [showPOIs, setShowPOIs] = useState(true) // Toggle POI visibility
+  const poiMarkersRef = useRef([]) // POI markers ref
+  const [showPOIs, setShowPOIs] = useState(false) // POI visibility - default false
   
   // Employee assignment
   const [personnel, setPersonnel] = useState([])
@@ -64,6 +65,20 @@ export default function RouteOptimization() {
       setSelectedVehicles([])
     }
   }, [selectedDistrict])
+
+  // Update POI visibility when showPOIs changes
+  useEffect(() => {
+    if (!mapObj.current || !mapObj.current.loaded()) return
+    
+    if (!showPOIs) {
+      clearPOIMarkers()
+    } else if (activeRouteId && showPOIs) {
+      // Load POIs when enabled
+      setTimeout(() => {
+        loadPOIsForCurrentRoute()
+      }, 300)
+    }
+  }, [showPOIs, activeRouteId])
   
   // Clear route display when routes change (new optimization)
   useEffect(() => {
@@ -266,7 +281,7 @@ export default function RouteOptimization() {
       }
     }
     
-    // Clear all markers (stops, depot, dump, POIs)
+    // Clear all markers (stops, depot, dump)
     if (stopMarkersRef.current && stopMarkersRef.current.length > 0) {
       stopMarkersRef.current.forEach(marker => {
         if (marker && marker.remove) marker.remove()
@@ -527,113 +542,132 @@ export default function RouteOptimization() {
       console.warn('[RouteOptimization] Dump missing or invalid:', route.dump)
     }
     
-    // Display POIs (Points of Interest) along route - only if enabled
-    // POIs are integrated into route optimization and displayed on map
-    if (showPOIs && route.pois) {
-      console.log('[RouteOptimization] Displaying POIs:', route.pois)
-      
-      // Add gas station markers (⛽)
-      if (route.pois.gas_stations && Array.isArray(route.pois.gas_stations) && route.pois.gas_stations.length > 0) {
-        route.pois.gas_stations.forEach((poi, idx) => {
-          if (poi.lat && poi.lon) {
-            const poiEl = document.createElement('div')
-            poiEl.className = 'route-poi-marker route-poi-gas'
-            poiEl.style.cssText = `
-              width: 32px;
-              height: 32px;
-              border-radius: 50%;
-              background-color: #f59e0b;
-              border: 3px solid white;
-              box-shadow: 0 3px 8px rgba(245, 158, 11, 0.5), 0 0 0 2px rgba(245, 158, 11, 0.2);
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              font-size: 16px;
-              cursor: pointer;
-              z-index: 500;
-            `
-            poiEl.textContent = '⛽'
-            poiEl.title = `Trạm xăng: ${poi.name || 'Unnamed'} (${poi.distance}m)`
-            
-            // Add click handler to show POI info
-            poiEl.addEventListener('click', (e) => {
-              e.stopPropagation()
-              setToast({ 
-                message: `⛽ ${poi.name || 'Trạm xăng'} - Cách ${poi.distance}m`, 
-                type: 'info' 
-              })
-            })
-            
-            const poiMarker = new maplibregl.Marker({ 
-              element: poiEl,
-              anchor: 'center'
-            })
-              .setLngLat([parseFloat(poi.lon), parseFloat(poi.lat)])
-              .addTo(mapObj.current)
-            
-            stopMarkersRef.current.push(poiMarker)
+  }
+
+  // Clear POI markers
+  function clearPOIMarkers() {
+    if (poiMarkersRef.current && poiMarkersRef.current.length > 0) {
+      poiMarkersRef.current.forEach(marker => {
+        if (marker && marker.remove) {
+          try {
+            marker.remove()
+          } catch (error) {
+            console.warn('[RouteOptimization] Error removing POI marker:', error)
           }
-        })
-        console.log(`[RouteOptimization] ✅ Added ${route.pois.gas_stations.length} gas station POIs to map`)
-      } else {
-        console.log('[RouteOptimization] No gas stations found along route')
-      }
-      
-      // Add parking markers (P)
-      if (route.pois.parking && Array.isArray(route.pois.parking) && route.pois.parking.length > 0) {
-        route.pois.parking.forEach((poi, idx) => {
-          if (poi.lat && poi.lon) {
-            const poiEl = document.createElement('div')
-            poiEl.className = 'route-poi-marker route-poi-parking'
-            poiEl.style.cssText = `
-              width: 32px;
-              height: 32px;
-              border-radius: 50%;
-              background-color: #6366f1;
-              border: 3px solid white;
-              box-shadow: 0 3px 8px rgba(99, 102, 241, 0.5), 0 0 0 2px rgba(99, 102, 241, 0.2);
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              color: white;
-              font-size: 12px;
-              font-weight: bold;
-              cursor: pointer;
-              z-index: 500;
-            `
-            poiEl.textContent = 'P'
-            poiEl.title = `Bãi đỗ xe: ${poi.name || 'Unnamed'} (${poi.distance}m)`
-            
-            // Add click handler to show POI info
-            poiEl.addEventListener('click', (e) => {
-              e.stopPropagation()
-              setToast({ 
-                message: `🅿️ ${poi.name || 'Bãi đỗ xe'} - Cách ${poi.distance}m`, 
-                type: 'info' 
-              })
-            })
-            
-            const poiMarker = new maplibregl.Marker({ 
-              element: poiEl,
-              anchor: 'center'
-            })
-              .setLngLat([parseFloat(poi.lon), parseFloat(poi.lat)])
-              .addTo(mapObj.current)
-            
-            stopMarkersRef.current.push(poiMarker)
-          }
-        })
-        console.log(`[RouteOptimization] ✅ Added ${route.pois.parking.length} parking POIs to map`)
-      } else {
-        console.log('[RouteOptimization] No parking found along route')
-      }
-    } else if (!showPOIs) {
-      console.log('[RouteOptimization] POI display is disabled')
-    } else if (!route.pois) {
-      console.warn('[RouteOptimization] Route has no POI data')
+        }
+      })
+      poiMarkersRef.current = []
     }
   }
-  
+
+  // Load POIs for current route - Simple approach: use map center and visible bounds
+  async function loadPOIsForCurrentRoute() {
+    if (!mapObj.current || !mapObj.current.loaded()) {
+      console.warn('[RouteOptimization] Map not ready')
+      return
+    }
+
+    clearPOIMarkers()
+
+    try {
+      // Get map bounds to find POIs in visible area
+      const bounds = mapObj.current.getBounds()
+      const center = mapObj.current.getCenter()
+      
+      // Calculate radius based on map bounds (approximate)
+      const ne = bounds.getNorthEast()
+      const sw = bounds.getSouthWest()
+      const latDiff = ne.lat - sw.lat
+      const lonDiff = ne.lng - sw.lng
+      const radius = Math.max(1000, Math.max(latDiff, lonDiff) * 111000) // Convert to meters, min 1km
+      const searchRadius = Math.min(radius, 3000) // Max 3km
+
+      console.log(`[RouteOptimization] Loading POIs for map center: [${center.lat}, ${center.lng}], radius: ${Math.round(searchRadius)}m`)
+
+      // Fetch POIs near map center
+      const [gasRes, parkingRes] = await Promise.all([
+        api.getNearbyPOI(center.lat, center.lng, searchRadius, 'gas_station'),
+        api.getNearbyPOI(center.lat, center.lng, searchRadius, 'parking')
+      ])
+
+      const allPois = []
+      
+      if (gasRes?.ok && Array.isArray(gasRes.data)) {
+        allPois.push(...gasRes.data.slice(0, 20).map(p => ({ ...p, type: 'gas_station' })))
+      }
+      
+      if (parkingRes?.ok && Array.isArray(parkingRes.data)) {
+        allPois.push(...parkingRes.data.slice(0, 15).map(p => ({ ...p, type: 'parking' })))
+      }
+
+      console.log(`[RouteOptimization] Found ${allPois.length} POIs (gas: ${gasRes?.data?.length || 0}, parking: ${parkingRes?.data?.length || 0})`)
+
+      // Display POIs on map
+      if (allPois.length > 0) {
+        displayPOIsOnMap(allPois)
+      } else {
+        setToast({ message: 'Không tìm thấy POI trong khu vực này', type: 'info' })
+      }
+    } catch (error) {
+      console.error('[RouteOptimization] Error loading POIs:', error)
+      setToast({ message: 'Lỗi khi tải POI: ' + error.message, type: 'error' })
+    }
+  }
+
+  // Display POIs on map
+  function displayPOIsOnMap(poisData) {
+    if (!mapObj.current || !mapObj.current.loaded()) {
+      console.warn('[RouteOptimization] Map not ready')
+      return
+    }
+
+    if (!poisData || poisData.length === 0) {
+      return
+    }
+
+    poisData.forEach((poi) => {
+      if (!poi?.lat || !poi?.lon) return
+
+      try {
+        const el = document.createElement('div')
+        el.style.cssText = `
+          width: 28px !important;
+          height: 28px !important;
+          border-radius: 50% !important;
+          background-color: ${poi.type === 'gas_station' ? '#f59e0b' : '#6366f1'} !important;
+          border: 2px solid white !important;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.4) !important;
+          cursor: pointer !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          font-size: 14px !important;
+          z-index: 1000 !important;
+        `
+        el.textContent = poi.type === 'gas_station' ? '⛽' : '🅿️'
+
+        const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+          .setLngLat([parseFloat(poi.lon), parseFloat(poi.lat)])
+          .setPopup(
+            new maplibregl.Popup({ offset: 25, closeButton: true })
+              .setHTML(`
+                <div style="padding: 6px; min-width: 120px;">
+                  <strong>${poi.name || (poi.type === 'gas_station' ? 'Trạm xăng' : 'Bãi đỗ xe')}</strong><br/>
+                  <small style="color: #666;">${poi.type === 'gas_station' ? '⛽' : '🅿️'} ${poi.distance ? Math.round(poi.distance) + 'm' : ''}</small>
+                </div>
+              `)
+          )
+          .addTo(mapObj.current)
+
+        poiMarkersRef.current.push(marker)
+      } catch (error) {
+        console.error('[RouteOptimization] Error creating POI marker:', error)
+      }
+    })
+
+    console.log(`[RouteOptimization] ✅ Displayed ${poisData.length} POIs`)
+  }
+
   function handleRouteDoubleClick(route) {
     displayRouteOnMap(route)
   }
@@ -736,6 +770,8 @@ export default function RouteOptimization() {
     setLoading(false)
     if (res.ok) {
       const optimizedRoutes = res.data.routes || []
+      
+      console.log('[RouteOptimization] Optimized routes received:', optimizedRoutes.length)
       setRoutes(optimizedRoutes)
       setToast({ message: `Tối ưu tuyến đường ${selectedDistrict} thành công`, type: 'success' })
       
@@ -834,18 +870,13 @@ export default function RouteOptimization() {
                 <div style={{ flex: '0 0 auto', alignSelf: 'flex-end', display: 'flex', gap: 8 }}>
                   <button 
                     className={`btn ${showPOIs ? 'btn-primary' : 'btn-secondary'}`}
-                    onClick={() => {
-                      setShowPOIs(!showPOIs)
-                      // Refresh route display to update POI visibility
-                      if (activeRouteId) {
-                        const currentRoute = routes.find(r => r.vehicleId === activeRouteId)
-                        if (currentRoute) {
-                          // Clear and re-display route to update POI markers
-                          clearRouteDisplay()
-                          setTimeout(() => {
-                            displayRouteOnMap(currentRoute)
-                          }, 100)
-                        }
+                    onClick={async () => {
+                      if (!showPOIs) {
+                        setShowPOIs(true)
+                        await loadPOIsForCurrentRoute()
+                      } else {
+                        setShowPOIs(false)
+                        clearPOIMarkers()
                       }
                     }}
                     style={{ marginTop: 24 }}
@@ -1090,3 +1121,4 @@ export default function RouteOptimization() {
     </div>
   )
 }
+
