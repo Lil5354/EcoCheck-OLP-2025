@@ -93,6 +93,16 @@ const api = {
 
   // Personnel
   getPersonnel: (params) => request('/manager/personnel', { method: 'GET', params }),
+  createPersonnel: (data) => 
+    request('/manager/personnel', { 
+      method: 'POST', 
+      body: JSON.stringify(data) 
+    }),
+  updatePersonnel: (id, data) => 
+    request(`/manager/personnel/${id}`, { 
+      method: 'PUT', 
+      body: JSON.stringify(data) 
+    }),
   deletePersonnel: (id) => request(`/manager/personnel/${id}`, { method: 'DELETE' }),
 
   // Fleet
@@ -114,11 +124,35 @@ const api = {
 
   // Depots & Dumps
   getDepots: (params) => request('/master/depots', { method: 'GET', params }),
+  createDepot: (data) => 
+    request('/master/depots', { 
+      method: 'POST', 
+      body: JSON.stringify(data) 
+    }),
+  updateDepot: (id, data) => 
+    request(`/master/depots/${id}`, { 
+      method: 'PATCH', 
+      body: JSON.stringify(data) 
+    }),
   getDumps: (params) => request('/master/dumps', { method: 'GET', params }),
 
   // Groups
   getGroups: (params) => request('/groups', { method: 'GET', params }),
   getGroup: (id) => request(`/groups/${id}`, { method: 'GET' }),
+  createGroup: (data) => 
+    request('/groups', { 
+      method: 'POST', 
+      body: JSON.stringify(data) 
+    }),
+  updateGroup: (id, data) => 
+    request(`/groups/${id}`, { 
+      method: 'PUT', 
+      body: JSON.stringify(data) 
+    }),
+  autoCreateGroups: () => 
+    request('/groups/auto-create', { 
+      method: 'POST' 
+    }),
   deleteGroup: (id) => request(`/groups/${id}`, { method: 'DELETE' }),
 
   // Districts (for Route Optimization)
