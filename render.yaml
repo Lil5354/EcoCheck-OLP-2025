@@ -1,0 +1,70 @@
+# MIT License
+# Copyright (c) 2025 Lil5354
+# Render Blueprint Configuration
+# Defines PostgreSQL database and web service
+
+services:
+  # PostgreSQL Database
+  - type: pspg
+    name: ecocheck-database
+    plan: starter # Free tier PostgreSQL
+    databaseName: ecocheck
+    user: ecocheck_user
+    
+  # Web Service (Frontend + Backend + Nginx)
+  - type: web
+    name: ecocheck-web
+    env: docker
+    dockerfilePath: ./Dockerfile.render
+    dockerContext: .
+    plan: starter # Free tier
+    envVars:
+      # Database connection - will be automatically set by Render from database service
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ecocheck-database
+          property: connectionString
+      
+      # Database connection details (alternative, parsed from DATABASE_URL)
+      - key: DB_HOST
+        fromDatabase:
+          name: ecocheck-database
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: ecocheck-database
+          property: port
+      - key: DB_USER
+        fromDatabase:
+          name: ecocheck-database
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: ecocheck-database
+          property: password
+      - key: DB_NAME
+        fromDatabase:
+          name: ecocheck-database
+          property: database
+      
+      # Application settings
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      
+      # Backend settings (optional)
+      - key: BACKEND_PORT
+        value: 3000
+      
+      # FIWARE settings (if needed)
+      - key: ORION_LD_URL
+        value: http://localhost:1026
+      - key: FIWARE_SERVICE
+        value: ecocheck
+      - key: FIWARE_SERVICE_PATH
+        value: /hcm
+    
+    healthCheckPath: /health
+    region: singapore # Choose your preferred region
+

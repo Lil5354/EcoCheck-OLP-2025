@@ -38,5 +38,24 @@ else
     echo "Migration script not found, skipping."
 fi
 
+# Ensure we're in the backend directory (supervisor sets directory, but migrations may have changed it)
+if [ -d "/app/backend" ]; then
+    cd /app/backend
+    echo "Working directory: $(pwd)"
+elif [ -d "/app/src" ]; then
+    cd /app
+    echo "Working directory: $(pwd)"
+else
+    echo "ERROR: Cannot find backend directory!"
+    exit 1
+fi
+
+# Verify package.json exists
+if [ ! -f "package.json" ]; then
+    echo "ERROR: Cannot find package.json in $(pwd)"
+    exit 1
+fi
+
 # Start the application
+echo "Starting Node.js backend..."
 exec npm start
