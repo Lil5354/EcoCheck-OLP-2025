@@ -3,7 +3,8 @@
 # Copyright (c) 2025 Lil5354
 # EcoCheck Backend Entrypoint Script
 
-set -e
+# Don't exit on error - we want to continue even if migrations fail
+# set -e
 
 echo "========================================="
 echo "Starting EcoCheck Backend..."
