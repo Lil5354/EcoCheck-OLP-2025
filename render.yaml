@@ -3,14 +3,10 @@
 # Render Blueprint Configuration
 # Defines PostgreSQL database and web service
 
+# Note: Database must be created manually first in Render Dashboard
+# Then link it to the web service using fromDatabase
+
 services:
-  # PostgreSQL Database
-  - type: pg
-    name: ecocheck-database
-    plan: starter # Free tier PostgreSQL
-    databaseName: ecocheck
-    user: ecocheck_user
-    
   # Web Service (Frontend + Backend + Nginx)
   - type: web
     name: ecocheck-web
