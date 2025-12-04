@@ -20,6 +20,29 @@ dotenv.config();
 const app = express();
 const server = http.createServer(app);
 const io = require("socket.io")(server, { cors: { origin: "*" } });
+
+// Socket.IO Connection Handler - Quản lý realtime connections
+io.on("connection", (socket) => {
+  console.log(`🔌 Client connected: ${socket.id}`);
+
+  // Xử lý khi client muốn join một room (ví dụ: driver:userId)
+  socket.on("join", (roomName) => {
+    socket.join(roomName);
+    console.log(`✅ Client ${socket.id} joined room: ${roomName}`);
+  });
+
+  // Xử lý khi client muốn leave một room
+  socket.on("leave", (roomName) => {
+    socket.leave(roomName);
+    console.log(`👋 Client ${socket.id} left room: ${roomName}`);
+  });
+
+  // Xử lý khi client disconnect
+  socket.on("disconnect", () => {
+    console.log(`🔌 Client disconnected: ${socket.id}`);
+  });
+});
+
 // In unified deployment (with Nginx), backend should use BACKEND_PORT (3000)
 // Render's PORT (10000) is for Nginx only
 const PORT = process.env.BACKEND_PORT || process.env.PORT || 3000;
@@ -43,21 +66,25 @@ if (!dbUrl && process.env.DB_HOST) {
   const dbUser = process.env.DB_USER || "ecocheck_user";
   const dbPassword = process.env.DB_PASSWORD || "";
   const dbName = process.env.DB_NAME || "ecocheck";
-  
+
   dbUrl = `postgresql://${dbUser}:${dbPassword}@${dbHost}:${dbPort}/${dbName}`;
   console.log("🔧 Built DATABASE_URL from DB_* environment variables");
 }
 
 // Debug: Log database connection info (hide password)
 if (dbUrl) {
-  const maskedUrl = dbUrl.replace(/:([^:@]+)@/, ':****@'); // Hide password
+  const maskedUrl = dbUrl.replace(/:([^:@]+)@/, ":****@"); // Hide password
   console.log("🔗 DATABASE_URL: " + maskedUrl);
 } else {
   const isProduction = process.env.NODE_ENV === "production";
   if (isProduction) {
     console.error("❌ FATAL ERROR: DATABASE_URL is NOT set in production!");
-    console.error("❌ Please set DATABASE_URL or DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME");
-    console.error("❌ In Render: Link database service or add DATABASE_URL environment variable");
+    console.error(
+      "❌ Please set DATABASE_URL or DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME"
+    );
+    console.error(
+      "❌ In Render: Link database service or add DATABASE_URL environment variable"
+    );
     process.exit(1); // Fail early in production - better than trying localhost
   } else {
     console.warn("⚠ WARNING: DATABASE_URL environment variable is NOT set!");
@@ -78,12 +105,25 @@ db.on("connect", () => console.log("🐘 Connected to PostgreSQL database"));
 db.on("error", (err) => {
   console.error("❌ PostgreSQL connection error:", err.message);
   if (err.code === "ECONNREFUSED") {
-    console.error("❌ Connection refused - PostgreSQL is not listening or connection string is wrong");
-    console.error("❌ Current connection string:", dbUrl.replace(/:([^:@]+)@/, ':****@'));
-    if (dbUrl.includes("localhost") || dbUrl.includes("127.0.0.1") || dbUrl.includes("::1")) {
+    console.error(
+      "❌ Connection refused - PostgreSQL is not listening or connection string is wrong"
+    );
+    console.error(
+      "❌ Current connection string:",
+      dbUrl.replace(/:([^:@]+)@/, ":****@")
+    );
+    if (
+      dbUrl.includes("localhost") ||
+      dbUrl.includes("127.0.0.1") ||
+      dbUrl.includes("::1")
+    ) {
       console.error("❌ ERROR: You are trying to connect to localhost!");
-      console.error("❌ In Render, you must use the internal database hostname, not localhost");
-      console.error("❌ Solution: Link database service or set DATABASE_URL with Render database hostname");
+      console.error(
+        "❌ In Render, you must use the internal database hostname, not localhost"
+      );
+      console.error(
+        "❌ Solution: Link database service or set DATABASE_URL with Render database hostname"
+      );
     }
   }
 });
@@ -818,7 +858,7 @@ app.get("/api/analytics/summary", async (req, res) => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
 
@@ -837,13 +877,17 @@ app.get("/api/analytics/summary", async (req, res) => {
          AND (DATE(updated_at) = DATE($1) OR DATE(start_at) = DATE($1))`,
       [yesterday]
     );
-    const routesActiveYesterday = parseInt(routesActiveYesterdayResult.rows[0].count) || 0;
-    
+    const routesActiveYesterday =
+      parseInt(routesActiveYesterdayResult.rows[0].count) || 0;
+
     // Calculate routes change percentage
     // Compare today's active routes with yesterday's active routes
-    const routesActiveChange = routesActiveYesterday > 0
-      ? ((routesActive - routesActiveYesterday) / routesActiveYesterday) * 100
-      : routesActive > 0 ? 100 : 0;
+    const routesActiveChange =
+      routesActiveYesterday > 0
+        ? ((routesActive - routesActiveYesterday) / routesActiveYesterday) * 100
+        : routesActive > 0
+        ? 100
+        : 0;
 
     // Calculate collection rate (completed schedules vs total schedules today)
     const scheduleStats = await db.query(
@@ -874,11 +918,16 @@ app.get("/api/analytics/summary", async (req, res) => {
         ? parseFloat(scheduleStatsYesterday.rows[0].completed) /
           parseFloat(scheduleStatsYesterday.rows[0].total)
         : 0;
-    
+
     // Calculate collection rate change percentage
-    const collectionRateChange = collectionRateYesterday > 0
-      ? ((collectionRate - collectionRateYesterday) / collectionRateYesterday) * 100
-      : collectionRate > 0 ? 100 : 0;
+    const collectionRateChange =
+      collectionRateYesterday > 0
+        ? ((collectionRate - collectionRateYesterday) /
+            collectionRateYesterday) *
+          100
+        : collectionRate > 0
+        ? 100
+        : 0;
 
     // Calculate total weight collected today
     const todayWeight = await db.query(
@@ -888,7 +937,7 @@ app.get("/api/analytics/summary", async (req, res) => {
       [today]
     );
     const todayTons = parseFloat(todayWeight.rows[0].total) / 1000 || 0;
-    
+
     // Calculate total weight collected yesterday
     const yesterdayWeight = await db.query(
       `SELECT COALESCE(SUM(actual_weight), 0) as total
@@ -897,11 +946,14 @@ app.get("/api/analytics/summary", async (req, res) => {
       [yesterday]
     );
     const yesterdayTons = parseFloat(yesterdayWeight.rows[0].total) / 1000 || 0;
-    
+
     // Calculate todayTons change percentage
-    const todayTonsChange = yesterdayTons > 0
-      ? ((todayTons - yesterdayTons) / yesterdayTons) * 100
-      : todayTons > 0 ? 100 : 0;
+    const todayTonsChange =
+      yesterdayTons > 0
+        ? ((todayTons - yesterdayTons) / yesterdayTons) * 100
+        : todayTons > 0
+        ? 100
+        : 0;
 
     // Calculate total weight all time
     const totalWeight = await db.query(
@@ -1099,12 +1151,16 @@ app.post("/api/master/fleet", async (req, res) => {
 
     // CRITICAL FIX: Validate and map status
     // Database constraint requires: 'available', 'in_use', 'maintenance', 'retired'
-    let dbStatus = status || 'available';
-    if (dbStatus === 'ready') {
-      dbStatus = 'available';
-    } else if (!['available', 'in_use', 'maintenance', 'retired'].includes(dbStatus)) {
-      console.warn(`[Fleet] Invalid status "${dbStatus}", defaulting to 'available'`);
-      dbStatus = 'available';
+    let dbStatus = status || "available";
+    if (dbStatus === "ready") {
+      dbStatus = "available";
+    } else if (
+      !["available", "in_use", "maintenance", "retired"].includes(dbStatus)
+    ) {
+      console.warn(
+        `[Fleet] Invalid status "${dbStatus}", defaulting to 'available'`
+      );
+      dbStatus = "available";
     }
 
     // Generate vehicle ID
@@ -1195,12 +1251,16 @@ app.patch("/api/master/fleet/:id", async (req, res) => {
       // CRITICAL FIX: Map frontend status to database values
       // Database constraint requires: 'available', 'in_use', 'maintenance', 'retired'
       let dbStatus = status;
-      if (status === 'ready') {
-        dbStatus = 'available';
-      } else if (!['available', 'in_use', 'maintenance', 'retired'].includes(status)) {
+      if (status === "ready") {
+        dbStatus = "available";
+      } else if (
+        !["available", "in_use", "maintenance", "retired"].includes(status)
+      ) {
         // Invalid status, default to 'available'
-        console.warn(`[Fleet] Invalid status "${status}", defaulting to 'available'`);
-        dbStatus = 'available';
+        console.warn(
+          `[Fleet] Invalid status "${status}", defaulting to 'available'`
+        );
+        dbStatus = "available";
       }
       updates.push(`status = $${paramIndex++}`);
       params.push(dbStatus);
@@ -3274,8 +3334,16 @@ app.post("/api/vrp/optimize", async (req, res) => {
     let globalSelectedDump = dump;
     if (!globalSelectedDump && dumpsList && dumpsList.length > 0) {
       // Pre-select a dump for initial clustering (will be refined per route later)
-      globalSelectedDump = await findBestDumpForDistrict(depot, points, dumpsList);
-      console.log(`[VRP] Pre-selected dump for clustering: ${globalSelectedDump?.name || "None"}`);
+      globalSelectedDump = await findBestDumpForDistrict(
+        depot,
+        points,
+        dumpsList
+      );
+      console.log(
+        `[VRP] Pre-selected dump for clustering: ${
+          globalSelectedDump?.name || "None"
+        }`
+      );
     } else if (!globalSelectedDump) {
       console.warn(
         `[VRP] No dump provided - routes will end at last stop (no dump destination)`
@@ -3498,7 +3566,7 @@ app.post("/api/vrp/optimize", async (req, res) => {
           `[VRP] Vehicle ${vehicle.id}: Optimized ${route.stops.length} stops using Hybrid CI-SA`
         );
       }
-      
+
       // CRITICAL FIX: Select best dump for THIS route based on LAST stop (after optimization)
       // This ensures dump is closest to the actual last collection point in the route
       let selectedDump = globalSelectedDump;
@@ -3509,25 +3577,32 @@ app.post("/api/vrp/optimize", async (req, res) => {
           // Find dump closest to last stop
           let nearestDump = null;
           let minDistance = Infinity;
-          
+
           for (const dump of dumpsList) {
-            if (!dump.lat || !dump.lon || (dump.status && dump.status !== 'active')) continue;
-            
+            if (
+              !dump.lat ||
+              !dump.lon ||
+              (dump.status && dump.status !== "active")
+            )
+              continue;
+
             const distance = getHaversineDistance(
               { lat: lastStop.lat, lon: lastStop.lon },
               { lat: dump.lat, lon: dump.lon }
             );
-            
+
             if (distance < minDistance) {
               minDistance = distance;
               nearestDump = dump;
             }
           }
-          
+
           if (nearestDump) {
             selectedDump = nearestDump;
             console.log(
-              `[VRP] Vehicle ${vehicle.id}: Selected dump "${nearestDump.name}" closest to last stop (${Math.round(minDistance)}m away)`
+              `[VRP] Vehicle ${vehicle.id}: Selected dump "${
+                nearestDump.name
+              }" closest to last stop (${Math.round(minDistance)}m away)`
             );
           }
         }
@@ -3710,7 +3785,12 @@ app.post("/api/vrp/optimize", async (req, res) => {
       console.log(
         `[VRP] Vehicle ${vehicle.id}: Waypoints order:`,
         waypoints
-          .map((wp) => `[${wp[0].toFixed(4)},${wp[1].toFixed(4)}]`)
+          .map((wp) => {
+            // Handle both array [lon, lat] and object {lon, lat}
+            const lon = Array.isArray(wp) ? wp[0] : wp.lon || wp.longitude || 0;
+            const lat = Array.isArray(wp) ? wp[1] : wp.lat || wp.latitude || 0;
+            return `[${Number(lon).toFixed(4)},${Number(lat).toFixed(4)}]`;
+          })
           .join(" -> ")
       );
 
@@ -3789,35 +3869,45 @@ app.post("/api/vrp/optimize", async (req, res) => {
 
       // CRITICAL FIX: Ensure route geometry ALWAYS includes depot and dump
       // Handle ALL cases: routeGeometry null, empty, or valid
-      const depotCoords = vehicleStartLocation ? [vehicleStartLocation.lon, vehicleStartLocation.lat] : null;
-      const dumpCoords = selectedDump ? [selectedDump.lon, selectedDump.lat] : null;
-      
+      const depotCoords = vehicleStartLocation
+        ? [vehicleStartLocation.lon, vehicleStartLocation.lat]
+        : null;
+      const dumpCoords = selectedDump
+        ? [selectedDump.lon, selectedDump.lat]
+        : null;
+
       // Check if routeGeometry is valid (has coordinates)
-      const hasValidGeometry = routeGeometry && 
-                               routeGeometry.coordinates && 
-                               Array.isArray(routeGeometry.coordinates) &&
-                               routeGeometry.coordinates.length > 0;
-      
+      const hasValidGeometry =
+        routeGeometry &&
+        routeGeometry.coordinates &&
+        Array.isArray(routeGeometry.coordinates) &&
+        routeGeometry.coordinates.length > 0;
+
       if (hasValidGeometry) {
         // Case 1: OSRM returned valid route - ensure depot and dump are included
-        console.log(`[VRP] Vehicle ${vehicle.id}: OSRM returned valid route with ${routeGeometry.coordinates.length} coordinates`);
-        
+        console.log(
+          `[VRP] Vehicle ${vehicle.id}: OSRM returned valid route with ${routeGeometry.coordinates.length} coordinates`
+        );
+
         const newCoordinates = [];
-        
+
         // 1. ALWAYS start with depot
         if (depotCoords) {
           newCoordinates.push(depotCoords);
-          console.log(`[VRP] Route starts at depot: [${depotCoords[0]}, ${depotCoords[1]}]`);
+          console.log(
+            `[VRP] Route starts at depot: [${depotCoords[0]}, ${depotCoords[1]}]`
+          );
         }
-        
+
         // 2. Add route geometry coordinates (skip first if it's same as depot)
         const firstRouteCoord = routeGeometry.coordinates[0];
         if (depotCoords && firstRouteCoord) {
-          const distToDepot = Math.sqrt(
-            Math.pow(firstRouteCoord[0] - depotCoords[0], 2) + 
-            Math.pow(firstRouteCoord[1] - depotCoords[1], 2)
-          ) * 111000;
-          
+          const distToDepot =
+            Math.sqrt(
+              Math.pow(firstRouteCoord[0] - depotCoords[0], 2) +
+                Math.pow(firstRouteCoord[1] - depotCoords[1], 2)
+            ) * 111000;
+
           if (distToDepot < 50) {
             // Route already starts at depot, skip first coordinate to avoid duplicate
             newCoordinates.push(...routeGeometry.coordinates.slice(1));
@@ -3829,66 +3919,100 @@ app.post("/api/vrp/optimize", async (req, res) => {
           // No depot, add all route coordinates
           newCoordinates.push(...routeGeometry.coordinates);
         }
-        
+
         // 3. ALWAYS end with dump
         if (dumpCoords) {
           const lastCoord = newCoordinates[newCoordinates.length - 1];
-          const distToDump = Math.sqrt(
-            Math.pow(lastCoord[0] - dumpCoords[0], 2) + 
-            Math.pow(lastCoord[1] - dumpCoords[1], 2)
-          ) * 111000;
-          
+          const distToDump =
+            Math.sqrt(
+              Math.pow(lastCoord[0] - dumpCoords[0], 2) +
+                Math.pow(lastCoord[1] - dumpCoords[1], 2)
+            ) * 111000;
+
           if (distToDump > 50) {
             // Route doesn't end at dump, add dump as final point
             newCoordinates.push(dumpCoords);
-            console.log(`[VRP] Route ends at dump: [${dumpCoords[0]}, ${dumpCoords[1]}]`);
+            console.log(
+              `[VRP] Route ends at dump: [${dumpCoords[0]}, ${dumpCoords[1]}]`
+            );
           } else {
             console.log(`[VRP] Route already ends at dump`);
           }
         }
-        
+
         // Update routeGeometry with new coordinates
         routeGeometry = {
           ...routeGeometry,
-          coordinates: newCoordinates
+          coordinates: newCoordinates,
         };
-        
-        console.log(`[VRP] Route geometry updated: ${newCoordinates.length} coordinates (START + route + END)`);
+
+        console.log(
+          `[VRP] Route geometry updated: ${newCoordinates.length} coordinates (START + route + END)`
+        );
       } else if (waypoints.length >= 2) {
         // Case 2: OSRM failed or returned empty/invalid geometry - create fallback from waypoints
         // waypoints already includes depot (first) and dump (last if exists)
-        console.warn(`[VRP] Vehicle ${vehicle.id}: OSRM failed or returned empty geometry, creating fallback from ${waypoints.length} waypoints`);
-        console.log(`[VRP] Fallback waypoints:`, waypoints.map(wp => `[${wp[0].toFixed(4)}, ${wp[1].toFixed(4)}]`).join(' -> '));
-        
+        console.warn(
+          `[VRP] Vehicle ${vehicle.id}: OSRM failed or returned empty geometry, creating fallback from ${waypoints.length} waypoints`
+        );
+        console.log(
+          `[VRP] Fallback waypoints:`,
+          waypoints
+            .map((wp) => {
+              const lon = Array.isArray(wp)
+                ? wp[0]
+                : wp.lon || wp.longitude || 0;
+              const lat = Array.isArray(wp)
+                ? wp[1]
+                : wp.lat || wp.latitude || 0;
+              return `[${Number(lon).toFixed(4)}, ${Number(lat).toFixed(4)}]`;
+            })
+            .join(" -> ")
+        );
+
         routeGeometry = {
           type: "LineString",
-          coordinates: waypoints // waypoints already includes depot and dump
+          coordinates: waypoints, // waypoints already includes depot and dump
         };
-        
-        console.log(`[VRP] Fallback route created with ${waypoints.length} waypoints (includes START and END)`);
+
+        console.log(
+          `[VRP] Fallback route created with ${waypoints.length} waypoints (includes START and END)`
+        );
       } else {
         // Case 3: No waypoints - cannot create route
-        console.error(`[VRP] Vehicle ${vehicle.id}: Cannot create route - no valid geometry and insufficient waypoints (${waypoints.length})`);
+        console.error(
+          `[VRP] Vehicle ${vehicle.id}: Cannot create route - no valid geometry and insufficient waypoints (${waypoints.length})`
+        );
         routeGeometry = null;
       }
 
       // Update route object with optimized data (don't push new, update existing)
       route.distance = totalDistance; // in meters
       route.eta = eta; // format: "H:MM"
-      
+
       // Ensure routeGeometry is valid before creating geojson
       // If routeGeometry is still null, use waypoints as final fallback
-      const finalGeometry = routeGeometry || (waypoints.length >= 2 ? {
-        type: "LineString",
-        coordinates: waypoints
-      } : null);
-      
-      if (!finalGeometry || !finalGeometry.coordinates || finalGeometry.coordinates.length < 2) {
-        console.error(`[VRP] Vehicle ${vehicle.id}: Cannot create route geojson - invalid geometry`);
+      const finalGeometry =
+        routeGeometry ||
+        (waypoints.length >= 2
+          ? {
+              type: "LineString",
+              coordinates: waypoints,
+            }
+          : null);
+
+      if (
+        !finalGeometry ||
+        !finalGeometry.coordinates ||
+        finalGeometry.coordinates.length < 2
+      ) {
+        console.error(
+          `[VRP] Vehicle ${vehicle.id}: Cannot create route geojson - invalid geometry`
+        );
         // Still create route object but mark as incomplete
         route.geojson = {
           type: "FeatureCollection",
-          features: []
+          features: [],
         };
       } else {
         route.geojson = {
@@ -3906,7 +4030,9 @@ app.post("/api/vrp/optimize", async (req, res) => {
             },
           ],
         };
-        console.log(`[VRP] Vehicle ${vehicle.id}: Route geojson created with ${finalGeometry.coordinates.length} coordinates`);
+        console.log(
+          `[VRP] Vehicle ${vehicle.id}: Route geojson created with ${finalGeometry.coordinates.length} coordinates`
+        );
       }
       route.stops = route.stops.map((p, idx) => ({
         id: p.id,
@@ -3936,12 +4062,14 @@ app.post("/api/vrp/optimize", async (req, res) => {
               lon: parseFloat(depot.lon),
             }
           : null;
-      
+
       console.log(`[VRP] Vehicle ${vehicle.id}: route.depot set to:`, {
         lat: route.depot?.lat,
         lon: route.depot?.lon,
         name: route.depot?.name,
-        matchesVehicleStart: route.depot?.lat === vehicleStartLocation?.lat && route.depot?.lon === vehicleStartLocation?.lon
+        matchesVehicleStart:
+          route.depot?.lat === vehicleStartLocation?.lat &&
+          route.depot?.lon === vehicleStartLocation?.lon,
       });
       route.dump =
         selectedDump && selectedDump.lat && selectedDump.lon
@@ -4002,26 +4130,33 @@ app.post("/api/vrp/save-routes", async (req, res) => {
       const scheduleIdsInRoute = []; // Track schedule IDs in this route
 
       // Create route (with optional driver_id if provided)
+      // Extract scheduled_date from routeData or use collectionDate from request
+      const scheduledDate =
+        routeData.scheduled_date ||
+        routeData.collectionDate ||
+        new Date().toISOString().split("T")[0];
+
       await db.query(
-        `INSERT INTO routes (id, vehicle_id, driver_id, depot_id, dump_id, start_at, status, planned_distance_km, meta)
+        `INSERT INTO routes (id, vehicle_id, driver_id, depot_id, status, planned_distance_km, scheduled_date, name, meta)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           routeId,
           routeData.vehicleId,
           routeData.driver_id || null, // Optional driver assignment
           routeData.depot_id || null,
-          routeData.dump_id || null,
-          now,
           "planned", // Status: planned (ready to start), in_progress (active), completed, cancelled
           routeData.distance
             ? parseFloat((routeData.distance / 1000).toFixed(2))
             : null, // Convert meters to km
+          scheduledDate, // Add scheduled date
+          routeData.name || `Lộ trình ngày ${scheduledDate}`, // Add route name
           JSON.stringify({
             optimized: true,
             distance: routeData.distance,
             eta: routeData.eta,
             geojson: routeData.geojson,
             vehiclePlate: routeData.vehiclePlate,
+            dump_id: routeData.dump_id || null, // Store in meta if needed
           }),
         ]
       );
@@ -4035,17 +4170,56 @@ app.post("/api/vrp/save-routes", async (req, res) => {
           // stop.id could be either:
           // 1. schedule_id (when coming from RouteOptimization - schedules converted to points)
           // 2. point_id (when coming from other sources)
-          
+          // 3. undefined - need to create point from lat/lon
+
           // Try to find or create point for this stop
-          let pointId = stop.id;
-          
-          // Check if stop.id is a schedule_id (UUID format)
-          // If it's a schedule_id, we need to:
-          // 1. Link schedule to route (update schedules.route_id)
-          // 2. Find or create a point for this schedule location
-          const isScheduleId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(stop.id);
-          
-          if (isScheduleId) {
+          let pointId = null;
+
+          // Check if stop has lat/lon (simple stop from web manager)
+          if (stop.lat && stop.lon) {
+            // Try to find existing point at this location (within 0.0001 degrees ~11m)
+            const pointResult = await db.query(
+              `SELECT id FROM points
+               WHERE ST_DWithin(geom, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, 11)
+               LIMIT 1`,
+              [stop.lon, stop.lat]
+            );
+
+            if (pointResult.rows.length > 0) {
+              pointId = pointResult.rows[0].id;
+            } else {
+              // Create new point using PostGIS geometry
+              const newPointId = uuidv4();
+              await db.query(
+                `INSERT INTO points (id, geom, ghost, last_checkin_at)
+                 VALUES ($1, ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography, false, NOW())`,
+                [newPointId, stop.lon, stop.lat]
+              );
+              pointId = newPointId;
+            }
+          } else if (stop.id) {
+            // Check if stop.id is a schedule_id (UUID format)
+            const isScheduleId =
+              /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+                stop.id
+              );
+
+            if (isScheduleId) {
+              pointId = stop.id; // Will be resolved below
+            } else {
+              // Assume it's a point_id
+              pointId = stop.id;
+            }
+          }
+
+          // If stop.id is a schedule_id, handle schedule linking
+          const isScheduleId =
+            stop.id &&
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+              stop.id
+            );
+
+          if (isScheduleId && !stop.lat && !stop.lon) {
             // This is a schedule_id - link schedule to route
             await db.query(
               `UPDATE schedules 
@@ -4053,9 +4227,9 @@ app.post("/api/vrp/save-routes", async (req, res) => {
                WHERE schedule_id = $2`,
               [routeId, stop.id]
             );
-            
+
             scheduleIdsInRoute.push(stop.id);
-            
+
             // Find or create point for this schedule
             // First, try to find existing point by location
             const scheduleResult = await db.query(
@@ -4070,30 +4244,26 @@ app.post("/api/vrp/save-routes", async (req, res) => {
                WHERE schedule_id = $1`,
               [stop.id]
             );
-            
+
             if (scheduleResult.rows.length > 0) {
               const schedule = scheduleResult.rows[0];
               // Get lat/lon from schedule
               const lat = schedule.lat;
               const lon = schedule.lon;
-              
+
               if (lat && lon) {
-                // Try to find existing point at this location (within 10m)
+                // Try to find existing point at this location
                 const pointResult = await db.query(
                   `SELECT id FROM points
-                   WHERE ST_DWithin(
-                     geom,
-                     ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography,
-                     10
-                   )
+                   WHERE ST_DWithin(geom, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, 11)
                    LIMIT 1`,
                   [lon, lat]
                 );
-                
+
                 if (pointResult.rows.length > 0) {
                   pointId = pointResult.rows[0].id;
                 } else {
-                  // Create new point for this schedule
+                  // Create new point for this schedule using PostGIS geometry
                   const newPointId = uuidv4();
                   await db.query(
                     `INSERT INTO points (id, geom, ghost, last_checkin_at)
@@ -4108,9 +4278,9 @@ app.post("/api/vrp/save-routes", async (req, res) => {
 
           // Create route stop
           await db.query(
-            `INSERT INTO route_stops (id, route_id, point_id, seq, status, planned_eta)
-             VALUES ($1, $2, $3, $4, $5, $6)`,
-            [stopId, routeId, pointId, stop.seq || i + 1, "pending", now]
+            `INSERT INTO route_stops (id, route_id, point_id, seq, stop_order, status, planned_eta)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [stopId, routeId, pointId, i + 1, stop.seq || i + 1, "pending", now]
           );
         }
       }
@@ -4124,9 +4294,11 @@ app.post("/api/vrp/save-routes", async (req, res) => {
              AND route_id = $3`,
           [routeData.driver_id, scheduleIdsInRoute, routeId]
         );
-        
-        console.log(`✅ Synced employee_id ${routeData.driver_id} to ${scheduleIdsInRoute.length} schedules in route ${routeId}`);
-        
+
+        console.log(
+          `✅ Synced employee_id ${routeData.driver_id} to ${scheduleIdsInRoute.length} schedules in route ${routeId}`
+        );
+
         // Emit Socket.IO events for updated schedules
         const { rows: updatedSchedules } = await db.query(
           `SELECT 
@@ -4143,8 +4315,8 @@ app.post("/api/vrp/save-routes", async (req, res) => {
           WHERE s.schedule_id = ANY($1::uuid[])`,
           [scheduleIdsInRoute]
         );
-        
-        updatedSchedules.forEach(schedule => {
+
+        updatedSchedules.forEach((schedule) => {
           io.emit("schedule:updated", schedule);
         });
       }
@@ -4161,6 +4333,35 @@ app.post("/api/vrp/save-routes", async (req, res) => {
     }
 
     console.log(`✅ Saved ${savedRoutes.length} optimized routes to database`);
+
+    // Emit Socket.IO events for each saved route with driver assignment
+    for (const savedRoute of savedRoutes) {
+      if (savedRoute.driver_id) {
+        const routeDetails = await db.query(
+          `SELECT r.*, 
+            p.name as driver_name,
+            v.plate as vehicle_plate,
+            d.name as depot_name,
+            COUNT(rs.id) as total_stops
+          FROM routes r
+          LEFT JOIN personnel p ON r.driver_id = p.id
+          LEFT JOIN vehicles v ON r.vehicle_id = v.id
+          LEFT JOIN depots d ON r.depot_id = d.id
+          LEFT JOIN route_stops rs ON r.id = rs.route_id
+          WHERE r.id = $1
+          GROUP BY r.id, p.name, v.plate, d.name`,
+          [savedRoute.route_id]
+        );
+
+        if (routeDetails.rows.length > 0) {
+          io.emit("route:created", routeDetails.rows[0]);
+          io.to(`driver:${savedRoute.driver_id}`).emit(
+            "route:new",
+            routeDetails.rows[0]
+          );
+        }
+      }
+    }
 
     res.json({
       ok: true,
@@ -4224,11 +4425,38 @@ app.post("/api/vrp/assign-route", async (req, res) => {
     );
 
     console.log(`✅ Assigned driver ${driver_id} to route ${route_id}`);
-    console.log(`✅ Synced employee_id to ${scheduleUpdates.length} schedules in route ${route_id}`);
+    console.log(
+      `✅ Synced employee_id to ${scheduleUpdates.length} schedules in route ${route_id}`
+    );
+
+    // Emit Socket.IO event for route assignment
+    const routeDetails = await db.query(
+      `SELECT r.*, 
+        p.name as driver_name,
+        v.plate as vehicle_plate,
+        d.name as depot_name
+      FROM routes r
+      LEFT JOIN personnel p ON r.driver_id = p.id
+      LEFT JOIN vehicles v ON r.vehicle_id = v.id
+      LEFT JOIN depots d ON r.depot_id = d.id
+      WHERE r.id = $1`,
+      [route_id]
+    );
+
+    if (routeDetails.rows.length > 0) {
+      io.emit("route:assigned", {
+        route: routeDetails.rows[0],
+        driver_id,
+        assigned_at: new Date(),
+      });
+
+      // Also emit to specific driver room
+      io.to(`driver:${driver_id}`).emit("route:new", routeDetails.rows[0]);
+    }
 
     // Emit Socket.IO events for updated schedules
     if (scheduleUpdates.length > 0) {
-      const scheduleIds = scheduleUpdates.map(s => s.schedule_id);
+      const scheduleIds = scheduleUpdates.map((s) => s.schedule_id);
       const { rows: updatedSchedules } = await db.query(
         `SELECT 
           s.*,
@@ -4244,8 +4472,8 @@ app.post("/api/vrp/assign-route", async (req, res) => {
         WHERE s.schedule_id = ANY($1::uuid[])`,
         [scheduleIds]
       );
-      
-      updatedSchedules.forEach(schedule => {
+
+      updatedSchedules.forEach((schedule) => {
         io.emit("schedule:updated", schedule);
       });
     }
@@ -4254,7 +4482,7 @@ app.post("/api/vrp/assign-route", async (req, res) => {
       ok: true,
       data: {
         ...rows[0],
-        schedules_updated: scheduleUpdates.length
+        schedules_updated: scheduleUpdates.length,
       },
       message: `Route assigned successfully. ${scheduleUpdates.length} schedules synced.`,
     });
@@ -5499,8 +5727,8 @@ app.get("/api/schedules", async (req, res) => {
         p.name as employee_name,
         p.role as employee_role,
         d.name as depot_name,
-        COALESCE(s.longitude, ST_X(s.location::geometry)) as longitude,
-        COALESCE(s.latitude, ST_Y(s.location::geometry)) as latitude,
+        s.longitude,
+        s.latitude,
         s.address as location_address
       FROM schedules s
       LEFT JOIN users u ON s.citizen_id = u.id::text OR s.citizen_id = u.phone
@@ -5810,10 +6038,10 @@ app.patch("/api/schedules/:id", async (req, res) => {
     const query = `UPDATE schedules SET ${updates.join(
       ", "
     )} WHERE schedule_id = $${paramIndex} RETURNING schedule_id`;
-    
+
     console.log(`[Schedule] Executing query:`, query);
     console.log(`[Schedule] With params:`, params);
-    
+
     const { rows: updateRows } = await db.query(query, params);
 
     if (updateRows.length === 0) {
@@ -7118,6 +7346,558 @@ app.get("/api/groups/:id/stats", async (req, res) => {
 });
 
 // ==================== ROUTES API (Worker App) ====================
+
+/**
+ * GET /api/worker/routes
+ * Get all routes for a worker (driver or collector)
+ */
+app.get("/api/worker/routes", async (req, res) => {
+  try {
+    const { personnel_id, status, date } = req.query;
+
+    if (!personnel_id) {
+      return res.status(400).json({
+        ok: false,
+        error: "personnel_id is required",
+      });
+    }
+
+    let query = `
+      SELECT 
+        r.id,
+        r.name,
+        r.vehicle_id,
+        v.plate as vehicle_plate,
+        r.scheduled_date,
+        r.status,
+        r.start_at as started_at,
+        r.end_at as completed_at,
+        r.planned_distance_km as total_distance,
+        p.name as worker_name,
+        r.driver_id as worker_id,
+        r.created_at,
+        r.updated_at,
+        r.depot_id,
+        r.dump_id,
+        COALESCE(depot_info.name, 'Depot') as depot_name,
+        ST_Y(depot_info.geom::geometry) as depot_lat,
+        ST_X(depot_info.geom::geometry) as depot_lon,
+        COALESCE(dump_info.name, 'Dump') as dump_name,
+        ST_Y(dump_info.geom::geometry) as dump_lat,
+        ST_X(dump_info.geom::geometry) as dump_lon
+      FROM routes r
+      LEFT JOIN personnel p ON r.driver_id = p.id
+      LEFT JOIN vehicles v ON r.vehicle_id = v.id
+      LEFT JOIN depots depot_info ON r.depot_id::text = depot_info.id::text
+      LEFT JOIN dumps dump_info ON r.dump_id::text = dump_info.id::text
+      WHERE r.driver_id = $1
+    `;
+    const params = [personnel_id];
+    let paramIndex = 2;
+
+    // Filter by status
+    if (status) {
+      query += ` AND r.status = $${paramIndex++}`;
+      params.push(status);
+    }
+
+    // Filter by date
+    if (date) {
+      query += ` AND r.scheduled_date = $${paramIndex++}`;
+      params.push(date);
+    } else {
+      // Default: Show routes that are not completed (planned, in_progress)
+      // Don't filter by date to avoid timezone issues
+      query += ` AND r.status != 'completed'`;
+    }
+
+    query += ` ORDER BY r.scheduled_date DESC NULLS LAST, r.start_at NULLS LAST`;
+
+    console.log(`🚛 Getting routes for worker: ${personnel_id}`);
+    const { rows } = await db.query(query, params);
+
+    // Fetch stops for each route
+    for (const route of rows) {
+      const stopsResult = await db.query(
+        `
+        SELECT 
+          rs.id,
+          rs.route_id,
+          rs.point_id,
+          COALESCE(rs.stop_order, rs.seq) as stop_order,
+          rs.seq,
+          rs.planned_eta,
+          rs.status,
+          rs.actual_at,
+          rs.completed_at,
+          rs.actual_weight_kg,
+          rs.photo_urls,
+          rs.notes,
+          rs.reason,
+          rs.meta,
+          ST_Y(p.geom::geometry) as lat,
+          ST_X(p.geom::geometry) as lon,
+          COALESCE(ua.address_text, rs.point_name, 'Điểm thu gom') as address,
+          p.last_waste_type as waste_type
+        FROM route_stops rs
+        LEFT JOIN points p ON rs.point_id = p.id
+        LEFT JOIN user_addresses ua ON p.address_id = ua.id
+        WHERE rs.route_id = $1
+        ORDER BY COALESCE(rs.stop_order, rs.seq)
+        `,
+        [route.id]
+      );
+      route.stops = stopsResult.rows;
+    }
+
+    res.json({
+      ok: true,
+      data: rows,
+      count: rows.length,
+    });
+  } catch (error) {
+    console.error("[Worker Routes] Get error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/worker/routes/:id
+ * Get detailed route information with all stops
+ */
+app.get("/api/worker/routes/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Get route details
+    const routeResult = await db.query(
+      `SELECT 
+        r.id,
+        r.name,
+        r.vehicle_id,
+        v.plate as vehicle_plate,
+        r.scheduled_date,
+        r.status,
+        r.start_at as started_at,
+        r.completed_at,
+        r.planned_distance_km as total_distance,
+        p.name as worker_name,
+        r.driver_id as worker_id,
+        r.created_at,
+        r.updated_at,
+        -- Depot (Start point)
+        r.depot_id,
+        COALESCE(depot_info.name, 'Depot') as depot_name,
+        ST_Y(depot_info.geom::geometry) as depot_lat,
+        ST_X(depot_info.geom::geometry) as depot_lon,
+        -- Dump (End point)  
+        r.dump_id,
+        COALESCE(dump_info.name, 'Dump') as dump_name,
+        ST_Y(dump_info.geom::geometry) as dump_lat,
+        ST_X(dump_info.geom::geometry) as dump_lon
+      FROM routes r
+      LEFT JOIN personnel p ON r.driver_id = p.id
+      LEFT JOIN vehicles v ON r.vehicle_id = v.id
+      LEFT JOIN depots depot_info ON r.depot_id::text = depot_info.id::text
+      LEFT JOIN dumps dump_info ON r.dump_id::text = dump_info.id::text
+      WHERE r.id = $1`,
+      [id]
+    );
+
+    if (routeResult.rows.length === 0) {
+      return res.status(404).json({
+        ok: false,
+        error: "Route not found",
+      });
+    }
+
+    const route = routeResult.rows[0];
+
+    // Get route stops with point details
+    const stopsResult = await db.query(
+      `
+      SELECT 
+        rs.id,
+        rs.route_id,
+        rs.point_id,
+        COALESCE(rs.stop_order, rs.seq) as stop_order,
+        rs.seq,
+        rs.planned_eta,
+        rs.status,
+        rs.actual_at,
+        rs.completed_at,
+        rs.actual_weight_kg,
+        rs.photo_urls,
+        rs.notes,
+        rs.reason,
+        rs.meta,
+        ST_Y(p.geom::geometry) as lat,
+        ST_X(p.geom::geometry) as lon,
+        COALESCE(ua.address_text, rs.point_name, 'Điểm thu gom') as address,
+        p.last_waste_type as waste_type
+      FROM route_stops rs
+      LEFT JOIN points p ON rs.point_id = p.id
+      LEFT JOIN user_addresses ua ON p.address_id = ua.id
+      WHERE rs.route_id = $1
+      ORDER BY COALESCE(rs.stop_order, rs.seq)
+      `,
+      [id]
+    );
+
+    route.stops = stopsResult.rows;
+
+    // Calculate progress manually (safer than relying on function)
+    const totalStops = stopsResult.rows.length;
+    const completedStops = stopsResult.rows.filter(
+      (s) => s.status === "completed" || s.status === "collected"
+    ).length;
+
+    route.total_stops = totalStops;
+    route.completed_stops = completedStops;
+
+    res.json({
+      ok: true,
+      data: route,
+    });
+  } catch (error) {
+    console.error("[Worker Routes] Get detail error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/worker/routes/:id/start
+ * Start a route
+ */
+app.post("/api/worker/routes/:id/start", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { lat, lon } = req.body;
+
+    console.log(`🚀 Starting route: ${id}`);
+
+    // Update route status
+    const result = await db.query(
+      `
+      UPDATE routes 
+      SET status = 'in_progress',
+          start_at = NOW(),
+          updated_at = NOW()
+      WHERE id = $1 AND status = 'planned'
+      RETURNING *
+      `,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "Route not found or already started",
+      });
+    }
+
+    // Emit real-time event
+    io.emit("route:started", { route_id: id, started_at: new Date() });
+
+    res.json({
+      ok: true,
+      data: result.rows[0],
+      message: "Route started successfully",
+    });
+  } catch (error) {
+    console.error("[Worker Routes] Start error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/worker/routes/:id/complete
+ * Complete a route
+ */
+app.post("/api/worker/routes/:id/complete", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { actual_distance_km, total_weight_kg, notes } = req.body;
+
+    console.log(`✅ Completing route: ${id}`);
+
+    // Calculate duration
+    const durationResult = await db.query(
+      `
+      SELECT EXTRACT(EPOCH FROM (NOW() - start_at))/60 as duration_min
+      FROM routes
+      WHERE id = $1
+      `,
+      [id]
+    );
+
+    const duration_min = durationResult.rows[0]?.duration_min || 0;
+
+    // Update route
+    const result = await db.query(
+      `
+      UPDATE routes
+      SET status = 'completed',
+          end_at = NOW(),
+          actual_distance_km = $2,
+          actual_duration_min = $3,
+          total_weight_kg = $4,
+          meta = meta || jsonb_build_object('completion_notes', $5),
+          updated_at = NOW()
+      WHERE id = $1 AND status = 'in_progress'
+      RETURNING *
+      `,
+      [id, actual_distance_km, Math.round(duration_min), total_weight_kg, notes]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "Route not found or not in progress",
+      });
+    }
+
+    // Emit real-time event
+    io.emit("route:completed", {
+      route_id: id,
+      completed_at: new Date(),
+      stats: {
+        distance: actual_distance_km,
+        duration: Math.round(duration_min),
+        weight: total_weight_kg,
+      },
+    });
+
+    res.json({
+      ok: true,
+      data: result.rows[0],
+      message: "Route completed successfully",
+    });
+  } catch (error) {
+    console.error("[Worker Routes] Complete error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/worker/route-stops/:id/complete
+ * Mark a route stop as completed
+ * IMPORTANT: Also updates corresponding schedule and awards points to user
+ */
+app.post("/api/worker/route-stops/:id/complete", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { actual_weight_kg, photo_urls, notes } = req.body;
+
+    // 1. Update route_stop
+    const result = await db.query(
+      `
+      UPDATE route_stops
+      SET status = 'completed',
+          completed_at = NOW(),
+          actual_weight_kg = $2,
+          photo_urls = $3,
+          notes = $4,
+          updated_at = NOW()
+      WHERE id = $1
+      RETURNING *, route_id, point_id
+      `,
+      [id, actual_weight_kg, photo_urls || [], notes]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        ok: false,
+        error: "Route stop not found",
+      });
+    }
+
+    const stop = result.rows[0];
+    const routeId = stop.route_id;
+    const pointId = stop.point_id;
+
+    // 2. Find and update corresponding schedule(s)
+    // Match by route_id and location (point_id or coordinates)
+    const scheduleUpdate = await db.query(
+      `
+      UPDATE schedules s
+      SET status = 'completed',
+          actual_weight = $1,
+          completed_at = NOW(),
+          notes = COALESCE(s.notes, '') || ' ' || COALESCE($2, ''),
+          updated_at = NOW()
+      WHERE s.route_id = $3
+        AND s.status = 'assigned'
+        AND (
+          -- Match by point location
+          EXISTS (
+            SELECT 1 FROM points p
+            WHERE p.id = $4
+            AND ST_DWithin(
+              p.geom,
+              ST_SetSRID(ST_MakePoint(s.longitude, s.latitude), 4326)::geography,
+              50 -- Within 50 meters
+            )
+          )
+          OR
+          -- Match by schedule linked to route_stop via metadata
+          s.schedule_id IN (
+            SELECT (meta->>'schedule_id')::uuid
+            FROM route_stops
+            WHERE id = $5
+            AND meta->>'schedule_id' IS NOT NULL
+          )
+        )
+      RETURNING schedule_id, citizen_id, actual_weight
+      `,
+      [actual_weight_kg, notes, routeId, pointId, id]
+    );
+
+    console.log(
+      `✅ Route stop ${id} completed. Updated ${scheduleUpdate.rows.length} schedule(s)`
+    );
+
+    // 3. Award points to users for completed schedules
+    const pointsAwarded = [];
+    for (const schedule of scheduleUpdate.rows) {
+      const weight = schedule.actual_weight || 0;
+
+      // Calculate points based on weight
+      let points = 20; // Base points
+      if (weight >= 10) points = 100;
+      else if (weight >= 5) points = 50;
+      else if (weight >= 3) points = 30;
+
+      // Insert point transaction
+      const txResult = await db.query(
+        `
+        INSERT INTO point_transactions (user_id, points, type, reason, reference_id, reference_type, meta, created_at)
+        VALUES ($1, $2, 'earn', $3, $4, 'schedule', $5, NOW())
+        RETURNING id
+        `,
+        [
+          schedule.citizen_id,
+          points,
+          `Đổ rác thành công - ${weight}kg`,
+          schedule.schedule_id,
+          JSON.stringify({ weight: weight, route_stop_id: id }),
+        ]
+      );
+
+      // Update user total points
+      await db.query(
+        `
+        INSERT INTO user_points (user_id, points, total_checkins, last_checkin_date, updated_at)
+        VALUES ($1, $2, 1, CURRENT_DATE, NOW())
+        ON CONFLICT (user_id) DO UPDATE SET
+          points = user_points.points + EXCLUDED.points,
+          total_checkins = user_points.total_checkins + 1,
+          last_checkin_date = CURRENT_DATE,
+          updated_at = NOW()
+        `,
+        [schedule.citizen_id, points]
+      );
+
+      pointsAwarded.push({
+        citizen_id: schedule.citizen_id,
+        schedule_id: schedule.schedule_id,
+        points: points,
+        weight: weight,
+        transaction_id: txResult.rows[0].id,
+      });
+
+      // Emit points earned event to user
+      io.to(`user:${schedule.citizen_id}`).emit("points:earned", {
+        points: points,
+        schedule_id: schedule.schedule_id,
+        weight: weight,
+        description: `Đổ rác thành công - ${weight}kg`,
+      });
+
+      // Emit schedule completed event
+      io.emit("schedule:completed", {
+        schedule_id: schedule.schedule_id,
+        completed_at: new Date(),
+        actual_weight: weight,
+      });
+
+      // Emit schedule updated event for web manager
+      io.emit("schedule:updated", {
+        schedule_id: schedule.schedule_id,
+        citizen_id: schedule.citizen_id,
+        status: "completed",
+        actual_weight: weight,
+        completed_at: new Date(),
+        updated_at: new Date(),
+      });
+    }
+
+    // 4. Emit route stop completed event
+    io.emit("route:stop_completed", {
+      ...stop,
+      schedules_completed: scheduleUpdate.rows.length,
+      points_awarded: pointsAwarded,
+    });
+
+    res.json({
+      ok: true,
+      data: {
+        stop: stop,
+        schedules_completed: scheduleUpdate.rows.length,
+        points_awarded: pointsAwarded,
+      },
+      message: `Stop completed successfully. ${scheduleUpdate.rows.length} schedule(s) updated, ${pointsAwarded.length} user(s) awarded points.`,
+    });
+  } catch (error) {
+    console.error("[Worker Routes] Complete stop error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/worker/route-stops/:id/skip
+ * Skip a route stop
+ */
+app.post("/api/worker/route-stops/:id/skip", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason, photo_urls } = req.body;
+
+    const result = await db.query(
+      `
+      UPDATE route_stops
+      SET status = 'skipped',
+          reason = $2,
+          photo_urls = $3,
+          updated_at = NOW()
+      WHERE id = $1
+      RETURNING *
+      `,
+      [id, reason, photo_urls || []]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        ok: false,
+        error: "Route stop not found",
+      });
+    }
+
+    // Emit real-time event
+    io.emit("route:stop_skipped", result.rows[0]);
+
+    res.json({
+      ok: true,
+      data: result.rows[0],
+      message: "Stop skipped successfully",
+    });
+  } catch (error) {
+    console.error("[Worker Routes] Skip stop error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// Legacy routes API - Keep for backward compatibility
 // Get active route for worker
 app.get("/api/routes/active", async (req, res) => {
   try {
@@ -7130,13 +7910,22 @@ app.get("/api/routes/active", async (req, res) => {
       });
     }
 
-    // TODO: Implement routes table and logic
-    // For now, return empty route
+    // Check for active routes
+    const { rows } = await db.query(
+      `
+      SELECT * FROM worker_routes_view
+      WHERE (driver_id = $1 OR collector_id = $1)
+        AND status = 'in_progress'
+      LIMIT 1
+      `,
+      [employee_id]
+    );
+
     console.log(`🚛 Checking active route for employee: ${employee_id}`);
 
     res.json({
       ok: true,
-      data: null, // No active route for now
+      data: rows.length > 0 ? rows[0] : null,
     });
   } catch (error) {
     console.error("[Route] Get active error:", error);
@@ -7149,11 +7938,22 @@ app.post("/api/routes/:id/start", async (req, res) => {
   try {
     const { id } = req.params;
 
-    // TODO: Implement route start logic
     console.log(`🚀 Starting route: ${id}`);
+
+    const result = await db.query(
+      `
+      UPDATE routes 
+      SET status = 'in_progress',
+          start_at = NOW()
+      WHERE id = $1
+      RETURNING *
+      `,
+      [id]
+    );
 
     res.json({
       ok: true,
+      data: result.rows[0],
       message: "Route started successfully",
     });
   } catch (error) {
@@ -7167,11 +7967,22 @@ app.post("/api/routes/:id/complete", async (req, res) => {
   try {
     const { id } = req.params;
 
-    // TODO: Implement route completion logic
     console.log(`✅ Completing route: ${id}`);
+
+    const result = await db.query(
+      `
+      UPDATE routes
+      SET status = 'completed',
+          end_at = NOW()
+      WHERE id = $1
+      RETURNING *
+      `,
+      [id]
+    );
 
     res.json({
       ok: true,
+      data: result.rows[0],
       message: "Route completed successfully",
     });
   } catch (error) {
@@ -7437,16 +8248,93 @@ app.get("/api/auth/me", async (req, res) => {
       });
     }
 
-    const { rows } = await db.query(
+    // Try to find in users table first
+    let { rows } = await db.query(
       `SELECT id, phone, email, role, status, profile, created_at, updated_at
        FROM users WHERE id = $1`,
       [userId]
     );
 
+    // If not found in users, try personnel table (for workers/drivers)
     if (rows.length === 0) {
-      return res.status(404).json({
-        ok: false,
-        error: "User not found",
+      const personnelResult = await db.query(
+        `SELECT 
+          p.*,
+          d.name as depot_name,
+          ST_Y(d.geom::geometry) as depot_lat,
+          ST_X(d.geom::geometry) as depot_lon
+         FROM personnel p
+         LEFT JOIN depots d ON p.depot_id = d.id
+         WHERE p.id = $1`,
+        [userId]
+      );
+
+      if (personnelResult.rows.length === 0) {
+        return res.status(404).json({
+          ok: false,
+          error: "User not found",
+        });
+      }
+
+      const personnel = personnelResult.rows[0];
+
+      // Get group info for personnel
+      const groupResult = await db.query(
+        `SELECT 
+          g.*,
+          gm.role_in_group,
+          v.plate as vehicle_plate,
+          v.type as vehicle_type,
+          v.capacity_kg as vehicle_capacity
+         FROM group_members gm
+         JOIN groups g ON gm.group_id = g.id
+         LEFT JOIN vehicles v ON g.vehicle_id = v.id
+         WHERE gm.personnel_id = $1 
+           AND gm.status = 'active'
+           AND g.status = 'active'
+         LIMIT 1`,
+        [personnel.id]
+      );
+
+      const group = groupResult.rows.length > 0 ? groupResult.rows[0] : null;
+
+      return res.json({
+        ok: true,
+        data: {
+          id: personnel.id,
+          phone: personnel.phone,
+          email: personnel.email || null,
+          role: "worker",
+          personnelRole: personnel.role,
+          fullName: personnel.name || "Worker",
+          depotId: personnel.depot_id,
+          depotName: personnel.depot_name || "",
+          depotLocation:
+            personnel.depot_lat && personnel.depot_lon
+              ? {
+                  latitude: personnel.depot_lat,
+                  longitude: personnel.depot_lon,
+                }
+              : null,
+          groupId: group?.id || null,
+          groupName: group?.name || null,
+          groupCode: group?.code || null,
+          roleInGroup: group?.role_in_group || null,
+          operatingArea: group?.operating_area || null,
+          vehicleId: group?.vehicle_id || null,
+          vehiclePlate: group?.vehicle_plate || null,
+          vehicleType: group?.vehicle_type || null,
+          skills: personnel.meta?.skills || [],
+          experience: personnel.meta?.experience_years || 0,
+          license: personnel.meta?.license || null,
+          address: "",
+          latitude: null,
+          longitude: null,
+          isVerified: true,
+          isActive: personnel.status === "active",
+          createdAt: personnel.created_at,
+          updatedAt: personnel.updated_at,
+        },
       });
     }
 
@@ -7717,7 +8605,7 @@ app.get("/api/gamification/analytics/overview", async (req, res) => {
 app.get("/api/gamification/analytics/trends", async (req, res) => {
   try {
     const { period = "7d" } = req.query;
-    
+
     // Calculate date range based on period
     let days = 7;
     if (period === "30d") days = 30;
@@ -7864,7 +8752,7 @@ app.get("/api/gamification/analytics/distribution", async (req, res) => {
 app.get("/api/gamification/points/transactions", async (req, res) => {
   try {
     const { user_id, type, limit = 50, offset = 0 } = req.query;
-    
+
     let query = `
       SELECT 
         pt.id,
@@ -7922,14 +8810,14 @@ app.get("/api/gamification/points/transactions", async (req, res) => {
     const total = parseInt(countResult.rows[0]?.total || 0);
 
     // Map snake_case to camelCase for frontend
-    const mappedRows = rows.map(row => ({
+    const mappedRows = rows.map((row) => ({
       id: row.id,
       userId: row.user_id,
-      userName: row.user_name || 'N/A',
-      userEmail: row.user_email || '',
+      userName: row.user_name || "N/A",
+      userEmail: row.user_email || "",
       points: parseInt(row.points || 0),
       transactionType: row.type,
-      reason: row.reason || '',
+      reason: row.reason || "",
       referenceId: row.reference_id,
       referenceType: row.reference_type,
       createdAt: row.created_at ? new Date(row.created_at).toISOString() : null,
@@ -7962,8 +8850,11 @@ app.post("/api/gamification/points/adjust", async (req, res) => {
 
     // Find user_id if input is name/email instead of UUID
     let actualUserId = user_id;
-    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user_id);
-    
+    const isUUID =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        user_id
+      );
+
     if (!isUUID) {
       // Try to find user by name or email
       const userQuery = await db.query(
@@ -7974,14 +8865,14 @@ app.post("/api/gamification/points/adjust", async (req, res) => {
          LIMIT 1`,
         [`%${user_id}%`]
       );
-      
+
       if (userQuery.rows.length === 0) {
         return res.status(404).json({
           ok: false,
           error: `Không tìm thấy user với ID/tên/email: ${user_id}`,
         });
       }
-      
+
       actualUserId = userQuery.rows[0].id;
     }
 
@@ -8028,9 +8919,13 @@ app.post("/api/gamification/points/adjust", async (req, res) => {
     }
 
     // Check and unlock badges after points adjustment
-    await db.query('SELECT check_and_unlock_badges($1)', [actualUserId]);
+    await db.query("SELECT check_and_unlock_badges($1)", [actualUserId]);
 
-    console.log(`📊 Points adjusted: ${points > 0 ? '+' : ''}${points} points for user ${actualUserId}`);
+    console.log(
+      `📊 Points adjusted: ${
+        points > 0 ? "+" : ""
+      }${points} points for user ${actualUserId}`
+    );
 
     res.json({
       ok: true,
@@ -8112,7 +9007,15 @@ app.get("/api/gamification/points/rules", async (req, res) => {
 // Create badge
 app.post("/api/gamification/badges", async (req, res) => {
   try {
-    const { code, name, description, icon_url, criteria, points_reward, rarity } = req.body;
+    const {
+      code,
+      name,
+      description,
+      icon_url,
+      criteria,
+      points_reward,
+      rarity,
+    } = req.body;
 
     if (!code || !name || !criteria) {
       return res.status(400).json({
@@ -8153,7 +9056,15 @@ app.post("/api/gamification/badges", async (req, res) => {
 app.patch("/api/gamification/badges/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, icon_url, criteria, points_reward, rarity, active } = req.body;
+    const {
+      name,
+      description,
+      icon_url,
+      criteria,
+      points_reward,
+      rarity,
+      active,
+    } = req.body;
 
     const updates = [];
     const params = [];
@@ -8304,7 +9215,14 @@ app.post("/api/gamification/badges/assign", async (req, res) => {
       await db.query(
         `INSERT INTO point_transactions (user_id, points, type, reason, reference_id, reference_type)
          VALUES ($1, $2, $3, $4, $5, $6)`,
-        [user_id, pointsReward, "bonus", reason || "Badge reward", badge_id, "badge"]
+        [
+          user_id,
+          pointsReward,
+          "bonus",
+          reason || "Badge reward",
+          badge_id,
+          "badge",
+        ]
       );
 
       await db.query(
@@ -8460,17 +9378,17 @@ app.post("/api/gamification/claim-reward", async (req, res) => {
 });
 
 // ==================== AIR QUALITY API ====================
-const airQualityService = require('./services/airquality');
+const airQualityService = require("./services/airquality");
 
 // Get air quality data for a location
 app.get("/api/air-quality", async (req, res) => {
   try {
     const { lat, lon } = req.query;
-    
+
     if (!lat || !lon) {
       return res.status(400).json({
         ok: false,
-        error: "lat and lon query parameters are required"
+        error: "lat and lon query parameters are required",
       });
     }
 
@@ -8480,15 +9398,15 @@ app.get("/api/air-quality", async (req, res) => {
     if (isNaN(latNum) || isNaN(lonNum)) {
       return res.status(400).json({
         ok: false,
-        error: "Invalid lat or lon values"
+        error: "Invalid lat or lon values",
       });
     }
 
     const aqiData = await airQualityService.getAirQuality(latNum, lonNum);
-    
+
     res.json({
       ok: true,
-      data: aqiData
+      data: aqiData,
     });
   } catch (error) {
     console.error("[Air Quality] Get error:", error);
@@ -8497,17 +9415,17 @@ app.get("/api/air-quality", async (req, res) => {
 });
 
 // ==================== POI (Points of Interest) API ====================
-const poiService = require('./services/poi');
+const poiService = require("./services/poi");
 
 // Get POIs near a location (alias for /api/poi/nearby)
 app.get("/api/poi", async (req, res) => {
   try {
     const { lat, lon, type, radius = 500 } = req.query;
-    
+
     if (!lat || !lon) {
       return res.status(400).json({
         ok: false,
-        error: "lat and lon query parameters are required"
+        error: "lat and lon query parameters are required",
       });
     }
 
@@ -8518,15 +9436,15 @@ app.get("/api/poi", async (req, res) => {
     if (isNaN(latNum) || isNaN(lonNum)) {
       return res.status(400).json({
         ok: false,
-        error: "Invalid lat or lon values"
+        error: "Invalid lat or lon values",
       });
     }
 
     const pois = await poiService.getNearbyPOI(latNum, lonNum, radiusNum, type);
-    
+
     res.json({
       ok: true,
-      data: pois
+      data: pois,
     });
   } catch (error) {
     console.error("[POI] Get error:", error);
@@ -8538,11 +9456,11 @@ app.get("/api/poi", async (req, res) => {
 app.get("/api/poi/nearby", async (req, res) => {
   try {
     const { lat, lon, type, radius = 500 } = req.query;
-    
+
     if (!lat || !lon) {
       return res.status(400).json({
         ok: false,
-        error: "lat and lon query parameters are required"
+        error: "lat and lon query parameters are required",
       });
     }
 
@@ -8553,15 +9471,15 @@ app.get("/api/poi/nearby", async (req, res) => {
     if (isNaN(latNum) || isNaN(lonNum)) {
       return res.status(400).json({
         ok: false,
-        error: "Invalid lat or lon values"
+        error: "Invalid lat or lon values",
       });
     }
 
     const pois = await poiService.getNearbyPOI(latNum, lonNum, radiusNum, type);
-    
+
     res.json({
       ok: true,
-      data: pois
+      data: pois,
     });
   } catch (error) {
     console.error("[POI] Get nearby error:", error);
@@ -8570,7 +9488,7 @@ app.get("/api/poi/nearby", async (req, res) => {
 });
 
 // ==================== SENSOR ALERTS API ====================
-const sensorsService = require('./services/sensors');
+const sensorsService = require("./services/sensors");
 
 // Get containers that need collection (fill level > threshold)
 app.get("/api/sensors/alerts", async (req, res) => {
@@ -8581,15 +9499,17 @@ app.get("/api/sensors/alerts", async (req, res) => {
     if (isNaN(thresholdNum) || thresholdNum < 0 || thresholdNum > 100) {
       return res.status(400).json({
         ok: false,
-        error: "Invalid threshold value (must be 0-100)"
+        error: "Invalid threshold value (must be 0-100)",
       });
     }
 
-    const containers = await sensorsService.getContainersNeedingCollection(thresholdNum);
-    
+    const containers = await sensorsService.getContainersNeedingCollection(
+      thresholdNum
+    );
+
     res.json({
       ok: true,
-      data: containers
+      data: containers,
     });
   } catch (error) {
     console.error("[Sensors] Get alerts error:", error);
@@ -8601,19 +9521,19 @@ app.get("/api/sensors/alerts", async (req, res) => {
 app.get("/api/sensors/container/:containerId", async (req, res) => {
   try {
     const { containerId } = req.params;
-    
+
     const sensorData = await sensorsService.getContainerLevel(containerId);
-    
+
     if (!sensorData) {
       return res.status(404).json({
         ok: false,
-        error: "Container not found"
+        error: "Container not found",
       });
     }
 
     res.json({
       ok: true,
-      data: sensorData
+      data: sensorData,
     });
   } catch (error) {
     console.error("[Sensors] Get container error:", error);
@@ -8625,13 +9545,13 @@ app.get("/api/sensors/container/:containerId", async (req, res) => {
 app.get("/api/sensors/:containerId/level", async (req, res) => {
   try {
     const { containerId } = req.params;
-    
+
     const sensorData = await sensorsService.getContainerLevel(containerId);
-    
+
     if (!sensorData) {
       return res.status(404).json({
         ok: false,
-        error: "Container not found"
+        error: "Container not found",
       });
     }
 
@@ -8642,7 +9562,7 @@ app.get("/api/sensors/:containerId/level", async (req, res) => {
         fillLevel: sensorData.fillLevel || 0,
         level: sensorData.level || 0,
         timestamp: sensorData.timestamp || new Date().toISOString(),
-      }
+      },
     });
   } catch (error) {
     console.error("[Sensors] Get level error:", error);
@@ -8651,22 +9571,28 @@ app.get("/api/sensors/:containerId/level", async (req, res) => {
 });
 
 // Get observations for a container
-app.get("/api/sensors/container/:containerId/observations", async (req, res) => {
-  try {
-    const { containerId } = req.params;
-    const { limit = 100 } = req.query;
-    
-    const observations = await sensorsService.getContainerObservations(containerId, parseInt(limit));
-    
-    res.json({
-      ok: true,
-      data: observations
-    });
-  } catch (error) {
-    console.error("[Sensors] Get observations error:", error);
-    res.status(500).json({ ok: false, error: error.message });
+app.get(
+  "/api/sensors/container/:containerId/observations",
+  async (req, res) => {
+    try {
+      const { containerId } = req.params;
+      const { limit = 100 } = req.query;
+
+      const observations = await sensorsService.getContainerObservations(
+        containerId,
+        parseInt(limit)
+      );
+
+      res.json({
+        ok: true,
+        data: observations,
+      });
+    } catch (error) {
+      console.error("[Sensors] Get observations error:", error);
+      res.status(500).json({ ok: false, error: error.message });
+    }
   }
-});
+);
 
 // ==================== INCIDENT REPORTS API ====================
 
@@ -9034,7 +9960,9 @@ app.put("/api/incidents/:id", async (req, res) => {
       if (!validPriorities.includes(priority)) {
         return res.status(400).json({
           ok: false,
-          error: `Invalid priority. Must be one of: ${validPriorities.join(", ")}`,
+          error: `Invalid priority. Must be one of: ${validPriorities.join(
+            ", "
+          )}`,
         });
       }
       updates.push(`priority = $${paramIndex++}`);
