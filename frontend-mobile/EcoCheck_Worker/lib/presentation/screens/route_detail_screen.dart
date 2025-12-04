@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/constants/app_colors.dart';
+import '../../core/services/socket_service.dart';
 import '../../data/models/worker_route.dart';
 import '../../data/services/location_service.dart';
 import '../blocs/route/route_bloc.dart';
@@ -12,11 +14,12 @@ import '../widgets/route/route_map_view.dart';
 import '../widgets/route/task_list_view.dart';
 import '../widgets/route/complete_task_dialog.dart';
 import '../widgets/route/route_completion_dialog.dart';
+import '../widgets/route/shift_indicator.dart';
 
 /// Route Detail Screen - ĐÃ TÁCH LOGIC RA CÁC FILE NHỎ
 ///
 /// Structure:
-/// - RouteMapView: Google Maps (route_map_view.dart)
+/// - RouteMapView: OpenStreetMap (route_map_view.dart)
 /// - TaskListView: Task sidebar (task_list_view.dart)
 /// - RouteInfoCard: Route info header (route_info_card.dart)
 /// - CompleteTaskDialog: Complete dialog (complete_task_dialog.dart)
@@ -31,29 +34,78 @@ class RouteDetailScreen extends StatefulWidget {
 }
 
 class _RouteDetailScreenState extends State<RouteDetailScreen> {
-  GoogleMapController? _mapController;
+  MapController? _mapController;
   int? _selectedPointIndex;
   final Map<String, List<XFile>> _taskImages = {};
-  bool _hasShownCompletionDialog = false;
+  final SocketService _socketService = SocketService();
 
   @override
   void initState() {
     super.initState();
-    _checkAutoCompletion();
+    _setupRealtimeListeners();
   }
 
-  /// Check xem có cần show completion dialog không
-  void _checkAutoCompletion() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_areAllTasksCompleted() && !_hasShownCompletionDialog) {
-        _hasShownCompletionDialog = true;
-        _showRouteCompletionDialog();
+  @override
+  void dispose() {
+    _cleanupRealtimeListeners();
+    super.dispose();
+  }
+
+  /// Setup realtime Socket.IO listeners
+  void _setupRealtimeListeners() {
+    // Listen for route stop completion from other sources (e.g., manager updates)
+    _socketService.onRouteStopCompleted((data) {
+      if (mounted && data['route_id'] == widget.route.id) {
+        print('🔄 Route stop completed via socket: $data');
+        // Reload route data để cập nhật UI realtime
+        context.read<RouteBloc>().add(
+          LoadRoutesRequested(personnelId: widget.route.workerId),
+        );
+
+        // Force rebuild để cập nhật map và markers
+        if (mounted) {
+          setState(() {});
+        }
+      }
+    });
+
+    // Listen for route started
+    _socketService.onRouteStarted((data) {
+      if (mounted && data['route_id'] == widget.route.id) {
+        print('🚀 Route started via socket: $data');
+        context.read<RouteBloc>().add(
+          LoadRoutesRequested(personnelId: widget.route.workerId),
+        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('🚀 Đã bắt đầu lộ trình!'),
+              backgroundColor: AppColors.success,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    });
+
+    // Listen for route completion
+    _socketService.onRouteCompleted((data) {
+      if (mounted && data['route_id'] == widget.route.id) {
+        print('✅ Route completed via socket: $data');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🎉 Lộ trình đã được hoàn thành!'),
+            backgroundColor: AppColors.completed,
+          ),
+        );
+        Navigator.pop(context);
       }
     });
   }
 
-  bool _areAllTasksCompleted() {
-    return widget.route.points.every((p) => p.status == 'collected');
+  /// Cleanup realtime listeners
+  void _cleanupRealtimeListeners() {
+    // Socket service handles cleanup globally, no need to remove specific listeners here
   }
 
   /// Handle khi chọn task
@@ -62,9 +114,8 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
       _selectedPointIndex = index;
     });
 
-    _mapController?.animateCamera(
-      CameraUpdate.newLatLngZoom(LatLng(point.latitude, point.longitude), 15),
-    );
+    // Animate to selected point using flutter_map
+    _mapController?.move(LatLng(point.latitude, point.longitude), 15.0);
   }
 
   /// Handle hoàn thành task
@@ -75,19 +126,25 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
       context: context,
       point: point,
       currentImages: currentImages,
-      onComplete: (images) async {
+      onComplete: (images, imageUrls) async {
         // Lưu images
         setState(() {
           _taskImages[point.id] = images;
         });
 
-        // Update status qua BLoC
+        // Update status qua BLoC với imageUrls (không có weight)
         context.read<RouteBloc>().add(
           UpdatePointStatusRequested(
             routeId: widget.route.id,
             pointId: point.id,
-            status: 'collected',
+            status: 'completed',
+            photoUrls: imageUrls,
           ),
+        );
+
+        // Force reload để cập nhật map colors realtime
+        context.read<RouteBloc>().add(
+          LoadRoutesRequested(personnelId: widget.route.workerId),
         );
 
         // Show success snackbar
@@ -101,18 +158,51 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
               duration: const Duration(seconds: 2),
             ),
           );
+
+          // Auto-select next pending task
+          _autoSelectNextTask();
+
+          // Force rebuild UI để cập nhật markers và polylines
+          setState(() {});
         }
 
-        // Check xem đã hoàn thành hết chưa
-        if (_areAllTasksCompleted() && !_hasShownCompletionDialog) {
-          _hasShownCompletionDialog = true;
-          await Future.delayed(const Duration(milliseconds: 500));
-          if (mounted) {
-            _showRouteCompletionDialog();
-          }
-        }
+        // Don't auto-show completion dialog - user must tap "Kết thúc chuyến" button
       },
     );
+  }
+
+  /// Tự động chuyển sang task tiếp theo chưa hoàn thành
+  void _autoSelectNextTask() {
+    // Get current route from BLoC state
+    final blocState = context.read<RouteBloc>().state;
+    WorkerRoute currentRoute = widget.route;
+
+    if (blocState is RoutesLoaded) {
+      currentRoute = blocState.routes.firstWhere(
+        (r) => r.id == widget.route.id,
+        orElse: () => widget.route,
+      );
+    }
+
+    final nextPendingIndex = currentRoute.points.indexWhere(
+      (p) =>
+          p.status != 'completed' &&
+          p.status != 'collected' &&
+          p.status != 'skipped',
+    );
+
+    if (nextPendingIndex != -1) {
+      setState(() {
+        _selectedPointIndex = nextPendingIndex;
+      });
+
+      // Animate to next point
+      final nextPoint = currentRoute.points[nextPendingIndex];
+      _mapController?.move(
+        LatLng(nextPoint.latitude, nextPoint.longitude),
+        15.0,
+      );
+    }
   }
 
   /// Handle navigate đến task
@@ -125,16 +215,27 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
 
   /// Show dialog hoàn thành route
   void _showRouteCompletionDialog() {
-    final completed = widget.route.points
-        .where((p) => p.status == 'collected')
+    // Get current route from BLoC state
+    final blocState = context.read<RouteBloc>().state;
+    WorkerRoute currentRoute = widget.route;
+
+    if (blocState is RoutesLoaded) {
+      currentRoute = blocState.routes.firstWhere(
+        (r) => r.id == widget.route.id,
+        orElse: () => widget.route,
+      );
+    }
+
+    final completed = currentRoute.points
+        .where((p) => p.status == 'completed' || p.status == 'collected')
         .length;
 
     showRouteCompletionDialog(
       context: context,
       completedPoints: completed,
-      totalPoints: widget.route.points.length,
-      onConfirm: () {
-        _handleCompleteRoute();
+      totalPoints: currentRoute.points.length,
+      onConfirm: (actualDistanceKm, notes) {
+        _handleCompleteRoute(actualDistanceKm: actualDistanceKm, notes: notes);
       },
     );
   }
@@ -147,22 +248,19 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
   }
 
   /// Handle hoàn thành route
-  Future<void> _handleCompleteRoute() async {
+  Future<void> _handleCompleteRoute({
+    double? actualDistanceKm,
+    String? notes,
+  }) async {
     context.read<RouteBloc>().add(
-      CompleteRouteRequested(routeId: widget.route.id),
+      CompleteRouteRequested(
+        routeId: widget.route.id,
+        actualDistanceKm: actualDistanceKm,
+        notes: notes,
+      ),
     );
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('🎉 Đã hoàn thành lộ trình!'),
-          backgroundColor: AppColors.completed,
-        ),
-      );
-
-      // Quay lại màn hình trước
-      Navigator.pop(context);
-    }
+    // Không pop ngay, để BlocListener xử lý
   }
 
   @override
@@ -172,112 +270,129 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
       body: BlocListener<RouteBloc, RouteState>(
         listener: (context, state) {
           if (state is RouteActionSuccess) {
-            // Re-check completion sau khi update
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (_areAllTasksCompleted() && !_hasShownCompletionDialog) {
-                _hasShownCompletionDialog = true;
-                _showRouteCompletionDialog();
+            // Nếu đã hoàn thành route, quay lại màn hình trước
+            if (state.message.contains('hoàn thành lộ trình')) {
+              // Show snackbar
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(state.message),
+                    backgroundColor: AppColors.completed,
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+
+                // Pop immediately without delay to prevent black screen
+                Navigator.of(context).pop();
               }
-            });
+            }
+          }
+
+          if (state is RouteError) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('❌ ${state.message}'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
           }
         },
-        child: Stack(
-          children: [
-            // Map full screen
-            RouteMapView(
-              route: widget.route,
-              selectedPointIndex: _selectedPointIndex,
-              onMapCreated: (controller) {
-                _mapController = controller;
-              },
-            ),
+        child: BlocBuilder<RouteBloc, RouteState>(
+          builder: (context, state) {
+            // Get current route from state, fallback to widget.route
+            WorkerRoute currentRoute = widget.route;
+            if (state is RoutesLoaded) {
+              currentRoute = state.routes.firstWhere(
+                (r) => r.id == widget.route.id,
+                orElse: () => widget.route,
+              );
+            }
 
-            // Top gradient overlay
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                height: 120,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Colors.black.withOpacity(0.6), Colors.transparent],
+            return Stack(
+              children: [
+                // Map full screen - Use currentRoute
+                RouteMapView(
+                  route: currentRoute,
+                  selectedPointIndex: _selectedPointIndex,
+                  onMapCreated: (controller) {
+                    _mapController = controller;
+                  },
+                ),
+
+                // Top gradient overlay
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: Container(
+                    height: 120,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withOpacity(0.6),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
 
-            // Header with back button and route info
-            SafeArea(
-              child: Column(
-                children: [
-                  // Top bar
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        // Back button
-                        Container(
-                          decoration: BoxDecoration(
-                            color: AppColors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
+                // Header with back button and route info
+                SafeArea(
+                  child: Column(
+                    children: [
+                      // Top bar
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          children: [
+                            // Back button
+                            Container(
+                              decoration: BoxDecoration(
+                                color: AppColors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.1),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                          child: IconButton(
-                            icon: const Icon(
-                              Icons.arrow_back,
-                              color: AppColors.textPrimary,
-                            ),
-                            onPressed: () => Navigator.pop(context),
-                          ),
-                        ),
-
-                        const SizedBox(width: 12),
-
-                        // Route info card
-                        Expanded(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.1),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 2),
+                              child: IconButton(
+                                icon: const Icon(
+                                  Icons.arrow_back,
+                                  color: AppColors.textPrimary,
                                 ),
-                              ],
+                                onPressed: () => Navigator.pop(context),
+                              ),
                             ),
-                            child: BlocBuilder<RouteBloc, RouteState>(
-                              builder: (context, state) {
-                                int completed = widget.route.points
-                                    .where((p) => p.status == 'collected')
-                                    .length;
-                                int total = widget.route.points.length;
 
-                                if (state is RoutesLoaded) {
-                                  final currentRoute = state.routes.firstWhere(
-                                    (r) => r.id == widget.route.id,
-                                    orElse: () => widget.route,
-                                  );
-                                  completed = currentRoute.points
-                                      .where((p) => p.status == 'collected')
-                                      .length;
-                                }
+                            const SizedBox(width: 12),
 
-                                return Column(
+                            // Route info card
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.1),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
@@ -285,7 +400,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                       children: [
                                         Expanded(
                                           child: Text(
-                                            widget.route.name,
+                                            currentRoute.name,
                                             style: const TextStyle(
                                               fontSize: 16,
                                               fontWeight: FontWeight.bold,
@@ -302,125 +417,131 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                                             vertical: 4,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: _getStatusColor()
-                                                .withOpacity(0.1),
+                                            color: _getStatusColor(
+                                              currentRoute,
+                                            ).withOpacity(0.1),
                                             borderRadius: BorderRadius.circular(
                                               6,
                                             ),
                                           ),
                                           child: Text(
-                                            _getStatusText(),
+                                            _getStatusText(currentRoute),
                                             style: TextStyle(
                                               fontSize: 11,
                                               fontWeight: FontWeight.bold,
-                                              color: _getStatusColor(),
+                                              color: _getStatusColor(
+                                                currentRoute,
+                                              ),
                                             ),
                                           ),
                                         ),
                                       ],
                                     ),
+                                    const SizedBox(height: 8),
+                                    // Shift indicator
+                                    ShiftIndicator(route: currentRoute),
                                     const SizedBox(height: 4),
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          Icons.check_circle,
-                                          size: 14,
-                                          color: completed == total
-                                              ? AppColors.completed
-                                              : AppColors.textSecondary,
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          'Kết thúc ($completed/$total)',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: completed == total
-                                                ? AppColors.completed
-                                                : AppColors.textSecondary,
-                                            fontWeight: completed == total
-                                                ? FontWeight.bold
-                                                : FontWeight.normal,
-                                          ),
-                                        ),
-                                      ],
+                                    Builder(
+                                      builder: (context) {
+                                        final completed = currentRoute.points
+                                            .where(
+                                              (p) =>
+                                                  p.status == 'collected' ||
+                                                  p.status == 'completed',
+                                            )
+                                            .length;
+                                        final total =
+                                            currentRoute.points.length;
+                                        return Row(
+                                          children: [
+                                            Icon(
+                                              Icons.check_circle,
+                                              size: 14,
+                                              color: completed == total
+                                                  ? AppColors.completed
+                                                  : AppColors.textSecondary,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              'Kết thúc ($completed/$total)',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: completed == total
+                                                    ? AppColors.completed
+                                                    : AppColors.textSecondary,
+                                                fontWeight: completed == total
+                                                    ? FontWeight.bold
+                                                    : FontWeight.normal,
+                                              ),
+                                            ),
+                                          ],
+                                        );
+                                      },
                                     ),
                                   ],
-                                );
-                              },
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(width: 12),
-
-                        // Refresh button
-                        Container(
-                          decoration: BoxDecoration(
-                            color: AppColors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
-                                blurRadius: 8,
-                                offset: const Offset(0, 2),
+                                ),
                               ),
-                            ],
-                          ),
-                          child: IconButton(
-                            icon: const Icon(
-                              Icons.refresh,
-                              color: AppColors.textPrimary,
                             ),
-                            onPressed: () {
-                              context.read<RouteBloc>().add(
-                                const LoadRoutesRequested(),
-                              );
-                            },
-                          ),
+
+                            const SizedBox(width: 12),
+
+                            // Refresh button
+                            Container(
+                              decoration: BoxDecoration(
+                                color: AppColors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.1),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: IconButton(
+                                icon: const Icon(
+                                  Icons.refresh,
+                                  color: AppColors.textPrimary,
+                                ),
+                                onPressed: () {
+                                  context.read<RouteBloc>().add(
+                                    const LoadRoutesRequested(),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  ),
+                      ),
 
-                  const Spacer(),
+                      const Spacer(),
 
-                  // Task List at bottom
-                  Container(
-                    constraints: const BoxConstraints(maxHeight: 280),
-                    child: BlocBuilder<RouteBloc, RouteState>(
-                      builder: (context, state) {
-                        WorkerRoute currentRoute = widget.route;
-
-                        if (state is RoutesLoaded) {
-                          currentRoute = state.routes.firstWhere(
-                            (r) => r.id == widget.route.id,
-                            orElse: () => widget.route,
-                          );
-                        }
-
-                        return TaskListView(
+                      // Task List at bottom - Increased size
+                      Container(
+                        constraints: const BoxConstraints(maxHeight: 380),
+                        child: TaskListView(
                           route: currentRoute,
                           selectedPointIndex: _selectedPointIndex,
                           onTaskTap: _handleTaskTap,
                           onCompleteTask: _handleCompleteTask,
                           onNavigateToTask: _handleNavigateToTask,
-                        );
-                      },
-                    ),
+                          onStartRoute: _handleStartRoute,
+                          onCompleteRoute: () => _showRouteCompletionDialog(),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ),
-          ],
+                ),
+              ],
+            );
+          },
         ),
       ),
-      floatingActionButton: _buildFloatingActionButton(),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 
-  Color _getStatusColor() {
-    switch (widget.route.status) {
+  Color _getStatusColor(WorkerRoute route) {
+    switch (route.status) {
       case 'pending':
         return AppColors.pending;
       case 'in_progress':
@@ -432,8 +553,8 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
     }
   }
 
-  String _getStatusText() {
-    switch (widget.route.status) {
+  String _getStatusText(WorkerRoute route) {
+    switch (route.status) {
       case 'pending':
         return 'Chờ bắt đầu';
       case 'in_progress':
@@ -441,34 +562,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
       case 'completed':
         return 'Hoàn thành';
       default:
-        return widget.route.status;
+        return route.status;
     }
-  }
-
-  Widget? _buildFloatingActionButton() {
-    if (widget.route.status == 'pending') {
-      return FloatingActionButton.extended(
-        onPressed: _handleStartRoute,
-        backgroundColor: AppColors.primary,
-        icon: const Icon(Icons.play_arrow),
-        label: const Text('Bắt đầu'),
-      );
-    } else if (widget.route.status == 'in_progress') {
-      final completed = widget.route.points
-          .where((p) => p.status == 'collected')
-          .length;
-      final total = widget.route.points.length;
-
-      return FloatingActionButton.extended(
-        onPressed: completed == total ? _handleCompleteRoute : null,
-        backgroundColor: completed == total
-            ? AppColors.completed
-            : AppColors.grey,
-        icon: const Icon(Icons.check_circle),
-        label: Text('Kết thúc ($completed/$total)'),
-      );
-    }
-
-    return null;
   }
 }

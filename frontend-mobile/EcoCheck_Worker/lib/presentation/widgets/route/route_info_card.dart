@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/date_formatter.dart';
 import '../../../data/models/worker_route.dart';
+import 'shift_indicator.dart';
 
 /// Widget hiển thị thông tin route - tách ra để dễ quản lý
 class RouteInfoCard extends StatelessWidget {
@@ -47,6 +48,11 @@ class RouteInfoCard extends StatelessWidget {
 
           const SizedBox(height: 16),
 
+          // Shift indicator
+          ShiftIndicator(route: route),
+
+          const SizedBox(height: 16),
+
           // Route info grid
           Row(
             children: [
@@ -54,7 +60,7 @@ class RouteInfoCard extends StatelessWidget {
                 child: _buildInfoItem(
                   Icons.calendar_today,
                   'Ngày',
-                  DateFormatter.formatDate(route.scheduleDate),
+                  DateFormatter.formatDate(route.scheduledDate),
                 ),
               ),
               Expanded(

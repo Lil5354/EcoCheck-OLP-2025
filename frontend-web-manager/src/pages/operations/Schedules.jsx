@@ -35,12 +35,12 @@ export default function Schedules() {
     // Connect to Socket.IO for real-time updates
     // Always use relative path (empty string) so it goes through Vite proxy
     // Don't use VITE_API_URL for socket.io as it may point to Docker service name
-    const socket = io('', {
-      transports: ['websocket', 'polling'],
+    const socket = io("", {
+      transports: ["websocket", "polling"],
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: 5,
-      path: '/socket.io'
+      path: "/socket.io",
     });
 
     socket.on("connect", () => {
@@ -64,7 +64,28 @@ export default function Schedules() {
         prev.map((s) =>
           (s.schedule_id || s.id) ===
           (updatedSchedule.schedule_id || updatedSchedule.id)
-            ? updatedSchedule
+            ? { ...s, ...updatedSchedule }
+            : s
+        )
+      );
+    });
+
+    socket.on("schedule:completed", (data) => {
+      console.log("📡 Schedule completed:", data);
+      setToast({
+        message: `✅ Lịch thu gom đã hoàn thành - ${data.actual_weight || 0}kg`,
+        type: "success",
+      });
+      // Update schedule status to completed
+      setSchedules((prev) =>
+        prev.map((s) =>
+          (s.schedule_id || s.id) === data.schedule_id
+            ? {
+                ...s,
+                status: "completed",
+                actual_weight: data.actual_weight,
+                completed_at: data.completed_at,
+              }
             : s
         )
       );
@@ -153,7 +174,6 @@ export default function Schedules() {
       setToast({ message: "Lỗi: " + error.message, type: "error" });
     }
   }
-
 
   async function loadSchedules() {
     setLoading(true);
@@ -966,7 +986,6 @@ export default function Schedules() {
           </div>
         </FormModal>
       )}
-
     </div>
   );
 }

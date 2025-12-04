@@ -1,21 +1,63 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:eco_check/data/repositories/ecocheck_repository.dart';
+import 'package:eco_check/data/services/socket_service.dart';
 import 'package:eco_check/core/constants/app_constants.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
 import 'schedule_event.dart';
 import 'schedule_state.dart';
 
-/// Schedule BLoC with Backend Integration
+/// Schedule BLoC with Backend Integration and Real-time Updates
 class ScheduleBloc extends Bloc<ScheduleEvent, ScheduleState> {
   final EcoCheckRepository repository;
   final SharedPreferences? prefs;
+  final SocketService? socketService;
 
-  ScheduleBloc({required this.repository, this.prefs})
+  StreamSubscription? _scheduleUpdateSubscription;
+  StreamSubscription? _scheduleCompletedSubscription;
+  StreamSubscription? _pointsEarnedSubscription;
+
+  ScheduleBloc({required this.repository, this.prefs, this.socketService})
     : super(const ScheduleInitial()) {
     on<SchedulesLoaded>(_onSchedulesLoaded);
     on<ScheduleCreateRequested>(_onScheduleCreateRequested);
     on<ScheduleCancelRequested>(_onScheduleCancelRequested);
     on<ScheduleDetailRequested>(_onScheduleDetailRequested);
+    on<ScheduleRealtimeUpdated>(_onScheduleRealtimeUpdated);
+
+    // Listen to Socket.IO events
+    _initializeSocketListeners();
+  }
+
+  /// Initialize Socket.IO event listeners
+  void _initializeSocketListeners() {
+    if (socketService == null) return;
+
+    // Connect to socket
+    final userId = _getCitizenId();
+    socketService!.connect(userId: userId);
+
+    // Listen for schedule updates (when web assigns employee)
+    _scheduleUpdateSubscription = socketService!.scheduleUpdated.listen((data) {
+      print(
+        '🔄 [ScheduleBloc] Real-time update received: ${data['schedule_id']}',
+      );
+      add(ScheduleRealtimeUpdated(data));
+    });
+
+    // Listen for schedule completion (when worker completes task)
+    _scheduleCompletedSubscription = socketService!.scheduleCompleted.listen((
+      data,
+    ) {
+      print('✅ [ScheduleBloc] Schedule completed: ${data['schedule_id']}');
+      add(ScheduleRealtimeUpdated(data));
+    });
+
+    // Listen for points earned
+    _pointsEarnedSubscription = socketService!.pointsEarned.listen((data) {
+      print('🎁 [ScheduleBloc] Points earned: ${data['points']} points');
+      // TODO: Update gamification state
+    });
   }
 
   /// Get citizen ID from SharedPreferences or use default
@@ -114,6 +156,45 @@ class ScheduleBloc extends Bloc<ScheduleEvent, ScheduleState> {
     }
   }
 
+  /// Handle Real-time Schedule Update from Socket.IO
+  Future<void> _onScheduleRealtimeUpdated(
+    ScheduleRealtimeUpdated event,
+    Emitter<ScheduleState> emit,
+  ) async {
+    final data = event.data;
+
+    // If we're currently viewing a detail page, update it
+    if (state is ScheduleDetailLoaded) {
+      final currentSchedule = (state as ScheduleDetailLoaded).schedule;
+
+      // Check if the update is for the current schedule
+      if (currentSchedule.id == data['schedule_id']) {
+        try {
+          // Fetch fresh data from backend
+          final updatedSchedule = await repository.getScheduleById(
+            data['schedule_id'],
+          );
+          emit(ScheduleDetailLoaded(updatedSchedule));
+
+          print(
+            '📱 [ScheduleBloc] Detail view updated: ${updatedSchedule.status}',
+          );
+        } catch (e) {
+          print('⚠️ [ScheduleBloc] Failed to fetch updated schedule: $e');
+          // Keep current state on error
+        }
+      }
+    }
+
+    // If we're viewing a list, reload it
+    if (state is ScheduleLoaded) {
+      print(
+        '📱 [ScheduleBloc] Reloading schedule list due to real-time update',
+      );
+      add(const SchedulesLoaded());
+    }
+  }
+
   /// Extract user-friendly error message
   String _getErrorMessage(dynamic error) {
     final errorStr = error.toString();
@@ -144,5 +225,15 @@ class ScheduleBloc extends Bloc<ScheduleEvent, ScheduleState> {
 
     // Return original if can't extract
     return errorStr;
+  }
+
+  @override
+  Future<void> close() {
+    // Cancel socket subscriptions
+    _scheduleUpdateSubscription?.cancel();
+    _scheduleCompletedSubscription?.cancel();
+    _pointsEarnedSubscription?.cancel();
+
+    return super.close();
   }
 }

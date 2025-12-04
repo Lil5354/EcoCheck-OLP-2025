@@ -69,3 +69,13 @@ class ScheduleDetailRequested extends ScheduleEvent {
   @override
   List<Object?> get props => [scheduleId];
 }
+
+/// Real-time Schedule Update (from Socket.IO)
+class ScheduleRealtimeUpdated extends ScheduleEvent {
+  final Map<String, dynamic> data;
+
+  const ScheduleRealtimeUpdated(this.data);
+
+  @override
+  List<Object?> get props => [data];
+}

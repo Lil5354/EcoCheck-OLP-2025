@@ -116,6 +116,7 @@ class _ScheduleListViewState extends State<_ScheduleListView>
                             AppConstants.statusConfirmed,
                             AppConstants.statusAssigned,
                             AppConstants.statusInProgress,
+                            AppConstants.statusPending,
                           ]).length;
                           return Container(
                             padding: const EdgeInsets.symmetric(
@@ -143,7 +144,7 @@ class _ScheduleListViewState extends State<_ScheduleListView>
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Text('Đang xử lý'),
+                      const Text('Đã hoàn thành'),
                       const SizedBox(width: 4),
                       BlocBuilder<ScheduleBloc, ScheduleState>(
                         builder: (context, state) {
@@ -151,7 +152,7 @@ class _ScheduleListViewState extends State<_ScheduleListView>
                               ? state.schedules
                               : <ScheduleModel>[];
                           final count = _getSchedulesByStatuses(schedules, [
-                            AppConstants.statusInProgress,
+                            AppConstants.statusCompleted,
                           ]).length;
                           return Container(
                             padding: const EdgeInsets.symmetric(
@@ -221,9 +222,10 @@ class _ScheduleListViewState extends State<_ScheduleListView>
           return TabBarView(
             controller: _tabController,
             children: [
-              // Tab 1: Tất cả (scheduled, confirmed, assigned, in_progress)
+              // Tab 1: Tất cả (pending, scheduled, confirmed, assigned, in_progress)
               _ScheduleList(
                 schedules: _getSchedulesByStatuses(schedules, [
+                  AppConstants.statusPending,
                   AppConstants.statusScheduled,
                   AppConstants.statusConfirmed,
                   AppConstants.statusAssigned,
@@ -231,12 +233,12 @@ class _ScheduleListViewState extends State<_ScheduleListView>
                 ]),
                 emptyMessage: 'Không có yêu cầu thu gom nào',
               ),
-              // Tab 2: Đang xử lý (in_progress)
+              // Tab 2: Đã hoàn thành (completed)
               _ScheduleList(
                 schedules: _getSchedulesByStatuses(schedules, [
-                  AppConstants.statusInProgress,
+                  AppConstants.statusCompleted,
                 ]),
-                emptyMessage: 'Không có yêu cầu đang xử lý',
+                emptyMessage: 'Chưa có lịch hoàn thành',
               ),
             ],
           );

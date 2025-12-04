@@ -11,7 +11,12 @@ abstract class RouteEvent extends Equatable {
 
 /// Event: Load tất cả routes
 class LoadRoutesRequested extends RouteEvent {
-  const LoadRoutesRequested();
+  final String? personnelId;
+
+  const LoadRoutesRequested({this.personnelId});
+
+  @override
+  List<Object?> get props => [personnelId];
 }
 
 /// Event: Load active route
@@ -32,11 +37,17 @@ class StartRouteRequested extends RouteEvent {
 /// Event: Hoàn thành route
 class CompleteRouteRequested extends RouteEvent {
   final String routeId;
+  final double? actualDistanceKm;
+  final String? notes;
 
-  const CompleteRouteRequested({required this.routeId});
+  const CompleteRouteRequested({
+    required this.routeId,
+    this.actualDistanceKm,
+    this.notes,
+  });
 
   @override
-  List<Object?> get props => [routeId];
+  List<Object?> get props => [routeId, actualDistanceKm, notes];
 }
 
 /// Event: Cập nhật trạng thái point
@@ -44,15 +55,19 @@ class UpdatePointStatusRequested extends RouteEvent {
   final String routeId;
   final String pointId;
   final String status;
+  final List<String>? photoUrls;
+  final String? notes;
 
   const UpdatePointStatusRequested({
     required this.routeId,
     required this.pointId,
     required this.status,
+    this.photoUrls,
+    this.notes,
   });
 
   @override
-  List<Object?> get props => [routeId, pointId, status];
+  List<Object?> get props => [routeId, pointId, status, photoUrls, notes];
 }
 
 /// Event: Select route để xem detail

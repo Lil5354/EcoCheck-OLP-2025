@@ -39,25 +39,6 @@ class EcoCheckRepository {
     }
   }
 
-  /// Get current user profile
-  Future<UserModel> getCurrentUser(String userId) async {
-    try {
-      final response = await _apiClient.get(
-        '${ApiConstants.apiPrefix}/auth/me',
-        queryParameters: {'user_id': userId},
-      );
-
-      final data = response.data as Map<String, dynamic>;
-      if (data['ok'] == true) {
-        return UserModel.fromJson(data['data'] as Map<String, dynamic>);
-      } else {
-        throw ApiException(message: data['error'] ?? 'Failed to get user');
-      }
-    } catch (e) {
-      throw _handleError(e);
-    }
-  }
-
   /// Logout
   Future<void> logout() async {
     try {
@@ -171,6 +152,29 @@ class EcoCheckRepository {
 
   // ==================== Routes ====================
 
+  /// Get all routes for worker (by personnel_id)
+  Future<List<Map<String, dynamic>>> getWorkerRoutes(String personnelId) async {
+    try {
+      final response = await _apiClient.get(
+        ApiConstants.workerRoutes,
+        queryParameters: {'personnel_id': personnelId},
+      );
+
+      final data = response.data as Map<String, dynamic>;
+      if (data['ok'] == true) {
+        final routes = data['data'] as List?;
+        if (routes != null) {
+          return routes.map((route) => route as Map<String, dynamic>).toList();
+        }
+        return [];
+      } else {
+        throw ApiException(message: data['error'] ?? 'Failed to get routes');
+      }
+    } catch (e) {
+      throw _handleError(e);
+    }
+  }
+
   /// Get active route for worker
   Future<Map<String, dynamic>?> getActiveRoute() async {
     try {
@@ -207,10 +211,48 @@ class EcoCheckRepository {
     }
   }
 
+  /// Get worker route detail with stops
+  Future<Map<String, dynamic>> getWorkerRouteDetail(String routeId) async {
+    try {
+      final response = await _apiClient.get(
+        ApiConstants.workerRouteDetail(routeId),
+      );
+
+      final data = response.data as Map<String, dynamic>;
+      if (data['ok'] == true) {
+        return data['data'] as Map<String, dynamic>;
+      } else {
+        throw ApiException(
+          message: data['error'] ?? 'Failed to get route detail',
+        );
+      }
+    } catch (e) {
+      throw _handleError(e);
+    }
+  }
+
   /// Start route
   Future<Map<String, dynamic>> startRoute(String routeId) async {
     try {
       final response = await _apiClient.post(ApiConstants.startRoute(routeId));
+
+      final data = response.data as Map<String, dynamic>;
+      if (data['ok'] == true) {
+        return data['data'] as Map<String, dynamic>;
+      } else {
+        throw ApiException(message: data['error'] ?? 'Failed to start route');
+      }
+    } catch (e) {
+      throw _handleError(e);
+    }
+  }
+
+  /// Start worker route
+  Future<Map<String, dynamic>> startWorkerRoute(String routeId) async {
+    try {
+      final response = await _apiClient.post(
+        ApiConstants.startWorkerRoute(routeId),
+      );
 
       final data = response.data as Map<String, dynamic>;
       if (data['ok'] == true) {
@@ -237,6 +279,84 @@ class EcoCheckRepository {
         throw ApiException(
           message: data['error'] ?? 'Failed to complete route',
         );
+      }
+    } catch (e) {
+      throw _handleError(e);
+    }
+  }
+
+  /// Complete worker route
+  Future<Map<String, dynamic>> completeWorkerRoute({
+    required String routeId,
+    double? actualDistanceKm,
+    String? notes,
+  }) async {
+    try {
+      final response = await _apiClient.post(
+        ApiConstants.completeWorkerRoute(routeId),
+        data: {
+          if (actualDistanceKm != null) 'actual_distance_km': actualDistanceKm,
+          if (notes != null) 'notes': notes,
+        },
+      );
+
+      final data = response.data as Map<String, dynamic>;
+      if (data['ok'] == true) {
+        return data['data'] as Map<String, dynamic>;
+      } else {
+        throw ApiException(
+          message: data['error'] ?? 'Failed to complete route',
+        );
+      }
+    } catch (e) {
+      throw _handleError(e);
+    }
+  }
+
+  /// Complete route stop
+  Future<Map<String, dynamic>> completeRouteStop({
+    required String stopId,
+    double? actualWeightKg,
+    List<String>? photoUrls,
+    String? notes,
+  }) async {
+    try {
+      final response = await _apiClient.post(
+        ApiConstants.completeRouteStop(stopId),
+        data: {
+          if (actualWeightKg != null) 'actual_weight_kg': actualWeightKg,
+          if (photoUrls != null) 'photo_urls': photoUrls,
+          if (notes != null) 'notes': notes,
+        },
+      );
+
+      final data = response.data as Map<String, dynamic>;
+      if (data['ok'] == true) {
+        return data['data'] as Map<String, dynamic>;
+      } else {
+        throw ApiException(message: data['error'] ?? 'Failed to complete stop');
+      }
+    } catch (e) {
+      throw _handleError(e);
+    }
+  }
+
+  /// Skip route stop
+  Future<Map<String, dynamic>> skipRouteStop({
+    required String stopId,
+    required String reason,
+  }) async {
+    try {
+      final response = await _apiClient.post(
+        ApiConstants.skipRouteStop(stopId),
+        data: {'reason': reason},
+      );
+
+      final data = response.data as Map<String, dynamic>;
+      if (data['ok'] == true) {
+        return data['data'] as Map<String, dynamic>;
+      } else {
+        throw ApiException(message: data['error'] ?? 'Failed to skip stop');
       }
     } catch (e) {
       throw _handleError(e);

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import '../../../core/constants/app_colors.dart';
@@ -10,7 +11,8 @@ import 'task_image_picker.dart';
 class CompleteTaskDialog extends StatefulWidget {
   final RoutePoint point;
   final List<XFile> currentImages;
-  final Function(List<XFile>) onComplete;
+  final Function(List<XFile>, List<String>)
+  onComplete; // Loại bỏ weight parameter
 
   const CompleteTaskDialog({
     super.key,
@@ -64,9 +66,8 @@ class _CompleteTaskDialogState extends State<CompleteTaskDialog> {
         throw Exception('Failed to upload images');
       }
 
-      // TODO: Send imageUrls to backend API for checkin
-      // For now, just pass XFile list to parent
-      widget.onComplete(_images);
+      // Pass XFile list and imageUrls to parent (loại bỏ weight)
+      widget.onComplete(_images, imageUrls);
 
       if (mounted) {
         Navigator.pop(context);
@@ -99,13 +100,14 @@ class _CompleteTaskDialogState extends State<CompleteTaskDialog> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Container(
         constraints: const BoxConstraints(maxWidth: 500, maxHeight: 600),
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header
+            // Header - Improved layout
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
                   padding: const EdgeInsets.all(12),
@@ -116,36 +118,56 @@ class _CompleteTaskDialogState extends State<CompleteTaskDialog> {
                   child: const Icon(
                     Icons.check_circle,
                     color: AppColors.completed,
-                    size: 28,
+                    size: 24,
                   ),
                 ),
-                const SizedBox(width: 16),
-                const Expanded(
-                  child: Text(
-                    'Hoàn thành điểm thu gom',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
-                    ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Hoàn thành thu gom',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Vui lòng chụp ảnh xác nhận',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 IconButton(
                   onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close),
+                  icon: const Icon(Icons.close, size: 22),
                   padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
                 ),
               ],
             ),
 
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
 
-            // Address
+            // Address - Modern design
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: AppColors.greyLight,
+                gradient: LinearGradient(
+                  colors: [
+                    AppColors.primary.withOpacity(0.05),
+                    AppColors.primary.withOpacity(0.02),
+                  ],
+                ),
                 borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.primary.withOpacity(0.2)),
               ),
               child: Row(
                 children: [
@@ -283,7 +305,7 @@ Future<void> showCompleteTaskDialog({
   required BuildContext context,
   required RoutePoint point,
   required List<XFile> currentImages,
-  required Function(List<XFile>) onComplete,
+  required Function(List<XFile>, List<String>) onComplete, // Loại bỏ weight
 }) async {
   return showDialog(
     context: context,

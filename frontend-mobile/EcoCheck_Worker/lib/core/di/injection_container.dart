@@ -1,6 +1,7 @@
 import 'package:get_it/get_it.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../network/api_client.dart';
+import '../services/socket_service.dart';
 import '../../data/repositories/ecocheck_repository.dart';
 import '../../presentation/blocs/auth/auth_bloc.dart';
 import '../../presentation/blocs/route/route_bloc.dart';
@@ -18,6 +19,9 @@ Future<void> initializeDependencies() async {
   // Network
   sl.registerLazySingleton<ApiClient>(() => ApiClient());
 
+  // Socket.IO Service
+  sl.registerLazySingleton<SocketService>(() => SocketService());
+
   // Repository - Unified repository for all API calls
   sl.registerLazySingleton<EcoCheckRepository>(
     () => EcoCheckRepository(sl<ApiClient>()),
@@ -28,6 +32,7 @@ Future<void> initializeDependencies() async {
     () => AuthBloc(
       repository: sl<EcoCheckRepository>(),
       prefs: sl<SharedPreferences>(),
+      socketService: sl<SocketService>(),
     ),
   );
 

@@ -17,6 +17,7 @@ class ApiConstants {
         return 'http://10.0.2.2:3000';
       }
       // iOS simulator and macOS can use localhost
+      // iOS Simulator CAN access localhost of Mac
       return 'http://localhost:3000';
     }
     return baseUrl;
@@ -56,10 +57,22 @@ class ApiConstants {
 
   // Route Endpoints (Worker specific)
   static const String routes = '$apiPrefix/routes';
+  static const String workerRoutes =
+      '$apiPrefix/worker/routes'; // New worker-specific routes endpoint
   static const String activeRoute = '$apiPrefix/routes/active';
   static String routeDetail(String id) => '$apiPrefix/routes/$id';
+  static String workerRouteDetail(String id) =>
+      '$apiPrefix/worker/routes/$id'; // New worker route detail
   static String startRoute(String id) => '$apiPrefix/routes/$id/start';
+  static String startWorkerRoute(String id) =>
+      '$apiPrefix/worker/routes/$id/start'; // New worker route start
   static String completeRoute(String id) => '$apiPrefix/routes/$id/complete';
+  static String completeWorkerRoute(String id) =>
+      '$apiPrefix/worker/routes/$id/complete'; // New worker route complete
+  static String skipRouteStop(String stopId) =>
+      '$apiPrefix/worker/route-stops/$stopId/skip'; // Skip route stop
+  static String completeRouteStop(String stopId) =>
+      '$apiPrefix/worker/route-stops/$stopId/complete'; // Complete route stop
 
   // Collection Endpoints (Worker specific)
   static const String collections = '$apiPrefix/collections';
@@ -88,7 +101,8 @@ class ApiConstants {
   static const String uploadImage = '$apiPrefix/upload/image';
 
   // WebSocket
-  static const String wsBaseUrl = 'wss://ecocheck-olp-2025-production.up.railway.app';
+  static const String wsBaseUrl =
+      'wss://ecocheck-olp-2025-production.up.railway.app';
   static const String wsTracking = '/tracking';
 
   // Google Maps API

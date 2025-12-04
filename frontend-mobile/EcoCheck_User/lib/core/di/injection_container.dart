@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:eco_check/core/network/api_client.dart';
 import 'package:eco_check/data/repositories/ecocheck_repository.dart';
 import 'package:eco_check/data/services/sync_service.dart';
+import 'package:eco_check/data/services/socket_service.dart';
 import 'package:eco_check/presentation/blocs/auth/auth_bloc.dart';
 import 'package:eco_check/presentation/blocs/checkin/checkin_bloc.dart';
 import 'package:eco_check/presentation/blocs/schedule/schedule_bloc.dart';
@@ -34,6 +35,9 @@ Future<void> initializeDependencies() async {
     ),
   );
 
+  // Socket Service - Singleton for maintaining connection
+  sl.registerLazySingleton<SocketService>(() => SocketService());
+
   // BLoCs - Register as factories so each widget gets a new instance
   sl.registerFactory(
     () => AuthBloc(
@@ -47,6 +51,7 @@ Future<void> initializeDependencies() async {
     () => ScheduleBloc(
       repository: sl<EcoCheckRepository>(),
       prefs: sl<SharedPreferences>(),
+      socketService: sl<SocketService>(),
     ),
   );
   sl.registerFactory(

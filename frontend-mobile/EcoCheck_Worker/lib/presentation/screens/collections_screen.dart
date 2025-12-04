@@ -6,6 +6,9 @@ import '../blocs/collection/collection_bloc.dart';
 import '../blocs/collection/collection_event.dart';
 import '../blocs/collection/collection_state.dart';
 import '../widgets/collection_card.dart';
+import '../widgets/date_filter_bottom_sheet.dart';
+import '../widgets/modern_search_bar.dart';
+import '../widgets/filter_chip_bar.dart';
 
 class CollectionsScreen extends StatefulWidget {
   const CollectionsScreen({super.key});
@@ -17,6 +20,9 @@ class CollectionsScreen extends StatefulWidget {
 class _CollectionsScreenState extends State<CollectionsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  DateTime? _startDate;
+  DateTime? _endDate;
+  String _searchQuery = '';
 
   @override
   void initState() {
@@ -37,19 +43,86 @@ class _CollectionsScreenState extends State<CollectionsScreen>
     context.read<CollectionBloc>().add(LoadCollectionsRequested());
   }
 
+  void _showDateFilterSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DateFilterBottomSheet(
+        currentStartDate: _startDate,
+        currentEndDate: _endDate,
+        onApply: (start, end) {
+          setState(() {
+            _startDate = start;
+            _endDate = end;
+          });
+        },
+      ),
+    );
+  }
+
+  void _clearAllFilters() {
+    setState(() {
+      _startDate = null;
+      _endDate = null;
+      _searchQuery = '';
+    });
+  }
+
+  List _filterCollections(List collections) {
+    var filtered = collections;
+
+    // Filter by date range
+    if (_startDate != null && _endDate != null) {
+      filtered = filtered.where((collection) {
+        final createdAt = DateTime.parse(collection.createdAt);
+        final collectionDate = DateTime(
+          createdAt.year,
+          createdAt.month,
+          createdAt.day,
+        );
+        final start = DateTime(
+          _startDate!.year,
+          _startDate!.month,
+          _startDate!.day,
+        );
+        final end = DateTime(_endDate!.year, _endDate!.month, _endDate!.day);
+
+        return (collectionDate.isAtSameMomentAs(start) ||
+                collectionDate.isAfter(start)) &&
+            (collectionDate.isAtSameMomentAs(end) ||
+                collectionDate.isBefore(end));
+      }).toList();
+    }
+
+    // Filter by search query
+    if (_searchQuery.isNotEmpty) {
+      final query = _searchQuery.toLowerCase();
+      filtered = filtered.where((collection) {
+        return collection.address?.toLowerCase().contains(query) == true ||
+            collection.wasteType?.toLowerCase().contains(query) == true ||
+            collection.description?.toLowerCase().contains(query) == true;
+      }).toList();
+    }
+
+    return filtered;
+  }
+
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<CollectionBloc, CollectionState>(
       builder: (context, state) {
         final allRequests = (state is CollectionsLoaded)
-            ? state.allCollections
+            ? _filterCollections(state.allCollections)
             : [];
         final pendingRequests = (state is CollectionsLoaded)
-            ? state.pendingCollections
+            ? _filterCollections(state.pendingCollections)
             : [];
         final completedRequests = (state is CollectionsLoaded)
-            ? state.completedCollections
+            ? _filterCollections(state.completedCollections)
             : [];
+
+        final hasActiveFilter = _startDate != null || _searchQuery.isNotEmpty;
 
         return Scaffold(
           backgroundColor: AppColors.background,
@@ -63,20 +136,7 @@ class _CollectionsScreenState extends State<CollectionsScreen>
                 fontWeight: FontWeight.bold,
               ),
             ),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.search, color: AppColors.white),
-                onPressed: () {
-                  // TODO: Implement search
-                },
-              ),
-              IconButton(
-                icon: const Icon(Icons.filter_list, color: AppColors.white),
-                onPressed: () {
-                  // TODO: Implement filter
-                },
-              ),
-            ],
+            actions: [],
             bottom: TabBar(
               controller: _tabController,
               indicatorColor: AppColors.white,
@@ -89,16 +149,39 @@ class _CollectionsScreenState extends State<CollectionsScreen>
               ],
             ),
           ),
-          body: RefreshIndicator(
-            onRefresh: _loadData,
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildCollectionsList(allRequests),
-                _buildCollectionsList(pendingRequests),
-                _buildCollectionsList(completedRequests),
-              ],
-            ),
+          body: Column(
+            children: [
+              // Modern search bar
+              ModernSearchBar(
+                hint: 'Tìm theo địa chỉ, loại rác...',
+                initialValue: _searchQuery,
+                onSearch: (value) => setState(() => _searchQuery = value),
+                onClear: () => setState(() => _searchQuery = ''),
+              ),
+
+              // Filter chips
+              FilterChipBar(
+                startDate: _startDate,
+                endDate: _endDate,
+                onDateFilterTap: _showDateFilterSheet,
+                onClearAll: hasActiveFilter ? _clearAllFilters : null,
+              ),
+
+              // Tab content
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: _loadData,
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildCollectionsList(allRequests),
+                      _buildCollectionsList(pendingRequests),
+                      _buildCollectionsList(completedRequests),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         );
       },
@@ -106,17 +189,37 @@ class _CollectionsScreenState extends State<CollectionsScreen>
   }
 
   Widget _buildCollectionsList(List requests) {
+    final hasActiveFilter = _startDate != null || _searchQuery.isNotEmpty;
+
     if (requests.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.inbox_outlined, size: 64, color: AppColors.grey),
-            const SizedBox(height: 16),
-            const Text(
-              AppStrings.noData,
-              style: TextStyle(fontSize: 16, color: AppColors.textSecondary),
+            Icon(
+              hasActiveFilter ? Icons.search_off : Icons.inbox_outlined,
+              size: 64,
+              color: AppColors.grey,
             ),
+            const SizedBox(height: 16),
+            Text(
+              hasActiveFilter
+                  ? 'Không tìm thấy yêu cầu nào'
+                  : AppStrings.noData,
+              style: const TextStyle(
+                fontSize: 16,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            if (hasActiveFilter) ...[
+              const SizedBox(height: 12),
+              TextButton.icon(
+                onPressed: _clearAllFilters,
+                icon: const Icon(Icons.clear_all, size: 18),
+                label: const Text('Xóa bộ lọc'),
+                style: TextButton.styleFrom(foregroundColor: AppColors.primary),
+              ),
+            ],
           ],
         ),
       );

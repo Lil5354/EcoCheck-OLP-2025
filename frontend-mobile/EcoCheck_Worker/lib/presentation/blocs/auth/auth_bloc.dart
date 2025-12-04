@@ -1,5 +1,7 @@
+import 'package:eco_check_worker/data/models/user_model.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../core/services/socket_service.dart';
 import '../../../data/repositories/ecocheck_repository.dart';
 import 'auth_event.dart';
 import 'auth_state.dart';
@@ -8,12 +10,15 @@ import 'auth_state.dart';
 class AuthBloc extends Bloc<AuthEvent, AuthState> {
   final EcoCheckRepository _repository;
   final SharedPreferences _prefs;
+  final SocketService _socketService;
 
   AuthBloc({
     required EcoCheckRepository repository,
     required SharedPreferences prefs,
+    required SocketService socketService,
   }) : _repository = repository,
        _prefs = prefs,
+       _socketService = socketService,
        super(const AuthInitial()) {
     on<LoginRequested>(_onLoginRequested);
     on<AutoLoginRequested>(_onAutoLoginRequested);
@@ -34,9 +39,13 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         password: event.password,
       );
 
-      // Save user data
+      // Save user data - save full user object as JSON
       await _prefs.setString('user_id', user.id);
       await _prefs.setString('user_phone', user.phone);
+      await _prefs.setString('user_data', user.toJsonString());
+
+      // Connect Socket.IO for realtime updates
+      _socketService.connect(userId: user.id);
 
       emit(Authenticated(user: user));
     } catch (e) {
@@ -54,9 +63,15 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
 
     try {
       final userId = _prefs.getString('user_id');
+      final userData = _prefs.getString('user_data');
 
-      if (userId != null) {
-        final user = await _repository.getCurrentUser(userId);
+      if (userId != null && userData != null) {
+        // Load full user object from cached data
+        final user = UserModel.fromJsonString(userData);
+
+        // Connect Socket.IO for realtime updates
+        _socketService.connect(userId: user.id);
+
         emit(Authenticated(user: user));
       } else {
         emit(const Unauthenticated());
@@ -74,6 +89,11 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     await _repository.logout();
     await _prefs.remove('user_id');
     await _prefs.remove('user_phone');
+    await _prefs.remove('user_data');
+
+    // Disconnect Socket.IO
+    _socketService.disconnect();
+
     emit(const Unauthenticated());
   }
 

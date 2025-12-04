@@ -7371,7 +7371,7 @@ app.get("/api/worker/routes", async (req, res) => {
         r.scheduled_date,
         r.status,
         r.start_at as started_at,
-        r.end_at as completed_at,
+        r.end_at,
         r.planned_distance_km as total_distance,
         p.name as worker_name,
         r.driver_id as worker_id,
@@ -7382,9 +7382,21 @@ app.get("/api/worker/routes", async (req, res) => {
         COALESCE(depot_info.name, 'Depot') as depot_name,
         ST_Y(depot_info.geom::geometry) as depot_lat,
         ST_X(depot_info.geom::geometry) as depot_lon,
-        COALESCE(dump_info.name, 'Dump') as dump_name,
-        ST_Y(dump_info.geom::geometry) as dump_lat,
-        ST_X(dump_info.geom::geometry) as dump_lon
+        COALESCE(dump_info.name, 
+          -- Fallback: get nearest dump if dump_id is null
+          (SELECT name FROM dumps ORDER BY dumps.geom <-> depot_info.geom LIMIT 1),
+          'Bãi Rác'
+        ) as dump_name,
+        COALESCE(
+          ST_Y(dump_info.geom::geometry),
+          -- Fallback: get nearest dump coordinates
+          (SELECT ST_Y(geom::geometry) FROM dumps ORDER BY dumps.geom <-> depot_info.geom LIMIT 1)
+        ) as dump_lat,
+        COALESCE(
+          ST_X(dump_info.geom::geometry),
+          -- Fallback: get nearest dump coordinates
+          (SELECT ST_X(geom::geometry) FROM dumps ORDER BY dumps.geom <-> depot_info.geom LIMIT 1)
+        ) as dump_lon
       FROM routes r
       LEFT JOIN personnel p ON r.driver_id = p.id
       LEFT JOIN vehicles v ON r.vehicle_id = v.id
@@ -7639,15 +7651,24 @@ app.post("/api/worker/routes/:id/complete", async (req, res) => {
       UPDATE routes
       SET status = 'completed',
           end_at = NOW(),
-          actual_distance_km = $2,
+          actual_distance_km = COALESCE($2, planned_distance_km),
           actual_duration_min = $3,
           total_weight_kg = $4,
-          meta = meta || jsonb_build_object('completion_notes', $5),
+          meta = CASE 
+            WHEN $5::text IS NOT NULL THEN meta || jsonb_build_object('completion_notes', $5::text)
+            ELSE meta
+          END,
           updated_at = NOW()
       WHERE id = $1 AND status = 'in_progress'
       RETURNING *
       `,
-      [id, actual_distance_km, Math.round(duration_min), total_weight_kg, notes]
+      [
+        id,
+        actual_distance_km || null,
+        Math.round(duration_min),
+        total_weight_kg || null,
+        notes || null,
+      ]
     );
 
     if (result.rows.length === 0) {
@@ -7716,8 +7737,12 @@ app.post("/api/worker/route-stops/:id/complete", async (req, res) => {
     const routeId = stop.route_id;
     const pointId = stop.point_id;
 
+    console.log(
+      `🔍 Matching schedules for route_stop ${id}: routeId=${routeId}, pointId=${pointId}`
+    );
+
     // 2. Find and update corresponding schedule(s)
-    // Match by route_id and location (point_id or coordinates)
+    // Match by location (point_id or coordinates) and status
     const scheduleUpdate = await db.query(
       `
       UPDATE schedules s
@@ -7726,13 +7751,12 @@ app.post("/api/worker/route-stops/:id/complete", async (req, res) => {
           completed_at = NOW(),
           notes = COALESCE(s.notes, '') || ' ' || COALESCE($2, ''),
           updated_at = NOW()
-      WHERE s.route_id = $3
-        AND s.status = 'assigned'
+      WHERE s.status IN ('assigned', 'pending', 'scheduled')
         AND (
-          -- Match by point location
+          -- Match by point location (within 50 meters)
           EXISTS (
             SELECT 1 FROM points p
-            WHERE p.id = $4
+            WHERE p.id = $3
             AND ST_DWithin(
               p.geom,
               ST_SetSRID(ST_MakePoint(s.longitude, s.latitude), 4326)::geography,
@@ -7744,18 +7768,32 @@ app.post("/api/worker/route-stops/:id/complete", async (req, res) => {
           s.schedule_id IN (
             SELECT (meta->>'schedule_id')::uuid
             FROM route_stops
-            WHERE id = $5
+            WHERE id = $4
             AND meta->>'schedule_id' IS NOT NULL
           )
+          OR
+          -- Match by route_id if available
+          (s.route_id IS NOT NULL AND s.route_id = $5)
         )
       RETURNING schedule_id, citizen_id, actual_weight
       `,
-      [actual_weight_kg, notes, routeId, pointId, id]
+      [actual_weight_kg, notes, pointId, id, routeId]
     );
 
     console.log(
       `✅ Route stop ${id} completed. Updated ${scheduleUpdate.rows.length} schedule(s)`
     );
+
+    if (scheduleUpdate.rows.length > 0) {
+      console.log(
+        `📋 Updated schedules:`,
+        scheduleUpdate.rows.map((s) => s.schedule_id)
+      );
+    } else {
+      console.warn(
+        `⚠️ No schedules found to update for route_stop ${id}. Check if schedules exist near pointId ${pointId}`
+      );
+    }
 
     // 3. Award points to users for completed schedules
     const pointsAwarded = [];

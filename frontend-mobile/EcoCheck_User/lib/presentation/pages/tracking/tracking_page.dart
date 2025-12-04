@@ -1,474 +1,321 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
-import 'dart:async';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:eco_check/core/constants/color_constants.dart';
 import 'package:eco_check/core/constants/text_constants.dart';
+import 'package:eco_check/data/models/schedule_model.dart';
+import 'package:eco_check/presentation/widgets/collection/collection_status_widget.dart';
+import 'package:eco_check/presentation/blocs/schedule/schedule_bloc.dart';
+import 'package:eco_check/presentation/blocs/schedule/schedule_event.dart';
+import 'package:eco_check/presentation/blocs/schedule/schedule_state.dart';
 
 class TrackingPage extends StatefulWidget {
-  const TrackingPage({super.key});
+  final ScheduleModel? schedule;
+  final String? scheduleId;
+
+  const TrackingPage({super.key, this.schedule, this.scheduleId});
 
   @override
   State<TrackingPage> createState() => _TrackingPageState();
 }
 
 class _TrackingPageState extends State<TrackingPage> {
-  final MapController _mapController = MapController();
-
-  // Mock data
-  bool _isVehicleNearby = true;
-  int _estimatedArrivalMinutes = 15;
-  String _vehicleId = "XE-001";
-  String _vehicleType = "Rác sinh hoạt";
-
-  // Air quality mock data (from weather/environment API)
-  int _aqi = 85; // Air Quality Index
-  String _aqiLevel = "Trung bình";
-  Color _aqiColor = AppColors.warning;
-
-  // Mock vehicle location (moving)
-  LatLng _vehicleLocation = const LatLng(10.770000, 106.670000);
-
-  // User location
-  final LatLng _userLocation = const LatLng(10.762622, 106.660172);
-
-  // Markers
-  final List<Marker> _markers = [];
-
-  // Polylines for route
-  final List<Polyline> _polylines = [];
+  ScheduleModel? _schedule;
+  bool _isAccepted = false;
 
   @override
   void initState() {
     super.initState();
-    _setupMarkersAndRoute();
+    _schedule = widget.schedule;
+
+    // Load fresh data from backend if scheduleId is provided
+    if (widget.scheduleId != null || widget.schedule?.id != null) {
+      final scheduleId = widget.scheduleId ?? widget.schedule!.id;
+      context.read<ScheduleBloc>().add(ScheduleDetailRequested(scheduleId));
+    } else {
+      // Load all schedules to check if there's an active one
+      context.read<ScheduleBloc>().add(const SchedulesLoaded());
+    }
   }
 
-  void _setupMarkersAndRoute() {
-    // User marker
-    _markers.add(
-      Marker(
-        point: _userLocation,
-        width: 40,
-        height: 40,
-        child: const Icon(Icons.location_on, color: Colors.green, size: 40),
-      ),
-    );
-
-    // Vehicle marker
-    _markers.add(
-      Marker(
-        point: _vehicleLocation,
-        width: 40,
-        height: 40,
-        child: const Icon(Icons.local_shipping, color: Colors.blue, size: 40),
-      ),
-    );
-
-    // Route polyline
-    _polylines.add(
-      Polyline(
-        points: [_vehicleLocation, _userLocation],
-        color: AppColors.primary,
-        strokeWidth: 4,
-        borderStrokeWidth: 2,
-        borderColor: AppColors.primary.withOpacity(0.3),
-      ),
-    );
-
-    // Simulate vehicle movement
-    _startVehicleMovement();
-  }
-
-  void _startVehicleMovement() {
-    // Simulate vehicle moving every 3 seconds
-    Timer.periodic(const Duration(seconds: 3), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-
-      setState(() {
-        // Move vehicle closer to user
-        _vehicleLocation = LatLng(
-          _vehicleLocation.latitude +
-              (_userLocation.latitude - _vehicleLocation.latitude) * 0.1,
-          _vehicleLocation.longitude +
-              (_userLocation.longitude - _vehicleLocation.longitude) * 0.1,
-        );
-
-        // Update markers
-        _markers.clear();
-
-        // User marker
-        _markers.add(
-          Marker(
-            point: _userLocation,
-            width: 40,
-            height: 40,
-            child: const Icon(Icons.location_on, color: Colors.green, size: 40),
-          ),
-        );
-
-        // Vehicle marker
-        _markers.add(
-          Marker(
-            point: _vehicleLocation,
-            width: 40,
-            height: 40,
-            child: const Icon(
-              Icons.local_shipping,
-              color: Colors.blue,
-              size: 40,
-            ),
-          ),
-        );
-
-        // Update polyline
-        _polylines.clear();
-        _polylines.add(
-          Polyline(
-            points: [_vehicleLocation, _userLocation],
-            color: AppColors.primary,
-            strokeWidth: 4,
-            borderStrokeWidth: 2,
-            borderColor: AppColors.primary.withOpacity(0.3),
-          ),
-        );
-
-        // Update ETA (decrease by 1 minute)
-        if (_estimatedArrivalMinutes > 0) {
-          _estimatedArrivalMinutes--;
-        }
-      });
+  void _handleAcceptCompletion() {
+    setState(() {
+      _isAccepted = true;
     });
-  }
 
-  void _goToVehicle() {
-    _mapController.move(_vehicleLocation, 16);
-  }
-
-  void _goToUser() {
-    _mapController.move(_userLocation, 16);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Theo dõi xe rác'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.my_location),
-            onPressed: _goToUser,
-            tooltip: 'Vị trí của tôi',
-          ),
-          IconButton(
-            icon: const Icon(Icons.local_shipping),
-            onPressed: _goToVehicle,
-            tooltip: 'Vị trí xe rác',
-          ),
-        ],
-      ),
-      body: Stack(
-        children: [
-          // OpenStreetMap
-          FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              initialCenter: _userLocation,
-              initialZoom: 14.5,
-              minZoom: 5,
-              maxZoom: 18,
-            ),
-            children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.eco_check',
-                maxZoom: 19,
-              ),
-              PolylineLayer(polylines: _polylines),
-              MarkerLayer(markers: _markers),
-            ],
-          ),
-
-          // Air Quality Index Card (Top)
-          Positioned(
-            top: 16,
-            left: 16,
-            right: 16,
-            child: _AirQualityCard(
-              aqi: _aqi,
-              level: _aqiLevel,
-              color: _aqiColor,
-            ),
-          ),
-
-          // Vehicle Info Card (Bottom)
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: _VehicleInfoCard(
-              isNearby: _isVehicleNearby,
-              vehicleId: _vehicleId,
-              vehicleType: _vehicleType,
-              estimatedMinutes: _estimatedArrivalMinutes,
-            ),
-          ),
-        ],
+    // Show success message
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('🎉 Bạn đã nhận 50 điểm thưởng!'),
+        backgroundColor: AppColors.success,
+        duration: Duration(seconds: 3),
       ),
     );
+
+    // TODO: Call API to mark as accepted and award points
+    // Example: context.read<ScheduleBloc>().add(AcceptCompletionEvent(scheduleId))
   }
-}
-
-/// Air Quality Index Card
-class _AirQualityCard extends StatelessWidget {
-  final int aqi;
-  final String level;
-  final Color color;
-
-  const _AirQualityCard({
-    required this.aqi,
-    required this.level,
-    required this.color,
-  });
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(Icons.air, color: color, size: 32),
+    return BlocListener<ScheduleBloc, ScheduleState>(
+      listener: (context, state) {
+        if (state is ScheduleDetailLoaded) {
+          // Update local schedule when BLoC receives fresh data
+          setState(() {
+            _schedule = state.schedule;
+          });
+
+          print('📱 [TrackingPage] Schedule updated: ${state.schedule.status}');
+
+          // Show notification when status changes
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Trạng thái: ${state.schedule.statusDisplay}'),
+              backgroundColor: AppColors.primary,
+              duration: const Duration(seconds: 2),
             ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Chất lượng không khí', style: AppTextStyles.caption),
-                  const SizedBox(height: 4),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.baseline,
-                    textBaseline: TextBaseline.alphabetic,
-                    children: [
-                      Text(
-                        aqi.toString(),
-                        style: AppTextStyles.h3.copyWith(color: color),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'AQI',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.grey,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
+          );
+        } else if (state is ScheduleLoaded && _schedule == null) {
+          // When schedules are loaded, pick the first active one
+          if (state.schedules.isNotEmpty) {
+            final activeSchedule = state.schedules.firstWhere(
+              (s) =>
+                  s.status == 'pending' ||
+                  s.status == 'in_progress' ||
+                  s.status == 'completed',
+              orElse: () => state.schedules.first,
+            );
+
+            // Load detail for this schedule
+            context.read<ScheduleBloc>().add(
+              ScheduleDetailRequested(activeSchedule.id),
+            );
+          }
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Theo dõi lịch thu gom'),
+          actions: [
+            if (_schedule != null)
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                onPressed: () {
+                  final scheduleId = _schedule!.id;
+                  context.read<ScheduleBloc>().add(
+                    ScheduleDetailRequested(scheduleId),
+                  );
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Đang cập nhật trạng thái...'),
+                      duration: Duration(seconds: 1),
                     ),
-                    decoration: BoxDecoration(
-                      color: color.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      level,
-                      style: AppTextStyles.caption.copyWith(
-                        color: color,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
+                  );
+                },
+                tooltip: 'Làm mới',
               ),
-            ),
-            Icon(Icons.info_outline, color: AppColors.grey, size: 20),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// Vehicle Info Card
-class _VehicleInfoCard extends StatelessWidget {
-  final bool isNearby;
-  final String vehicleId;
-  final String vehicleType;
-  final int estimatedMinutes;
-
-  const _VehicleInfoCard({
-    required this.isNearby,
-    required this.vehicleId,
-    required this.vehicleType,
-    required this.estimatedMinutes,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.black.withOpacity(0.1),
-            blurRadius: 20,
-            spreadRadius: 5,
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Handle bar
-          Container(
-            margin: const EdgeInsets.only(top: 12),
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: AppColors.grey.withOpacity(0.3),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-
-          Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Status banner
-                if (isNearby)
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: AppColors.success.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: AppColors.success.withOpacity(0.3),
-                        width: 2,
+        body: _schedule == null
+            ? const Center(
+                child: Text(
+                  'Hiện tại chưa có lịch thu gom',
+                  style: TextStyle(fontSize: 16, color: Colors.grey),
+                ),
+              )
+            : SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Schedule Info Header
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            AppColors.primary,
+                            AppColors.primary.withOpacity(0.8),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Icon(
+                                  Icons.delete_outline,
+                                  color: Colors.white,
+                                  size: 32,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _schedule!.wasteTypeDisplay,
+                                      style: AppTextStyles.h4.copyWith(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Mã lịch: ${_schedule!.id}',
+                                      style: AppTextStyles.bodyMedium.copyWith(
+                                        color: Colors.white.withOpacity(0.9),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          _ScheduleInfoRow(
+                            icon: Icons.calendar_today,
+                            label: _formatDate(_schedule!.scheduledDate),
+                          ),
+                          const SizedBox(height: 8),
+                          _ScheduleInfoRow(
+                            icon: Icons.access_time,
+                            label: _schedule!.timeSlotDisplay,
+                          ),
+                          const SizedBox(height: 8),
+                          _ScheduleInfoRow(
+                            icon: Icons.location_on,
+                            label: _schedule!.address,
+                          ),
+                        ],
                       ),
                     ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.notifications_active,
-                          color: AppColors.success,
-                          size: 28,
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
+
+                    const SizedBox(height: 24),
+
+                    // Collection Status Widget
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: CollectionStatusWidget(
+                        status: _schedule!.status,
+                        employeeName: _schedule!.employeeId != null
+                            ? 'NV-${_schedule!.employeeId}'
+                            : null,
+                        assignedAt: _schedule!.updatedAt,
+                        completedAt: _schedule!.completedAt,
+                        onAcceptCompletion: _handleAcceptCompletion,
+                        isAccepted: _isAccepted,
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // Additional Info Card
+                    if (_schedule?.estimatedWeight != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.05),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Xe đang đến gần!',
+                                'Thông tin bổ sung',
                                 style: AppTextStyles.h5.copyWith(
-                                  color: AppColors.success,
+                                  fontWeight: FontWeight.bold,
                                 ),
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Dự kiến: $estimatedMinutes phút nữa',
-                                style: AppTextStyles.bodyMedium,
+                              const SizedBox(height: 16),
+                              _InfoRow(
+                                icon: Icons.scale,
+                                label: 'Khối lượng ước tính',
+                                value:
+                                    '${_schedule?.estimatedWeight?.toStringAsFixed(1) ?? '0.0'} kg',
                               ),
+                              if (_schedule?.actualWeight != null) ...[
+                                const SizedBox(height: 12),
+                                _InfoRow(
+                                  icon: Icons.check_circle,
+                                  label: 'Khối lượng thực tế',
+                                  value:
+                                      '${_schedule?.actualWeight?.toStringAsFixed(1) ?? '0.0'} kg',
+                                ),
+                              ],
+                              if (_schedule?.specialInstructions != null) ...[
+                                const SizedBox(height: 12),
+                                _InfoRow(
+                                  icon: Icons.note,
+                                  label: 'Ghi chú đặc biệt',
+                                  value: _schedule?.specialInstructions ?? '',
+                                ),
+                              ],
                             ],
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-
-                const SizedBox(height: 20),
-
-                // Vehicle info
-                Text('Thông tin xe', style: AppTextStyles.h5),
-
-                const SizedBox(height: 12),
-
-                _InfoRow(
-                  icon: Icons.local_shipping,
-                  label: 'Mã xe',
-                  value: vehicleId,
-                ),
-
-                const SizedBox(height: 12),
-
-                _InfoRow(
-                  icon: Icons.delete_outline,
-                  label: 'Loại xe',
-                  value: vehicleType,
-                ),
-
-                const SizedBox(height: 12),
-
-                _InfoRow(icon: Icons.speed, label: 'Tốc độ', value: '25 km/h'),
-
-                const SizedBox(height: 20),
-
-                // Action buttons
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          // Call driver
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Đang gọi lái xe...')),
-                          );
-                        },
-                        icon: const Icon(Icons.phone),
-                        label: const Text('Gọi lái xe'),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          side: const BorderSide(color: AppColors.primary),
-                          foregroundColor: AppColors.primary,
-                        ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          // Show route details
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Xem chi tiết lộ trình'),
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.route),
-                        label: const Text('Lộ trình'),
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: AppColors.white,
-                        ),
-                      ),
-                    ),
+
+                    const SizedBox(height: 32),
                   ],
                 ),
-              ],
+              ),
+      ),
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
+}
+
+/// Schedule Info Row for header
+class _ScheduleInfoRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _ScheduleInfoRow({required this.icon, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: Colors.white.withOpacity(0.9)),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: Colors.white.withOpacity(0.9),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
 
+/// Info Row widget
 class _InfoRow extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -483,17 +330,27 @@ class _InfoRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Icon(icon, size: 20, color: AppColors.grey),
         const SizedBox(width: 12),
-        Text(
-          '$label:',
-          style: AppTextStyles.bodyMedium.copyWith(color: AppColors.grey),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          value,
-          style: AppTextStyles.bodyMedium.copyWith(fontWeight: FontWeight.bold),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: AppTextStyles.bodySmall.copyWith(color: AppColors.grey),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: AppTextStyles.bodyMedium.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );

@@ -45,11 +45,14 @@ dependencies:
   # HTTP & API
   http: ^1.1.2
   dio: ^5.4.0
+  socket_io_client: ^2.0.3+1
   
   # Location & Maps
   geolocator: ^11.0.0
   google_maps_flutter: ^2.5.3
   geocoding: ^2.1.1
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
   
   # Image & Camera
   image_picker: ^1.0.7

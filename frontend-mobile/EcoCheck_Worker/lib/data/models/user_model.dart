@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'dart:convert';
 
 /// User Model (Worker)
 class UserModel extends Equatable {
@@ -294,5 +295,15 @@ class UserModel extends Equatable {
       experience: experience ?? this.experience,
       license: license ?? this.license,
     );
+  }
+
+  /// Convert to JSON string for storage
+  String toJsonString() {
+    return jsonEncode(toJson());
+  }
+
+  /// Create from JSON string
+  factory UserModel.fromJsonString(String jsonString) {
+    return UserModel.fromJson(jsonDecode(jsonString) as Map<String, dynamic>);
   }
 }
