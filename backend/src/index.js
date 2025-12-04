@@ -4367,8 +4367,9 @@ app.post("/api/vrp/save-routes", async (req, res) => {
               stop.id
             );
 
-          if (isScheduleId && !stop.lat && !stop.lon) {
-            // This is a schedule_id - link schedule to route
+          let scheduleIdForMeta = null;
+          if (isScheduleId) {
+            // This is a schedule_id - ALWAYS link schedule to route (even if stop has lat/lon)
             await db.query(
               `UPDATE schedules 
                SET route_id = $1, updated_at = NOW()
@@ -4377,58 +4378,64 @@ app.post("/api/vrp/save-routes", async (req, res) => {
             );
 
             scheduleIdsInRoute.push(stop.id);
+            scheduleIdForMeta = stop.id;
 
-            // Find or create point for this schedule
-            // First, try to find existing point by location
-            const scheduleResult = await db.query(
-              `SELECT 
-                latitude, 
-                longitude, 
-                location,
-                COALESCE(latitude, ST_Y(location::geometry)) as lat,
-                COALESCE(longitude, ST_X(location::geometry)) as lon,
-                address
-               FROM schedules
-               WHERE schedule_id = $1`,
-              [stop.id]
-            );
+            // If pointId is not set yet (no lat/lon provided), find or create point for this schedule
+            if (!pointId) {
+              const scheduleResult = await db.query(
+                `SELECT 
+                  latitude, 
+                  longitude, 
+                  location,
+                  COALESCE(latitude, ST_Y(location::geometry)) as lat,
+                  COALESCE(longitude, ST_X(location::geometry)) as lon,
+                  address
+                 FROM schedules
+                 WHERE schedule_id = $1`,
+                [stop.id]
+              );
 
-            if (scheduleResult.rows.length > 0) {
-              const schedule = scheduleResult.rows[0];
-              // Get lat/lon from schedule
-              const lat = schedule.lat;
-              const lon = schedule.lon;
+              if (scheduleResult.rows.length > 0) {
+                const schedule = scheduleResult.rows[0];
+                // Get lat/lon from schedule
+                const lat = schedule.lat;
+                const lon = schedule.lon;
 
-              if (lat && lon) {
-                // Try to find existing point at this location
-                const pointResult = await db.query(
-                  `SELECT id FROM points
-                   WHERE ST_DWithin(geom, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, 11)
-                   LIMIT 1`,
-                  [lon, lat]
-                );
-
-                if (pointResult.rows.length > 0) {
-                  pointId = pointResult.rows[0].id;
-                } else {
-                  // Create new point for this schedule using PostGIS geometry
-                  const newPointId = uuidv4();
-                  await db.query(
-                    `INSERT INTO points (id, geom, ghost, last_checkin_at)
-                     VALUES ($1, ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography, false, NOW())`,
-                    [newPointId, lon, lat]
+                if (lat && lon) {
+                  // Try to find existing point at this location
+                  const pointResult = await db.query(
+                    `SELECT id FROM points
+                     WHERE ST_DWithin(geom, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, 11)
+                     LIMIT 1`,
+                    [lon, lat]
                   );
-                  pointId = newPointId;
+
+                  if (pointResult.rows.length > 0) {
+                    pointId = pointResult.rows[0].id;
+                  } else {
+                    // Create new point for this schedule using PostGIS geometry
+                    const newPointId = uuidv4();
+                    await db.query(
+                      `INSERT INTO points (id, geom, ghost, last_checkin_at)
+                       VALUES ($1, ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography, false, NOW())`,
+                      [newPointId, lon, lat]
+                    );
+                    pointId = newPointId;
+                  }
                 }
               }
             }
           }
 
-          // Create route stop
+          // Create route stop with schedule_id in meta if available
+          const routeStopMeta = scheduleIdForMeta 
+            ? JSON.stringify({ schedule_id: scheduleIdForMeta })
+            : null;
+          
           await db.query(
-            `INSERT INTO route_stops (id, route_id, point_id, seq, stop_order, status, planned_eta)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [stopId, routeId, pointId, i + 1, stop.seq || i + 1, "pending", now]
+            `INSERT INTO route_stops (id, route_id, point_id, seq, stop_order, status, planned_eta, meta)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            [stopId, routeId, pointId, i + 1, stop.seq || i + 1, "pending", now, routeStopMeta]
           );
         }
       }
@@ -4573,16 +4580,24 @@ app.post("/api/vrp/assign-route", async (req, res) => {
       [driver_id, route_id]
     );
 
-    // OPTION 2: Also update schedules linked via route_stops (when point_id is schedule_id)
-    // This handles cases where schedules weren't directly linked to route_id during save-routes
-    // but are linked through route_stops table (when stop has both id and lat/lon)
+    // OPTION 2: Also update schedules linked via route_stops (via meta->>'schedule_id' or point_id)
+    // This handles cases where schedules are linked through route_stops table
     const scheduleIdsFromRouteStops = await db.query(
-      `SELECT DISTINCT rs.point_id::text as schedule_id
+      `SELECT DISTINCT 
+         COALESCE(
+           (rs.meta->>'schedule_id')::text,
+           CASE 
+             WHEN rs.point_id::text ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+             THEN rs.point_id::text
+             ELSE NULL
+           END
+         ) as schedule_id
        FROM route_stops rs
        WHERE rs.route_id = $1
-         AND rs.point_id::text ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-         AND EXISTS (
-           SELECT 1 FROM schedules s WHERE s.schedule_id::text = rs.point_id::text
+         AND (
+           rs.meta->>'schedule_id' IS NOT NULL
+           OR (rs.point_id::text ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+               AND EXISTS (SELECT 1 FROM schedules s WHERE s.schedule_id::text = rs.point_id::text))
          )`,
       [route_id]
     );
