@@ -360,6 +360,3 @@ Nếu gặp vấn đề:
 - [ ] Đã commit với message rõ ràng
 - [ ] Đã pull code mới nhất từ branch chính
 
----
-
-**Chúc bạn code vui vẻ! 🎉**
