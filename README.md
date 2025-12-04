@@ -5,6 +5,7 @@
 EcoCheck is a comprehensive, FIWARE-based platform for dynamic waste collection management, designed for the OLP 2025 competition. It includes a backend API, a frontend web manager, mobile apps (Flutter), a complete database stack (PostgreSQL, PostGIS, TimescaleDB), and the FIWARE Orion-LD Context Broker.
 
 > **📋 Compliance Checklist**: Xem [COMPLIANCE_CHECKLIST.md](COMPLIANCE_CHECKLIST.md) để đảm bảo đáp ứng đầy đủ tiêu chí chấm điểm OLP 2025.
+> Public server: https://ecocheck-olp-2025.onrender.com
 
 ## 🚀 Quick Start (One-Command Setup)
 
