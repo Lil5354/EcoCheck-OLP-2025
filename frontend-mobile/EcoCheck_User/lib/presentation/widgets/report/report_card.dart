@@ -1,3 +1,10 @@
+/*
+ * MIT License
+ * Copyright (c) 2025 Lil5354
+ *
+ * EcoCheck - EcoCheck User
+ */
+
 import 'package:flutter/material.dart';
 import '../../../data/models/incident_model.dart';
 import '../../../core/constants/color_constants.dart';

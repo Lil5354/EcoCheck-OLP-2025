@@ -1,3 +1,10 @@
+/*
+ * MIT License
+ * Copyright (c) 2025 Lil5354
+ *
+ * EcoCheck - EcoCheck User
+ */
+
 import '../models/api_models.dart';
 import '../models/gamification_model.dart';
 import '../models/schedule_model.dart';

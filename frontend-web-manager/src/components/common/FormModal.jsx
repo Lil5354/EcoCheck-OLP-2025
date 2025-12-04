@@ -1,3 +1,10 @@
+/*
+ * MIT License
+ * Copyright (c) 2025 Lil5354
+ *
+ * EcoCheck Frontend Web Manager
+ */
+
 import React from 'react'
 
 export default function FormModal({ open, title, children, onClose, onSubmit, submitLabel = 'Lưu', cancelLabel = 'Hủy' }) {

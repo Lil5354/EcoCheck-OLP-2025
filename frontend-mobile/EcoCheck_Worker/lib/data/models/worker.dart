@@ -1,3 +1,9 @@
+/*
+ * MIT License
+ * Copyright (c) 2025 Lil5354
+ *
+ * EcoCheck - EcoCheck Worker
+ */
 class Worker {
   final String id;
   final String userId;

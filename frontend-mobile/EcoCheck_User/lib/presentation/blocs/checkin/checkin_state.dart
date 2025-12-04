@@ -1,3 +1,10 @@
+/*
+ * MIT License
+ * Copyright (c) 2025 Lil5354
+ *
+ * EcoCheck - EcoCheck User
+ */
+
 import 'package:equatable/equatable.dart';
 import 'package:eco_check/data/models/api_models.dart';
 

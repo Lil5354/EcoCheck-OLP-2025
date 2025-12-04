@@ -1,3 +1,10 @@
+/*
+ * MIT License
+ * Copyright (c) 2025 Lil5354
+ *
+ * EcoCheck - EcoCheck User
+ */
+
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'dart:convert';

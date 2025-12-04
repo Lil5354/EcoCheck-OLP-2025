@@ -1,3 +1,10 @@
+/*
+ * MIT License
+ * Copyright (c) 2025 Lil5354
+ *
+ * EcoCheck Frontend Web Manager
+ */
+
 import React from 'react'
 
 export default function ConfirmDialog({ open, title, message, onConfirm, onCancel, confirmLabel = 'Xác nhận', cancelLabel = 'Hủy' }) {

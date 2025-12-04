@@ -1,3 +1,9 @@
+/*
+ * MIT License
+ * Copyright (c) 2025 Lil5354
+ *
+ * EcoCheck - EcoCheck Worker
+ */
 class CollectionRequest {
   final String id;
   final String citizenId;

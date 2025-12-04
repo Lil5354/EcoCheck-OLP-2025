@@ -1,3 +1,10 @@
+/*
+ * MIT License
+ * Copyright (c) 2025 Lil5354
+ *
+ * EcoCheck - EcoCheck Worker
+ */
+
 import 'package:eco_check_worker/data/models/worker_route.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../data/repositories/ecocheck_repository.dart';

@@ -1,3 +1,10 @@
+/*
+ * MIT License
+ * Copyright (c) 2025 Lil5354
+ *
+ * EcoCheck - EcoCheck Worker
+ */
+
 import 'package:equatable/equatable.dart';
 import '../../../data/models/schedule_model.dart';
 

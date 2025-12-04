@@ -1,9 +1,16 @@
+/*
+ * MIT License
+ * Copyright (c) 2025 Lil5354
+ *
+ * EcoCheck - EcoCheck Worker
+ */
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/utils/date_formatter.dart';
-import '../../core/services/socket_service.dart';
+import '../../services/socket_service.dart';
 import '../../core/di/injection_container.dart' as di;
 import '../../data/models/worker_route.dart';
 import '../blocs/auth/auth_bloc.dart';

@@ -1,3 +1,9 @@
+/*
+ * MIT License
+ * Copyright (c) 2025 Lil5354
+ *
+ * EcoCheck - EcoCheck Worker
+ */
 class AppStrings {
   // App Name
   static const String appName = 'EcoCheck Worker';

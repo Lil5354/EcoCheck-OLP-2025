@@ -1,3 +1,10 @@
+/*
+ * MIT License
+ * Copyright (c) 2025 Lil5354
+ *
+ * EcoCheck Frontend Web Manager - Fleet Management Page
+ */
+
 import React, { useState, useEffect } from 'react'
 import SidebarPro from '../../navigation/SidebarPro.jsx'
 import Table from '../../components/common/Table.jsx'

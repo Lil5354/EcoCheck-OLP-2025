@@ -4,6 +4,8 @@
 
 EcoCheck is a comprehensive, FIWARE-based platform for dynamic waste collection management, designed for the OLP 2025 competition. It includes a backend API, a frontend web manager, mobile apps (Flutter), a complete database stack (PostgreSQL, PostGIS, TimescaleDB), and the FIWARE Orion-LD Context Broker.
 
+> **📋 Compliance Checklist**: Xem [COMPLIANCE_CHECKLIST.md](COMPLIANCE_CHECKLIST.md) để đảm bảo đáp ứng đầy đủ tiêu chí chấm điểm OLP 2025.
+
 ## 🚀 Quick Start (One-Command Setup)
 
 ### ⚡ Cách Nhanh Nhất (Khuyến nghị)
@@ -144,31 +146,80 @@ Script này sẽ:
 
 ## 📁 Project Structure
 
-- `/backend`: Node.js backend API
-  - Express.js server với Socket.IO cho real-time
-  - Kết nối PostgreSQL, MongoDB, Redis
-  - Tích hợp FIWARE Orion-LD Context Broker
-- `/frontend-web-manager`: React-based web application for managers
-  - Vite + React
-  - Quản lý fleet, personnel, schedules, routes
-  - Real-time map và analytics dashboard
-- `/frontend-mobile`: Flutter mobile applications
-  - `/EcoCheck_Worker`: Mobile app cho nhân viên thu gom
-    - Quản lý lịch trình, routes, check-ins
-    - Real-time location tracking
-    - Image upload cho tasks
-  - `/EcoCheck_User`: Mobile app cho người dân
-    - Đặt lịch thu gom
-    - Gamification (badges, points, leaderboard)
-    - Check-in và thống kê cá nhân
-- `/db`: Contains all database-related files:
-  - `/init`: SQL scripts for initial database setup (e.g., creating extensions)
-  - `/migrations`: SQL scripts for creating schema and seeding data
-  - `run_migrations.sh` / `.ps1`: Scripts to run migrations
-- `docker-compose.yml`: Defines all the services, networks, and volumes for the project
-- `setup.ps1` / `setup.sh`: One-command setup scripts (ở root)
-- `scripts/test-web-mobile-integration.ps1` / `.sh`: Scripts to test Web + Mobile together
-- `scripts/`: Folder chứa tất cả các script khác (start-dev.ps1, run-*.ps1, etc.)
+Dự án EcoCheck được tổ chức theo mô hình **Monorepo**, bao gồm 3 thành phần chính:
+
+### 1. Backend (`/backend`)
+**Vị trí**: `/backend`  
+**Công nghệ**: Node.js 18+, Express.js, Socket.IO  
+**Mục đích**: API server xử lý logic nghiệp vụ, tích hợp FIWARE Orion-LD Context Broker
+
+**Cấu trúc:**
+- `src/index.js` - Main server file, API endpoints
+- `src/orionld.js` - FIWARE Orion-LD integration
+- `src/realtime.js` - Real-time data store và Socket.IO
+- `src/services/` - Business logic services (route optimization, analytics)
+- `public/contexts/` - NGSI-LD context files
+- `public/uploads/` - User-uploaded images
+
+**Cách build**: `cd backend && npm install && npm start`
+
+### 2. Frontend Web Manager (`/frontend-web-manager`)
+**Vị trí**: `/frontend-web-manager`  
+**Công nghệ**: React 19+, Vite, MapLibre GL  
+**Mục đích**: Web application cho nhà quản lý, dashboard với real-time map
+
+**Cấu trúc:**
+- `src/App.jsx` - Main application component
+- `src/pages/` - Page components (operations, dashboard)
+- `src/components/` - Reusable components (RealtimeMap, Charts)
+- `src/lib/api.js` - API client
+
+**Cách build**: `cd frontend-web-manager && npm install && npm run build`
+
+### 3. Frontend Mobile (`/frontend-mobile`)
+**Vị trí**: `/frontend-mobile`  
+**Công nghệ**: Flutter/Dart, BLoC pattern
+
+#### 3.1 EcoCheck_Worker (`/EcoCheck_Worker`)
+**Mục đích**: Mobile app cho nhân viên thu gom rác
+
+**Tính năng:**
+- Quản lý lịch trình và routes
+- Real-time location tracking
+- Check-in và image upload
+- Smart checklist (không phải GPS navigation liên tục)
+
+**Cách build**: `cd frontend-mobile/EcoCheck_Worker && flutter pub get && flutter build apk`
+
+#### 3.2 EcoCheck_User (`/EcoCheck_User`)
+**Mục đích**: Mobile app cho người dân
+
+**Tính năng:**
+- Đặt lịch thu gom
+- Gamification (badges, points, leaderboard)
+- Check-in rác thải và thống kê cá nhân
+- Family Account (quản lý hộ gia đình)
+
+**Cách build**: `cd frontend-mobile/EcoCheck_User && flutter pub get && flutter build apk`
+
+### 4. Database (`/db`)
+**Vị trí**: `/db`  
+**Mục đích**: Database migrations, seed data, và initialization scripts
+
+**Cấu trúc:**
+- `init/` - SQL scripts cho PostGIS, TimescaleDB setup
+- `migrations/` - 31 migration files tạo schema
+- `seed_*.sql` - Seed data scripts
+- `run_migrations.sh/.ps1` - Migration runners
+
+**Cách chạy**: `cd db && bash run_migrations.sh` (hoặc `.ps1` trên Windows)
+
+### 5. Infrastructure
+- `docker-compose.yml` - Docker Compose configuration
+- `setup.ps1` / `setup.sh` - One-command setup scripts
+- `scripts/` - Utility scripts (start-dev, test, deploy)
+
+**📖 Xem thêm**: [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) để biết chi tiết đầy đủ về cấu trúc dự án, cách build từng component, và luồng tương tác giữa các thành phần.
 
 ## 🗄️ Database
 
@@ -356,6 +407,220 @@ npm run dev
 - Android Emulator: Sử dụng `http://10.0.2.2:3000` cho backend URL
 - iOS Simulator/Windows Desktop: Sử dụng `http://localhost:3000`
 
+## 🔨 Building from Source
+
+Hướng dẫn chi tiết để build và cài đặt dự án từ mã nguồn.
+
+### Yêu Cầu Hệ Thống
+
+**Backend:**
+- Node.js 18+ và npm
+- PostgreSQL 15+ (hoặc sử dụng Docker)
+- Docker và Docker Compose (khuyến nghị)
+
+**Frontend Web:**
+- Node.js 18+ và npm
+
+**Frontend Mobile:**
+- Flutter SDK 3.8+ (cho mobile apps)
+- Android Studio (cho Android development)
+- Xcode (cho iOS development, chỉ trên macOS)
+
+### Cấu Hình Trước Khi Build
+
+#### 1. Backend Configuration
+
+Tạo file `.env` trong thư mục `backend/`:
+
+```bash
+cd backend
+# Nếu có file .env.example, copy nó
+if [ -f .env.example ]; then
+  cp .env.example .env
+else
+  # Tạo file .env mới từ template
+  cat > .env << 'EOF'
+DATABASE_URL=postgresql://ecocheck_user:ecocheck_pass@localhost:5432/ecocheck
+ORION_LD_URL=http://localhost:1026
+PORT=3000
+NODE_ENV=development
+OPENWEATHER_API_KEY=your_openweather_api_key_here
+AIRQUALITY_API_KEY=your_openaq_api_key_here
+EOF
+fi
+# Chỉnh sửa .env với các giá trị thực tế
+```
+
+**Lưu ý**: File `env.example` (không có dấu chấm) đã được tạo sẵn trong `backend/` với tất cả các biến môi trường cần thiết. Để sử dụng:
+
+```bash
+# Copy env.example thành .env
+cp env.example .env
+# Sau đó chỉnh sửa .env với các giá trị thực tế
+```
+
+**Các biến môi trường cần thiết:**
+- `DATABASE_URL` - PostgreSQL connection string
+- `ORION_LD_URL` - FIWARE Orion-LD endpoint (default: http://localhost:1026)
+- `PORT` - Backend port (default: 3000)
+- `OPENWEATHER_API_KEY` - OpenWeatherMap API key (optional, cho weather integration)
+- `AIRQUALITY_API_KEY` - OpenAQ API key (optional, cho air quality)
+
+**Ví dụ `.env`:**
+```env
+DATABASE_URL=postgresql://ecocheck_user:ecocheck_pass@localhost:5432/ecocheck
+ORION_LD_URL=http://localhost:1026
+PORT=3000
+NODE_ENV=development
+OPENWEATHER_API_KEY=your_openweather_api_key_here
+AIRQUALITY_API_KEY=your_openaq_api_key_here
+```
+
+#### 2. Frontend Web Configuration
+
+Tạo file `.env` trong thư mục `frontend-web-manager/`:
+
+```bash
+cd frontend-web-manager
+# Nếu có file .env.example, copy nó
+if [ -f .env.example ]; then
+  cp .env.example .env
+else
+  # Tạo file .env mới
+  echo "VITE_API_URL=http://localhost:3000" > .env
+fi
+```
+
+**Lưu ý**: File `env.example` (không có dấu chấm) đã được tạo sẵn trong `frontend-web-manager/` với các biến môi trường cần thiết. Để sử dụng:
+
+```bash
+# Copy env.example thành .env
+cp env.example .env
+```
+
+**Các biến môi trường:**
+- `VITE_API_URL` - Backend API URL (default: http://localhost:3000)
+
+**Ví dụ `.env`:**
+```env
+VITE_API_URL=http://localhost:3000
+```
+
+#### 3. Mobile App Configuration
+
+Cấu hình trong `frontend-mobile/EcoCheck_Worker/lib/core/constants/api_constants.dart`:
+
+```dart
+static const String baseUrl = 'http://localhost:3000';  // Development
+// Hoặc
+static const String baseUrl = 'https://your-production-api.com';  // Production
+```
+
+### Build Từng Component
+
+#### Build Backend
+
+```bash
+cd backend
+npm install
+npm run build  # Nếu có build script
+npm start      # Production mode
+# hoặc
+npm run dev    # Development mode với hot reload
+```
+
+**Lưu ý**: Backend không cần build step riêng (JavaScript runtime), chỉ cần `npm install` và `npm start`.
+
+#### Build Frontend Web
+
+```bash
+cd frontend-web-manager
+npm install
+npm run build        # Production build (tạo thư mục dist/)
+npm run preview      # Preview production build
+# hoặc
+npm run dev          # Development mode (http://localhost:5173)
+```
+
+**Output**: Thư mục `dist/` chứa các file tĩnh đã được build, có thể deploy lên web server.
+
+#### Build Mobile Apps
+
+**Android:**
+```bash
+cd frontend-mobile/EcoCheck_Worker  # hoặc EcoCheck_User
+flutter pub get
+flutter build apk --release          # APK file
+# hoặc
+flutter build appbundle --release     # AAB file (cho Google Play)
+```
+
+**iOS (chỉ trên macOS):**
+```bash
+cd frontend-mobile/EcoCheck_Worker
+flutter pub get
+flutter build ios --release
+```
+
+**Output**: 
+- Android: `build/app/outputs/flutter-apk/app-release.apk`
+- iOS: `build/ios/iphoneos/Runner.app`
+
+### Build Toàn Bộ Hệ Thống (Docker)
+
+Cách đơn giản nhất để build toàn bộ hệ thống:
+
+```bash
+# Build tất cả services
+docker compose build
+
+# Hoặc build và chạy
+docker compose up -d --build
+```
+
+### Troubleshooting Build
+
+**Lỗi thường gặp:**
+
+1. **Node.js version không đúng:**
+   ```bash
+   node --version  # Kiểm tra version
+   # Cần Node.js 18+
+   ```
+
+2. **Flutter không tìm thấy:**
+   ```bash
+   flutter doctor  # Kiểm tra cài đặt Flutter
+   # Đảm bảo Flutter đã được thêm vào PATH
+   ```
+
+3. **Database connection failed:**
+   - Kiểm tra PostgreSQL đang chạy
+   - Kiểm tra `DATABASE_URL` trong `.env`
+   - Kiểm tra firewall cho port 5432
+
+4. **Port đã được sử dụng:**
+   ```bash
+   # Windows
+   netstat -ano | findstr :3000
+   taskkill /PID <PID> /F
+   
+   # Linux/Mac
+   lsof -i :3000
+   kill -9 <PID>
+   ```
+
+### Cài Đặt Hệ Thống (System Install)
+
+Dự án được thiết kế để chạy trong Docker containers, không yêu cầu cài đặt trực tiếp vào hệ thống (`/opt` hoặc `/usr/local`).
+
+**Khuyến nghị**: Sử dụng Docker Compose để quản lý tất cả services.
+
+**Nếu muốn cài đặt trực tiếp:**
+- Backend: Chạy `npm install` trong thư mục `backend/`, không cần `make install`
+- Frontend Web: Build output trong `dist/` có thể copy lên web server
+- Mobile: APK/AAB files có thể cài đặt trực tiếp trên thiết bị
+
 ### Viewing Logs
 
 ```bash
@@ -385,13 +650,39 @@ docker compose up -d --build
 - **View Logs**: `docker compose logs -f <service-name>`
 - **Database Access**: `docker compose exec postgres psql -U ecocheck_user -d ecocheck`
 - **Service Status**: `docker compose ps`
+- **Report Bugs**: [GitHub Issues](https://github.com/Lil5354/EcoCheck-OLP-2025/issues)
+- **Ask Questions**: [GitHub Discussions](https://github.com/Lil5354/EcoCheck-OLP-2025/discussions) (nếu được bật)
 
 ## 📚 Documentation
 
+### Tài Liệu Chính
 - [CHANGELOG.md](CHANGELOG.md) - Lịch sử thay đổi của dự án
 - [CONTRIBUTING.md](CONTRIBUTING.md) - Hướng dẫn đóng góp cho dự án
+- [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) - **Cấu trúc chi tiết dự án (Web + Mobile)**
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - Tài liệu kiến trúc hệ thống
+- [docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md) - Hướng dẫn testing
+
+### Tài Liệu Về Giấy Phép và Dữ Liệu
+- [LICENSE](LICENSE) - Toàn văn giấy phép MIT
+- [LICENSES.md](LICENSES.md) - **Tương thích giấy phép của dependencies**
+- [DATA_SOURCES.md](DATA_SOURCES.md) - **Nguồn dữ liệu mở và giấy phép**
+
+### Deployment và Release
+- [GITHUB_RELEASE_GUIDE.md](GITHUB_RELEASE_GUIDE.md) - **Hướng dẫn tạo GitHub Release**
+- [RELEASE_NOTES.md](RELEASE_NOTES.md) - Release notes cho v1.0.0
+
+### License và Compliance
+- [LICENSE_HEADERS_GUIDE.md](LICENSE_HEADERS_GUIDE.md) - **Hướng dẫn thêm license headers vào code**
+- [COMPLIANCE_CHECKLIST.md](COMPLIANCE_CHECKLIST.md) - **Checklist tuân thủ OLP 2025**
+- [FINAL_COMPLIANCE_REPORT.md](FINAL_COMPLIANCE_REPORT.md) - **Báo cáo tuân thủ cuối cùng**
+
+### API và Testing
 - [docs/postman/](docs/postman/) - Postman collection cho API testing
+
+### Bug Tracker và Support
+- **GitHub Issues**: [Report bugs and request features](https://github.com/Lil5354/EcoCheck-OLP-2025/issues)
+  - Đảm bảo Issues đã được bật trong Repository Settings → General → Features
+  - Sử dụng Issues để báo cáo lỗi, đề xuất tính năng, và đặt câu hỏi
 
 ## 🚀 Future Development & Roadmap
 
@@ -508,9 +799,93 @@ backend/
 - [ ] SMS/Email notification service
 - [ ] Third-party mapping services (Google Maps, Mapbox)
 
-## License
+## 📝 Thêm License Headers vào Code
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+Để đáp ứng yêu cầu của cuộc thi OLP 2025, tất cả file nguồn cần có license header MIT.
+
+### Sử Dụng Script Tự Động
+
+**Thêm license headers vào Mobile apps (Dart files):**
+```powershell
+# Windows
+.\scripts\add-license-headers.ps1
+
+# Linux/Mac
+chmod +x scripts/add-license-headers.sh
+./scripts/add-license-headers.sh
+```
+
+**Thêm license headers vào Frontend Web (JSX/JS files):**
+```powershell
+# Windows
+.\scripts\add-license-headers-web.ps1
+
+# Linux/Mac
+chmod +x scripts/add-license-headers-web.sh
+./scripts/add-license-headers-web.sh
+```
+
+**📖 Xem thêm**: [LICENSE_HEADERS_GUIDE.md](LICENSE_HEADERS_GUIDE.md) để biết chi tiết.
+
+## 📜 License
+
+### Giấy Phép Dự Án
+
+Dự án EcoCheck được cấp phép dưới **MIT License**.
+
+Xem file [LICENSE](LICENSE) để biết toàn văn giấy phép.
+
+### Mục Đích Giấy Phép MIT
+
+Dự án chọn MIT License vì:
+
+1. **Tính Tương Thích Cao**: MIT License tương thích với hầu hết các giấy phép mã nguồn mở khác, cho phép dự án sử dụng nhiều thư viện và công cụ khác nhau mà không gặp xung đột giấy phép.
+
+2. **Đơn Giản và Rõ Ràng**: Giấy phép ngắn gọn, dễ hiểu, không có điều khoản phức tạp, giúp người dùng và nhà phát triển dễ dàng hiểu và tuân thủ.
+
+3. **Phù Hợp với Mục Tiêu Smart City**: Cho phép sử dụng thương mại và chỉnh sửa tự do, phù hợp với mục tiêu phát triển các giải pháp Smart City có thể được triển khai rộng rãi.
+
+4. **Khuyến Khích Đóng Góp**: Giấy phép permissive khuyến khích cộng đồng đóng góp, tái sử dụng mã nguồn, và phát triển các dự án dựa trên EcoCheck.
+
+5. **Tuân Thủ Yêu Cầu Cuộc Thi**: MIT License là giấy phép OSI-approved, đáp ứng yêu cầu của cuộc thi OLP 2025.
+
+### Tương Thích Giấy Phép
+
+Tất cả dependencies và thư viện được sử dụng trong dự án đều có giấy phép tương thích với MIT License.
+
+**📖 Xem thêm**: [LICENSES.md](LICENSES.md) để biết chi tiết về tương thích giấy phép của tất cả dependencies.
+
+### Nguồn Dữ Liệu Mở
+
+Dự án sử dụng các nguồn dữ liệu mở với giấy phép tương thích:
+
+- **OpenWeatherMap**: CC BY-SA 4.0
+- **OpenAQ**: CC0 1.0 (Public Domain)
+- **OpenStreetMap**: ODbL 1.0 (chỉ đọc, không sửa đổi)
+
+**📖 Xem thêm**: [DATA_SOURCES.md](DATA_SOURCES.md) để biết chi tiết về nguồn dữ liệu và giấy phép.
+
+### Yêu Cầu Attribution
+
+Khi sử dụng dự án, bạn cần:
+
+1. **Giữ nguyên copyright notice** trong file LICENSE
+2. **Ghi công OpenStreetMap** khi hiển thị bản đồ: "© OpenStreetMap contributors"
+3. **Ghi công các nguồn dữ liệu** theo yêu cầu của từng nguồn (xem DATA_SOURCES.md)
+
+### Quyền và Nghĩa Vụ
+
+**Quyền:**
+- ✅ Sử dụng thương mại
+- ✅ Sửa đổi mã nguồn
+- ✅ Phân phối
+- ✅ Sử dụng riêng tư
+
+**Nghĩa vụ:**
+- ⚠️ Giữ nguyên copyright notice và license
+- ⚠️ Ghi công các nguồn dữ liệu mở (theo yêu cầu)
+
+**Không có warranty**: Phần mềm được cung cấp "AS IS", không có bảo hành.
 
 ---
 

@@ -1,3 +1,9 @@
+/*
+ * MIT License
+ * Copyright (c) 2025 Lil5354
+ *
+ * EcoCheck - EcoCheck User
+ */
 /// Route Names
 class AppRoutes {
   AppRoutes._();

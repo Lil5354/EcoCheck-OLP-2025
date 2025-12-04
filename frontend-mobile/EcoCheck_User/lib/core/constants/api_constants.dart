@@ -1,3 +1,10 @@
+/*
+ * MIT License
+ * Copyright (c) 2025 Lil5354
+ *
+ * EcoCheck User - API Configuration and Endpoints
+ */
+
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 

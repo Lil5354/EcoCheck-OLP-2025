@@ -1,3 +1,10 @@
+/*
+ * MIT License
+ * Copyright (c) 2025 Lil5354
+ *
+ * EcoCheck Frontend Web Manager
+ */
+
 import React, { useEffect } from 'react'
 
 export default function Toast({ message, type = 'info', duration = 3000, onClose }) {

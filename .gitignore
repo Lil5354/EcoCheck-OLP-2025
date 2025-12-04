@@ -149,6 +149,8 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+# Allow .env.example files (template files)
+!.env.example
 
 # Spyder project settings
 .spyderproject
@@ -217,6 +219,8 @@ node_modules
 /dist
 /build
 .env
+# Allow .env.example files (template files)
+!.env.example
 # iOS
 /ios/Pods/
 /ios/build/

@@ -1,3 +1,10 @@
+/*
+ * MIT License
+ * Copyright (c) 2025 Lil5354
+ *
+ * EcoCheck - EcoCheck Worker
+ */
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../data/models/schedule_model.dart';
 import '../../../data/repositories/ecocheck_repository.dart';

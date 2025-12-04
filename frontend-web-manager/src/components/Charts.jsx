@@ -1,4 +1,11 @@
-/* Lightweight SVG charts for Dashboard */
+/*
+ * MIT License
+ * Copyright (c) 2025 Lil5354
+ *
+ * EcoCheck Frontend Web Manager - Chart Components
+ * Lightweight SVG charts for Dashboard
+ */
+
 import React, { useId, useState, useEffect } from 'react'
 
 export function AreaChart({

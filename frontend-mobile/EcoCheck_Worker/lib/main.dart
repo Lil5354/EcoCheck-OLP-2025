@@ -1,3 +1,11 @@
+/*
+ * MIT License
+ * Copyright (c) 2025 Lil5354
+ *
+ * EcoCheck Worker - Mobile Application for Waste Collection Workers
+ * Main application entry point
+ */
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'core/config/app_theme.dart';

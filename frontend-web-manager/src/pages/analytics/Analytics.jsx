@@ -1,3 +1,10 @@
+/*
+ * MIT License
+ * Copyright (c) 2025 Lil5354
+ *
+ * EcoCheck Frontend Web Manager - Analytics Dashboard
+ */
+
 import React, { useState, useEffect } from 'react'
 import SidebarPro from '../../navigation/SidebarPro.jsx'
 import KPI from '../../components/common/KPI.jsx'

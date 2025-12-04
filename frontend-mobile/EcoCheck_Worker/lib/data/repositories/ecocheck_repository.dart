@@ -1,3 +1,10 @@
+/*
+ * MIT License
+ * Copyright (c) 2025 Lil5354
+ *
+ * EcoCheck - EcoCheck Worker
+ */
+
 import '../../core/network/api_client.dart';
 import '../../core/constants/api_constants.dart';
 import '../models/user_model.dart';

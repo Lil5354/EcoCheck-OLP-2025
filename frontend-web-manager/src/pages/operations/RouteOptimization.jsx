@@ -1,3 +1,10 @@
+/*
+ * MIT License
+ * Copyright (c) 2025 Lil5354
+ *
+ * EcoCheck Frontend Web Manager - Route Optimization Page
+ */
+
 import React, { useState, useEffect, useRef } from "react";
 import SidebarPro from "../../navigation/SidebarPro.jsx";
 import maplibregl from "maplibre-gl";

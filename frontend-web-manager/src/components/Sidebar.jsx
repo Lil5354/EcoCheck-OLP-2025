@@ -1,6 +1,10 @@
 /*
- * EcoCheck Sidebar Navigation
+ * MIT License
+ * Copyright (c) 2025 Lil5354
+ *
+ * EcoCheck Frontend Web Manager - Sidebar Navigation Component
  */
+
 import React from 'react'
 import logo from '../assets/ecocheck-logo.svg'
 import { MdOutlineDashboard, MdOutlineMap, MdOutlineAnalytics, MdOutlineRoute, MdOutlineSettings } from 'react-icons/md'
