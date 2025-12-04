@@ -12,6 +12,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import api from "../../lib/api.js";
 import ConfirmDialog from "../../components/common/ConfirmDialog.jsx";
 import Toast from "../../components/common/Toast.jsx";
+import io from "socket.io-client";
 
 export default function RouteOptimization() {
   const mapRef = useRef(null);
@@ -57,9 +58,62 @@ export default function RouteOptimization() {
   useEffect(() => {
     loadData();
     initMap();
+
+    // Connect to Socket.IO for real-time schedule updates
+    const socket = io("", {
+      transports: ["websocket", "polling"],
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      reconnectionAttempts: Infinity,
+      timeout: 20000,
+      path: "/socket.io",
+      autoConnect: true,
+    });
+
+    socket.on("connect", () => {
+      console.log("[RouteOptimization] ✅ Connected to Socket.IO server");
+    });
+
+    socket.on("connect_error", (error) => {
+      console.warn(
+        "[RouteOptimization] ⚠️ Socket.IO connection error:",
+        error.message
+      );
+    });
+
+    socket.on("schedule:updated", (updatedSchedule) => {
+      console.log(
+        "[RouteOptimization] 📡 Schedule updated via socket:",
+        updatedSchedule
+      );
+      // Update schedule in the list if it exists
+      setSchedules((prev) =>
+        prev.map((s) =>
+          (s.schedule_id || s.id) ===
+          (updatedSchedule.schedule_id || updatedSchedule.id)
+            ? { ...s, ...updatedSchedule }
+            : s
+        )
+      );
+    });
+
+    socket.on("disconnect", (reason) => {
+      console.log(
+        "[RouteOptimization] ❌ Disconnected from Socket.IO server:",
+        reason
+      );
+      if (reason === "io server disconnect") {
+        socket.connect();
+      }
+    });
+
     return () => {
       // Cleanup on unmount
       clearRouteDisplay();
+      if (socket.connected) {
+        socket.disconnect();
+      }
     };
   }, [collectionDate, selectedDistrict]);
 
@@ -806,10 +860,8 @@ export default function RouteOptimization() {
 
       // Assign employee to route
       const res = await api.assignRoute(routeId, selectedEmployeeId);
-      setLoading(false);
 
       if (res.ok) {
-        setToast({ message: "Đã gán nhân viên thành công", type: "success" });
         setAssignModalOpen(false);
         setSelectedRoute(null);
         setSelectedEmployeeId("");
@@ -827,6 +879,19 @@ export default function RouteOptimization() {
               : r
           )
         );
+
+        // Reload schedules to reflect employee assignment in database
+        // Backend updates all schedules in the route with employee_id
+        console.log(
+          "[RouteOptimization] Reloading schedules after employee assignment..."
+        );
+        await loadData();
+
+        const schedulesUpdated = res.data?.schedules_updated || 0;
+        setToast({
+          message: `Đã gán nhân viên thành công. ${schedulesUpdated} lịch thu gom đã được cập nhật.`,
+          type: "success",
+        });
       } else {
         setToast({
           message: res.error || "Gán nhân viên thất bại",
@@ -834,8 +899,9 @@ export default function RouteOptimization() {
         });
       }
     } catch (error) {
-      setLoading(false);
       setToast({ message: "Lỗi: " + error.message, type: "error" });
+    } finally {
+      setLoading(false);
     }
   }
 
