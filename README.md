@@ -667,14 +667,11 @@ docker compose up -d --build
 - [LICENSES.md](LICENSES.md) - **Tương thích giấy phép của dependencies**
 - [DATA_SOURCES.md](DATA_SOURCES.md) - **Nguồn dữ liệu mở và giấy phép**
 
-### Deployment và Release
-- [GITHUB_RELEASE_GUIDE.md](GITHUB_RELEASE_GUIDE.md) - **Hướng dẫn tạo GitHub Release**
+### Release
 - [RELEASE_NOTES.md](RELEASE_NOTES.md) - Release notes cho v1.0.0
 
 ### License và Compliance
-- [LICENSE_HEADERS_GUIDE.md](LICENSE_HEADERS_GUIDE.md) - **Hướng dẫn thêm license headers vào code**
 - [COMPLIANCE_CHECKLIST.md](COMPLIANCE_CHECKLIST.md) - **Checklist tuân thủ OLP 2025**
-- [FINAL_COMPLIANCE_REPORT.md](FINAL_COMPLIANCE_REPORT.md) - **Báo cáo tuân thủ cuối cùng**
 
 ### API và Testing
 - [docs/postman/](docs/postman/) - Postman collection cho API testing
