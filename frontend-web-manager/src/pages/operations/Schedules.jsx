@@ -6,7 +6,7 @@
  * Schedules Management Page
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import SidebarPro from "../../navigation/SidebarPro.jsx";
 import Table from "../../components/common/Table.jsx";
 import Toast from "../../components/common/Toast.jsx";
@@ -124,11 +124,11 @@ export default function Schedules() {
     }
   }
 
-  function handleAssignEmployee(schedule) {
+  const handleAssignEmployee = useCallback((schedule) => {
     setSelectedSchedule(schedule);
     setSelectedEmployeeId(schedule.employee_id || "");
     setAssignModalOpen(true);
-  }
+  }, []);
 
   async function handleSaveAssignment() {
     if (!selectedSchedule || !selectedEmployeeId) {
@@ -214,7 +214,8 @@ export default function Schedules() {
     }
   }
 
-  const columns = [
+  // Memoize columns to prevent recreation on every render
+  const columns = useMemo(() => [
     {
       key: "citizen_name",
       label: "Người đăng ký",
@@ -429,7 +430,7 @@ export default function Schedules() {
         });
       },
     },
-  ];
+  ], [handleAssignEmployee]);
 
   return (
     <div className="app layout">
