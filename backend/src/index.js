@@ -4563,7 +4563,8 @@ app.post("/api/vrp/assign-route", async (req, res) => {
 
     // OPTION 1: Sync employee_id from route to all schedules in this route
     // This ensures schedules are automatically assigned when route is assigned
-    const { rows: scheduleUpdates } = await db.query(
+    // First, update schedules that already have route_id
+    const { rows: scheduleUpdates1 } = await db.query(
       `UPDATE schedules
        SET employee_id = $1, status = 'assigned', updated_at = NOW()
        WHERE route_id = $2
@@ -4572,9 +4573,45 @@ app.post("/api/vrp/assign-route", async (req, res) => {
       [driver_id, route_id]
     );
 
+    // OPTION 2: Also update schedules linked via route_stops (when point_id is schedule_id)
+    // This handles cases where schedules weren't directly linked to route_id during save-routes
+    // but are linked through route_stops table (when stop has both id and lat/lon)
+    const scheduleIdsFromRouteStops = await db.query(
+      `SELECT DISTINCT rs.point_id::text as schedule_id
+       FROM route_stops rs
+       WHERE rs.route_id = $1
+         AND rs.point_id::text ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+         AND EXISTS (
+           SELECT 1 FROM schedules s WHERE s.schedule_id::text = rs.point_id::text
+         )`,
+      [route_id]
+    );
+
+    let scheduleUpdates2 = [];
+    if (scheduleIdsFromRouteStops.rows.length > 0) {
+      const scheduleIds = scheduleIdsFromRouteStops.rows.map(r => r.schedule_id);
+      const alreadyUpdatedIds = scheduleUpdates1.map(s => s.schedule_id);
+      const idsToUpdate = scheduleIds.filter(id => !alreadyUpdatedIds.includes(id));
+
+      if (idsToUpdate.length > 0) {
+        const { rows } = await db.query(
+          `UPDATE schedules
+           SET employee_id = $1, status = 'assigned', updated_at = NOW()
+           WHERE schedule_id = ANY($2::uuid[])
+             AND (employee_id IS NULL OR employee_id != $1)
+           RETURNING schedule_id`,
+          [driver_id, idsToUpdate]
+        );
+        scheduleUpdates2 = rows;
+      }
+    }
+
+    // Combine both update results
+    const scheduleUpdates = [...scheduleUpdates1, ...scheduleUpdates2];
+
     console.log(`✅ Assigned driver ${driver_id} to route ${route_id}`);
     console.log(
-      `✅ Synced employee_id to ${scheduleUpdates.length} schedules in route ${route_id}`
+      `✅ Synced employee_id to ${scheduleUpdates.length} schedules in route ${route_id} (${scheduleUpdates1.length} via route_id, ${scheduleUpdates2.length} via route_stops)`
     );
 
     // Emit Socket.IO event for route assignment
