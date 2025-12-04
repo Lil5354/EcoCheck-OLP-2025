@@ -1,0 +1,17 @@
+{
+  // Hide branches in VS Code Source Control panel
+  // Note: VS Code doesn't have native setting to hide branches
+  // This file is for reference. To hide branches, you can:
+  // 1. Use GitLens extension with gitlens.views.branches.branches.layout setting
+  // 2. Or manually filter branches in Source Control panel
+  "git.branchWhitelist": [
+    "main"
+  ],
+  "git.branchProtection": [
+    "main"
+  ],
+  // GitLens settings (if GitLens extension is installed)
+  "gitlens.views.branches.branches.layout": "tree",
+  "gitlens.views.branches.showRemoteBranches": false
+}
+
