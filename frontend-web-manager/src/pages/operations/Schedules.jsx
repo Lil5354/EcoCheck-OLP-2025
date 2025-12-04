@@ -28,10 +28,8 @@ export default function Schedules() {
   const [viewMode, setViewMode] = useState("timeslot"); // 'timeslot' or 'table'
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
 
+  // Socket.IO connection - separate effect to avoid reconnecting on filter change
   useEffect(() => {
-    loadSchedules();
-    loadPersonnel();
-
     // Connect to Socket.IO for real-time updates
     // Always use relative path (empty string) so it goes through Vite proxy
     // Don't use VITE_API_URL for socket.io as it may point to Docker service name
@@ -40,6 +38,7 @@ export default function Schedules() {
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: 5,
+      reconnectionDelayMax: 5000,
       path: "/socket.io",
     });
 
@@ -91,14 +90,23 @@ export default function Schedules() {
       );
     });
 
-    socket.on("disconnect", () => {
-      console.log("❌ Disconnected from Socket.IO server");
+    socket.on("disconnect", (reason) => {
+      // Only log if it's not a manual disconnect (io client disconnect)
+      if (reason !== "io client disconnect") {
+        console.log("❌ Disconnected from Socket.IO server:", reason);
+      }
     });
 
-    // Cleanup on unmount
+    // Cleanup on unmount only
     return () => {
       socket.disconnect();
     };
+  }, []); // Empty dependency array - only connect once on mount
+
+  // Load data when filter changes
+  useEffect(() => {
+    loadSchedules();
+    loadPersonnel();
   }, [filterStatus]);
 
   async function loadPersonnel() {
@@ -281,8 +289,11 @@ export default function Schedules() {
             </div>
           );
         }
-        return r.latitude && r.longitude
-          ? `${r.latitude.toFixed(5)}, ${r.longitude.toFixed(5)}`
+        // Safely parse and format coordinates
+        const lat = parseFloat(r.latitude);
+        const lon = parseFloat(r.longitude);
+        return !isNaN(lat) && !isNaN(lon)
+          ? `${lat.toFixed(5)}, ${lon.toFixed(5)}`
           : "-";
       },
     },
