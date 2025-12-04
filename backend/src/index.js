@@ -4382,45 +4382,45 @@ app.post("/api/vrp/save-routes", async (req, res) => {
 
             // If pointId is not set yet (no lat/lon provided), find or create point for this schedule
             if (!pointId) {
-              const scheduleResult = await db.query(
-                `SELECT 
-                  latitude, 
-                  longitude, 
-                  location,
-                  COALESCE(latitude, ST_Y(location::geometry)) as lat,
-                  COALESCE(longitude, ST_X(location::geometry)) as lon,
-                  address
-                 FROM schedules
-                 WHERE schedule_id = $1`,
-                [stop.id]
-              );
+            const scheduleResult = await db.query(
+              `SELECT 
+                latitude, 
+                longitude, 
+                location,
+                COALESCE(latitude, ST_Y(location::geometry)) as lat,
+                COALESCE(longitude, ST_X(location::geometry)) as lon,
+                address
+               FROM schedules
+               WHERE schedule_id = $1`,
+              [stop.id]
+            );
 
-              if (scheduleResult.rows.length > 0) {
-                const schedule = scheduleResult.rows[0];
-                // Get lat/lon from schedule
-                const lat = schedule.lat;
-                const lon = schedule.lon;
+            if (scheduleResult.rows.length > 0) {
+              const schedule = scheduleResult.rows[0];
+              // Get lat/lon from schedule
+              const lat = schedule.lat;
+              const lon = schedule.lon;
 
-                if (lat && lon) {
-                  // Try to find existing point at this location
-                  const pointResult = await db.query(
-                    `SELECT id FROM points
-                     WHERE ST_DWithin(geom, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, 11)
-                     LIMIT 1`,
-                    [lon, lat]
+              if (lat && lon) {
+                // Try to find existing point at this location
+                const pointResult = await db.query(
+                  `SELECT id FROM points
+                   WHERE ST_DWithin(geom, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, 11)
+                   LIMIT 1`,
+                  [lon, lat]
+                );
+
+                if (pointResult.rows.length > 0) {
+                  pointId = pointResult.rows[0].id;
+                } else {
+                  // Create new point for this schedule using PostGIS geometry
+                  const newPointId = uuidv4();
+                  await db.query(
+                    `INSERT INTO points (id, geom, ghost, last_checkin_at)
+                     VALUES ($1, ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography, false, NOW())`,
+                    [newPointId, lon, lat]
                   );
-
-                  if (pointResult.rows.length > 0) {
-                    pointId = pointResult.rows[0].id;
-                  } else {
-                    // Create new point for this schedule using PostGIS geometry
-                    const newPointId = uuidv4();
-                    await db.query(
-                      `INSERT INTO points (id, geom, ghost, last_checkin_at)
-                       VALUES ($1, ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography, false, NOW())`,
-                      [newPointId, lon, lat]
-                    );
-                    pointId = newPointId;
+                  pointId = newPointId;
                   }
                 }
               }
