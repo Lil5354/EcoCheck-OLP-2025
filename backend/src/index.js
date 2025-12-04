@@ -1022,6 +1022,154 @@ app.get("/api/analytics/summary", async (req, res) => {
   }
 });
 
+// ==================== DEV TOOLS - SEED DASHBOARD DATA ====================
+// POST /api/dev/seed-dashboard-data
+// Seed test data for dashboard (schedules with completed status for today)
+app.post("/api/dev/seed-dashboard-data", async (req, res) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    // Lấy user và personnel đầu tiên
+    const userResult = await db.query(
+      `SELECT id FROM users WHERE role = 'citizen' LIMIT 1`
+    );
+    const personnelResult = await db.query(
+      `SELECT id FROM personnel WHERE status = 'active' LIMIT 1`
+    );
+    
+    if (userResult.rows.length === 0 || personnelResult.rows.length === 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "No users or personnel found. Please run seed_data.sql first."
+      });
+    }
+    
+    const citizenId = userResult.rows[0].id;
+    const employeeId = personnelResult.rows[0].id;
+    
+    // Tạo schedules cho hôm nay
+    const todaySchedules = [
+      // Completed schedules (có actual_weight) - 6 schedules
+      { waste_type: 'household', weight: 25.5, status: 'completed', time_slot: 'morning' },
+      { waste_type: 'recyclable', weight: 18.2, status: 'completed', time_slot: 'morning' },
+      { waste_type: 'household', weight: 32.1, status: 'completed', time_slot: 'afternoon' },
+      { waste_type: 'bulky', weight: 45.8, status: 'completed', time_slot: 'afternoon' },
+      { waste_type: 'recyclable', weight: 22.3, status: 'completed', time_slot: 'evening' },
+      { waste_type: 'household', weight: 28.7, status: 'completed', time_slot: 'evening' },
+      // In progress/assigned schedules (chưa completed) - 3 schedules
+      { waste_type: 'household', weight: null, status: 'in_progress', time_slot: 'morning' },
+      { waste_type: 'recyclable', weight: null, status: 'assigned', time_slot: 'afternoon' },
+      { waste_type: 'bulky', weight: null, status: 'assigned', time_slot: 'evening' },
+    ];
+    
+    // Tạo schedules cho hôm qua (để có dữ liệu so sánh)
+    const yesterdaySchedules = [
+      { waste_type: 'household', weight: 20.0, status: 'completed', time_slot: 'morning' },
+      { waste_type: 'recyclable', weight: 15.5, status: 'completed', time_slot: 'afternoon' },
+      { waste_type: 'household', weight: 30.0, status: 'completed', time_slot: 'evening' },
+    ];
+    
+    let insertedToday = 0;
+    let insertedYesterday = 0;
+    
+    // Insert today schedules
+    for (const sched of todaySchedules) {
+      const scheduledDate = new Date(today);
+      if (sched.time_slot === 'afternoon') scheduledDate.setHours(14, 0, 0, 0);
+      else if (sched.time_slot === 'evening') scheduledDate.setHours(18, 0, 0, 0);
+      else scheduledDate.setHours(8, 0, 0, 0);
+      
+      const completedAt = sched.status === 'completed' ? new Date(today) : null;
+      if (completedAt) {
+        completedAt.setHours(scheduledDate.getHours() + 1, 0, 0, 0);
+      }
+      
+      await db.query(
+        `INSERT INTO schedules (
+          citizen_id, scheduled_date, time_slot, waste_type,
+          estimated_weight, actual_weight, status, employee_id,
+          completed_at, latitude, longitude, address, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())`,
+        [
+          citizenId.toString(),
+          scheduledDate,
+          sched.time_slot,
+          sched.waste_type,
+          sched.weight || 20.0,
+          sched.weight,
+          sched.status,
+          employeeId,
+          completedAt,
+          10.7769,
+          106.7009,
+          '123 Đường Lê Lợi, Quận 1, TP.HCM'
+        ]
+      );
+      insertedToday++;
+    }
+    
+    // Insert yesterday schedules
+    for (const sched of yesterdaySchedules) {
+      const scheduledDate = new Date(yesterday);
+      if (sched.time_slot === 'afternoon') scheduledDate.setHours(14, 0, 0, 0);
+      else if (sched.time_slot === 'evening') scheduledDate.setHours(18, 0, 0, 0);
+      else scheduledDate.setHours(8, 0, 0, 0);
+      
+      const completedAt = new Date(yesterday);
+      completedAt.setHours(scheduledDate.getHours() + 1, 0, 0, 0);
+      
+      await db.query(
+        `INSERT INTO schedules (
+          citizen_id, scheduled_date, time_slot, waste_type,
+          estimated_weight, actual_weight, status, employee_id,
+          completed_at, latitude, longitude, address, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $2, $2)`,
+        [
+          citizenId.toString(),
+          scheduledDate,
+          sched.time_slot,
+          sched.waste_type,
+          sched.weight,
+          sched.weight,
+          sched.status,
+          employeeId,
+          completedAt,
+          10.7769,
+          106.7009,
+          '123 Đường Lê Lợi, Quận 1, TP.HCM'
+        ]
+      );
+      insertedYesterday++;
+    }
+    
+    const totalWeightToday = todaySchedules
+      .filter(s => s.status === 'completed')
+      .reduce((sum, s) => sum + (s.weight || 0), 0);
+    const collectionRate = (todaySchedules.filter(s => s.status === 'completed').length / todaySchedules.length * 100).toFixed(1);
+    
+    res.json({
+      ok: true,
+      message: `Seeded ${insertedToday} schedules for today and ${insertedYesterday} for yesterday`,
+      data: {
+        today: insertedToday,
+        yesterday: insertedYesterday,
+        totalWeightToday: totalWeightToday.toFixed(1) + ' kg',
+        totalWeightTodayTons: (totalWeightToday / 1000).toFixed(1) + ' t',
+        collectionRate: collectionRate + '%',
+        completedToday: todaySchedules.filter(s => s.status === 'completed').length,
+        totalToday: todaySchedules.length
+      }
+    });
+  } catch (error) {
+    console.error("[Dev] Seed dashboard data error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 // ==================== MASTER DATA - FLEET API ====================
 // Get all vehicles
 app.get("/api/master/fleet", async (req, res) => {
