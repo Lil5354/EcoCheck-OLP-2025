@@ -3226,8 +3226,8 @@ async function getOSRMRoute(waypoints) {
                 // Connected: skip first coordinate to avoid duplicate
                 allCoordinates.push(...segmentCoords.slice(1));
               } else {
-                // NOT connected: create a smooth bridge line between segments
-                // This ensures the route is continuous from START to END
+                // NOT connected: request a proper OSRM route to bridge the gap
+                // This ensures the route follows actual roads instead of straight lines
                 const gap = Math.sqrt(
                   Math.pow(lastCoord[0] - firstCoord[0], 2) +
                     Math.pow(lastCoord[1] - firstCoord[1], 2)
@@ -3238,17 +3238,57 @@ async function getOSRMRoute(waypoints) {
                   console.log(
                     `[OSRM] Segment ${i}->${i + 1} gap detected (${Math.round(
                       gap * 111000
-                    )}m), creating bridge`
+                    )}m), requesting bridge route from OSRM`
                   );
-                  // Create intermediate points for smooth connection (linear interpolation)
-                  const bridgePoints = 3; // Number of intermediate points
-                  for (let b = 1; b <= bridgePoints; b++) {
-                    const t = b / (bridgePoints + 1);
-                    const bridgeLon =
-                      lastCoord[0] + (firstCoord[0] - lastCoord[0]) * t;
-                    const bridgeLat =
-                      lastCoord[1] + (firstCoord[1] - lastCoord[1]) * t;
-                    allCoordinates.push([bridgeLon, bridgeLat]);
+                  
+                  try {
+                    // Request a proper route between disconnected segments
+                    const bridgeCoords = `${lastCoord[0]},${lastCoord[1]};${firstCoord[0]},${firstCoord[1]}`;
+                    const bridgeUrl = `https://router.project-osrm.org/route/v1/driving/${bridgeCoords}?overview=full&geometries=geojson&alternatives=false&steps=false`;
+                    
+                    const bridgeResponse = await axios.get(bridgeUrl, {
+                      timeout: 10000,
+                      headers: {
+                        "User-Agent": "EcoCheck-Backend/1.0",
+                      },
+                    });
+
+                    if (
+                      bridgeResponse.data &&
+                      bridgeResponse.data.code === "Ok" &&
+                      bridgeResponse.data.routes &&
+                      bridgeResponse.data.routes.length > 0 &&
+                      bridgeResponse.data.routes[0].geometry
+                    ) {
+                      const bridgeRouteCoords = bridgeResponse.data.routes[0].geometry.coordinates;
+                      // Skip first point to avoid duplicate with lastCoord
+                      allCoordinates.push(...bridgeRouteCoords.slice(1));
+                      console.log(`[OSRM] Bridge route added with ${bridgeRouteCoords.length - 1} points`);
+                    } else {
+                      // Fallback: use linear interpolation if OSRM fails
+                      console.warn(`[OSRM] Bridge route failed, using linear interpolation`);
+                      const bridgePoints = 3;
+                      for (let b = 1; b <= bridgePoints; b++) {
+                        const t = b / (bridgePoints + 1);
+                        const bridgeLon =
+                          lastCoord[0] + (firstCoord[0] - lastCoord[0]) * t;
+                        const bridgeLat =
+                          lastCoord[1] + (firstCoord[1] - lastCoord[1]) * t;
+                        allCoordinates.push([bridgeLon, bridgeLat]);
+                      }
+                    }
+                  } catch (bridgeError) {
+                    // Fallback: use linear interpolation if OSRM fails
+                    console.warn(`[OSRM] Bridge route error: ${bridgeError.message}, using linear interpolation`);
+                    const bridgePoints = 3;
+                    for (let b = 1; b <= bridgePoints; b++) {
+                      const t = b / (bridgePoints + 1);
+                      const bridgeLon =
+                        lastCoord[0] + (firstCoord[0] - lastCoord[0]) * t;
+                      const bridgeLat =
+                        lastCoord[1] + (firstCoord[1] - lastCoord[1]) * t;
+                      allCoordinates.push([bridgeLon, bridgeLat]);
+                    }
                   }
                 }
                 // Then add all segment coordinates
@@ -3334,7 +3374,7 @@ async function getOSRMRoute(waypoints) {
                 if (isConnected) {
                   allCoordinates.push(...segmentCoords.slice(1));
                 } else {
-                  // NOT connected: create a smooth bridge line between segments
+                  // NOT connected: request a proper OSRM route to bridge the gap
                   const gap = Math.sqrt(
                     Math.pow(lastCoord[0] - firstCoord[0], 2) +
                       Math.pow(lastCoord[1] - firstCoord[1], 2)
@@ -3347,17 +3387,57 @@ async function getOSRMRoute(waypoints) {
                         i + 1
                       } gap detected after retry (${Math.round(
                         gap * 111000
-                      )}m), creating bridge`
+                      )}m), requesting bridge route from OSRM`
                     );
-                    // Create intermediate points for smooth connection
-                    const bridgePoints = 3;
-                    for (let b = 1; b <= bridgePoints; b++) {
-                      const t = b / (bridgePoints + 1);
-                      const bridgeLon =
-                        lastCoord[0] + (firstCoord[0] - lastCoord[0]) * t;
-                      const bridgeLat =
-                        lastCoord[1] + (firstCoord[1] - lastCoord[1]) * t;
-                      allCoordinates.push([bridgeLon, bridgeLat]);
+                    
+                    try {
+                      // Request a proper route between disconnected segments
+                      const bridgeCoords = `${lastCoord[0]},${lastCoord[1]};${firstCoord[0]},${firstCoord[1]}`;
+                      const bridgeUrl = `https://router.project-osrm.org/route/v1/driving/${bridgeCoords}?overview=full&geometries=geojson&alternatives=false&steps=false`;
+                      
+                      const bridgeResponse = await axios.get(bridgeUrl, {
+                        timeout: 10000,
+                        headers: {
+                          "User-Agent": "EcoCheck-Backend/1.0",
+                        },
+                      });
+
+                      if (
+                        bridgeResponse.data &&
+                        bridgeResponse.data.code === "Ok" &&
+                        bridgeResponse.data.routes &&
+                        bridgeResponse.data.routes.length > 0 &&
+                        bridgeResponse.data.routes[0].geometry
+                      ) {
+                        const bridgeRouteCoords = bridgeResponse.data.routes[0].geometry.coordinates;
+                        // Skip first point to avoid duplicate with lastCoord
+                        allCoordinates.push(...bridgeRouteCoords.slice(1));
+                        console.log(`[OSRM] Bridge route added with ${bridgeRouteCoords.length - 1} points`);
+                      } else {
+                        // Fallback: use linear interpolation if OSRM fails
+                        console.warn(`[OSRM] Bridge route failed, using linear interpolation`);
+                        const bridgePoints = 3;
+                        for (let b = 1; b <= bridgePoints; b++) {
+                          const t = b / (bridgePoints + 1);
+                          const bridgeLon =
+                            lastCoord[0] + (firstCoord[0] - lastCoord[0]) * t;
+                          const bridgeLat =
+                            lastCoord[1] + (firstCoord[1] - lastCoord[1]) * t;
+                          allCoordinates.push([bridgeLon, bridgeLat]);
+                        }
+                      }
+                    } catch (bridgeError) {
+                      // Fallback: use linear interpolation if OSRM fails
+                      console.warn(`[OSRM] Bridge route error: ${bridgeError.message}, using linear interpolation`);
+                      const bridgePoints = 3;
+                      for (let b = 1; b <= bridgePoints; b++) {
+                        const t = b / (bridgePoints + 1);
+                        const bridgeLon =
+                          lastCoord[0] + (firstCoord[0] - lastCoord[0]) * t;
+                        const bridgeLat =
+                          lastCoord[1] + (firstCoord[1] - lastCoord[1]) * t;
+                        allCoordinates.push([bridgeLon, bridgeLat]);
+                      }
                     }
                   }
                   allCoordinates.push(...segmentCoords);
@@ -4099,22 +4179,15 @@ app.post("/api/vrp/optimize", async (req, res) => {
         routeGeometry.coordinates.length > 0;
 
       if (hasValidGeometry) {
-        // Case 1: OSRM returned valid route - ensure depot and dump are included
+        // Case 1: OSRM returned valid route - ensure depot and dump are included with proper routes
         console.log(
           `[VRP] Vehicle ${vehicle.id}: OSRM returned valid route with ${routeGeometry.coordinates.length} coordinates`
         );
 
         const newCoordinates = [];
+        const axios = require("axios");
 
-        // 1. ALWAYS start with depot
-        if (depotCoords) {
-          newCoordinates.push(depotCoords);
-          console.log(
-            `[VRP] Route starts at depot: [${depotCoords[0]}, ${depotCoords[1]}]`
-          );
-        }
-
-        // 2. Add route geometry coordinates (skip first if it's same as depot)
+        // 1. ALWAYS start with depot - get proper route if needed
         const firstRouteCoord = routeGeometry.coordinates[0];
         if (depotCoords && firstRouteCoord) {
           const distToDepot =
@@ -4126,17 +4199,64 @@ app.post("/api/vrp/optimize", async (req, res) => {
           if (distToDepot < 50) {
             // Route already starts at depot, skip first coordinate to avoid duplicate
             newCoordinates.push(...routeGeometry.coordinates.slice(1));
+            console.log(
+              `[VRP] Route already starts at depot: [${depotCoords[0]}, ${depotCoords[1]}]`
+            );
           } else {
-            // Route doesn't start at depot, add all coordinates
-            newCoordinates.push(...routeGeometry.coordinates);
+            // Route doesn't start at depot, get proper route from depot to first route point
+            console.log(
+              `[VRP] Route doesn't start at depot (${Math.round(distToDepot)}m away), requesting OSRM route from depot to route start`
+            );
+            try {
+              const depotToRouteCoords = `${depotCoords[0]},${depotCoords[1]};${firstRouteCoord[0]},${firstRouteCoord[1]}`;
+              const depotToRouteUrl = `https://router.project-osrm.org/route/v1/driving/${depotToRouteCoords}?overview=full&geometries=geojson&alternatives=false&steps=false`;
+              
+              const depotToRouteResponse = await axios.get(depotToRouteUrl, {
+                timeout: 10000,
+                headers: {
+                  "User-Agent": "EcoCheck-Backend/1.0",
+                },
+              });
+
+              if (
+                depotToRouteResponse.data &&
+                depotToRouteResponse.data.code === "Ok" &&
+                depotToRouteResponse.data.routes &&
+                depotToRouteResponse.data.routes.length > 0 &&
+                depotToRouteResponse.data.routes[0].geometry
+              ) {
+                const depotRouteCoords = depotToRouteResponse.data.routes[0].geometry.coordinates;
+                // Add depot route (skip last point to avoid duplicate with firstRouteCoord)
+                newCoordinates.push(...depotRouteCoords.slice(0, -1));
+                // Then add all route coordinates
+                newCoordinates.push(...routeGeometry.coordinates);
+                console.log(
+                  `[VRP] Depot route added with ${depotRouteCoords.length - 1} points`
+                );
+              } else {
+                // Fallback: add depot point and route coordinates
+                console.warn(`[VRP] Depot route failed, adding depot point directly`);
+                newCoordinates.push(depotCoords);
+                newCoordinates.push(...routeGeometry.coordinates);
+              }
+            } catch (depotRouteError) {
+              // Fallback: add depot point and route coordinates
+              console.warn(`[VRP] Depot route error: ${depotRouteError.message}, adding depot point directly`);
+              newCoordinates.push(depotCoords);
+              newCoordinates.push(...routeGeometry.coordinates);
+            }
           }
+        } else if (depotCoords) {
+          // No first route coord but have depot, just add depot
+          newCoordinates.push(depotCoords);
+          newCoordinates.push(...routeGeometry.coordinates);
         } else {
           // No depot, add all route coordinates
           newCoordinates.push(...routeGeometry.coordinates);
         }
 
-        // 3. ALWAYS end with dump
-        if (dumpCoords) {
+        // 3. ALWAYS end with dump - get proper route if needed
+        if (dumpCoords && newCoordinates.length > 0) {
           const lastCoord = newCoordinates[newCoordinates.length - 1];
           const distToDump =
             Math.sqrt(
@@ -4145,14 +4265,50 @@ app.post("/api/vrp/optimize", async (req, res) => {
             ) * 111000;
 
           if (distToDump > 50) {
-            // Route doesn't end at dump, add dump as final point
-            newCoordinates.push(dumpCoords);
+            // Route doesn't end at dump, get proper route from last route point to dump
             console.log(
-              `[VRP] Route ends at dump: [${dumpCoords[0]}, ${dumpCoords[1]}]`
+              `[VRP] Route doesn't end at dump (${Math.round(distToDump)}m away), requesting OSRM route from route end to dump`
             );
+            try {
+              const routeToDumpCoords = `${lastCoord[0]},${lastCoord[1]};${dumpCoords[0]},${dumpCoords[1]}`;
+              const routeToDumpUrl = `https://router.project-osrm.org/route/v1/driving/${routeToDumpCoords}?overview=full&geometries=geojson&alternatives=false&steps=false`;
+              
+              const routeToDumpResponse = await axios.get(routeToDumpUrl, {
+                timeout: 10000,
+                headers: {
+                  "User-Agent": "EcoCheck-Backend/1.0",
+                },
+              });
+
+              if (
+                routeToDumpResponse.data &&
+                routeToDumpResponse.data.code === "Ok" &&
+                routeToDumpResponse.data.routes &&
+                routeToDumpResponse.data.routes.length > 0 &&
+                routeToDumpResponse.data.routes[0].geometry
+              ) {
+                const dumpRouteCoords = routeToDumpResponse.data.routes[0].geometry.coordinates;
+                // Skip first point to avoid duplicate with lastCoord
+                newCoordinates.push(...dumpRouteCoords.slice(1));
+                console.log(
+                  `[VRP] Dump route added with ${dumpRouteCoords.length - 1} points`
+                );
+              } else {
+                // Fallback: add dump point directly
+                console.warn(`[VRP] Dump route failed, adding dump point directly`);
+                newCoordinates.push(dumpCoords);
+              }
+            } catch (dumpRouteError) {
+              // Fallback: add dump point directly
+              console.warn(`[VRP] Dump route error: ${dumpRouteError.message}, adding dump point directly`);
+              newCoordinates.push(dumpCoords);
+            }
           } else {
             console.log(`[VRP] Route already ends at dump`);
           }
+        } else if (dumpCoords) {
+          // No route coordinates but have dump, just add dump
+          newCoordinates.push(dumpCoords);
         }
 
         // Update routeGeometry with new coordinates
@@ -6028,8 +6184,8 @@ app.get("/api/schedules", async (req, res) => {
         CASE 
           WHEN EXISTS (
             SELECT 1 FROM point_transactions pt 
-            WHERE pt.user_id = s.citizen_id 
-            AND pt.reason LIKE 'Xác nhận hoàn thành thu gom - ' || s.schedule_id || '%'
+            WHERE pt.user_id::text = s.citizen_id 
+            AND pt.reason LIKE 'Xác nhận hoàn thành thu gom - ' || s.schedule_id::text || '%'
           ) THEN true 
           ELSE false 
         END as points_claimed
@@ -6043,7 +6199,7 @@ app.get("/api/schedules", async (req, res) => {
     let paramIndex = 1;
 
     if (citizen_id) {
-      query += ` AND s.citizen_id = $${paramIndex}`;
+      query += ` AND s.citizen_id = $${paramIndex}::text`;
       params.push(citizen_id);
       paramIndex++;
     }
@@ -6157,8 +6313,8 @@ app.get("/api/schedules/:id", async (req, res) => {
         CASE 
           WHEN EXISTS (
             SELECT 1 FROM point_transactions pt 
-            WHERE pt.user_id = s.citizen_id 
-            AND pt.reason LIKE 'Xác nhận hoàn thành thu gom - ' || s.schedule_id || '%'
+            WHERE pt.user_id::text = s.citizen_id 
+            AND pt.reason LIKE 'Xác nhận hoàn thành thu gom - ' || s.schedule_id::text || '%'
           ) THEN true 
           ELSE false 
         END as points_claimed
@@ -9396,6 +9552,12 @@ app.post("/api/gamification/badges", async (req, res) => {
 
     console.log(`🏆 Badge created: ${code} (${name})`);
 
+    // Emit real-time event for mobile apps to refresh badges
+    io.emit("badge:created", {
+      badge: rows[0],
+      timestamp: new Date().toISOString(),
+    });
+
     res.status(201).json({
       ok: true,
       data: rows[0],
@@ -9478,6 +9640,12 @@ app.patch("/api/gamification/badges/:id", async (req, res) => {
     }
 
     console.log(`🏆 Badge updated: ${id}`);
+
+    // Emit real-time event for mobile apps to refresh badges
+    io.emit("badge:updated", {
+      badge: rows[0],
+      timestamp: new Date().toISOString(),
+    });
 
     res.json({
       ok: true,
