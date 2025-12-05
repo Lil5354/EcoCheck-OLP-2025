@@ -907,6 +907,35 @@ class EcoCheckRepository {
     }
   }
 
+  // ==================== Air Quality ====================
+
+  /// Get air quality data for a location
+  Future<Map<String, dynamic>> getAirQuality({
+    required double lat,
+    required double lon,
+  }) async {
+    try {
+      final response = await _apiClient.get(
+        '${ApiConstants.apiPrefix}/air-quality',
+        queryParameters: {
+          'lat': lat.toString(),
+          'lon': lon.toString(),
+        },
+      );
+
+      final data = response.data as Map<String, dynamic>;
+      if (data['ok'] == true) {
+        return data['data'] as Map<String, dynamic>;
+      } else {
+        throw ApiException(
+          message: data['error'] ?? 'Failed to get air quality data',
+        );
+      }
+    } catch (e) {
+      throw _handleError(e);
+    }
+  }
+
   // ==================== Error Handling ====================
 
   Exception _handleError(dynamic error) {

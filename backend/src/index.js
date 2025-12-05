@@ -10084,7 +10084,10 @@ app.get("/api/air-quality", async (req, res) => {
     });
   } catch (error) {
     console.error("[Air Quality] Get error:", error);
-    res.status(500).json({ ok: false, error: error.message });
+    res.status(500).json({ 
+      ok: false, 
+      error: error.message || "Không thể lấy dữ liệu chất lượng không khí từ OpenAQ" 
+    });
   }
 });
 

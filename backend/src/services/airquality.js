@@ -61,13 +61,14 @@ function calculateAQI(pm25) {
 }
 
 /**
- * Get air quality data for a location
+ * Get air quality data for a location with retry and progressive radius
+ * Always tries to get data from OpenAQ, never uses mock data
  * @param {number} lat - Latitude
  * @param {number} lon - Longitude
- * @param {number} radius - Search radius in meters (default: 5000)
+ * @param {number} maxRadius - Maximum search radius in meters (default: 50000)
  * @returns {Promise<Object>} Air quality data
  */
-async function getAirQuality(lat, lon, radius = 5000) {
+async function getAirQuality(lat, lon, maxRadius = 50000) {
   const cacheKey = getCacheKey(lat, lon);
   const cached = aqiCache.get(cacheKey);
   
@@ -76,59 +77,75 @@ async function getAirQuality(lat, lon, radius = 5000) {
     return cached.data;
   }
 
-  try {
-    // OpenAQ API: Get latest measurements near location
-    const url = `${OPENAQ_BASE_URL}/locations`;
-    const response = await axios.get(url, {
-      params: {
-        coordinates: `${lat},${lon}`,
-        radius: radius,
-        limit: 1,
-        order_by: 'distance'
-      },
-      timeout: 5000
-    });
+  // Progressive radius search: 5km, 10km, 20km, 50km
+  const radiusSteps = [5000, 10000, 20000, maxRadius];
+  const maxRetries = 3;
+  
+  for (const radius of radiusSteps) {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        // OpenAQ API: Get latest measurements near location
+        const url = `${OPENAQ_BASE_URL}/locations`;
+        const response = await axios.get(url, {
+          params: {
+            coordinates: `${lat},${lon}`,
+            radius: radius,
+            limit: 10, // Tăng từ 1 lên 10 để tìm nhiều trạm
+            order_by: 'distance'
+          },
+          timeout: 10000 // Tăng timeout từ 5000 lên 10000ms
+        });
 
-    let aqiData;
-    
-    if (response.data.results && response.data.results.length > 0) {
-      const location = response.data.results[0];
-      
-      // Get latest measurements
-      const measurementsUrl = `${OPENAQ_BASE_URL}/locations/${location.id}/latest`;
-      const measurementsRes = await axios.get(measurementsUrl, { timeout: 5000 });
-      
-      if (measurementsRes.data.results && measurementsRes.data.results.length > 0) {
-        const latest = measurementsRes.data.results[0].measurements;
-        const pm25 = latest.find(m => m.parameter === 'pm25')?.value;
-        const pm10 = latest.find(m => m.parameter === 'pm10')?.value;
-        
-        if (pm25) {
-          aqiData = calculateAQI(pm25);
-          aqiData.pm10 = pm10;
-          aqiData.location = location.name;
-          aqiData.distance = location.distance || 0;
+        if (response.data.results && response.data.results.length > 0) {
+          // Thử tất cả locations để tìm location có dữ liệu PM2.5
+          for (const location of response.data.results) {
+            try {
+              const measurementsUrl = `${OPENAQ_BASE_URL}/locations/${location.id}/latest`;
+              const measurementsRes = await axios.get(measurementsUrl, { 
+                timeout: 10000 
+              });
+              
+              if (measurementsRes.data.results && measurementsRes.data.results.length > 0) {
+                const latest = measurementsRes.data.results[0].measurements;
+                const pm25 = latest.find(m => m.parameter === 'pm25')?.value;
+                const pm10 = latest.find(m => m.parameter === 'pm10')?.value;
+                
+                if (pm25) {
+                  const aqiData = calculateAQI(pm25);
+                  aqiData.pm10 = pm10;
+                  aqiData.location = location.name;
+                  aqiData.distance = location.distance || 0;
+                  
+                  // Cache the result
+                  aqiCache.set(cacheKey, {
+                    data: aqiData,
+                    timestamp: Date.now()
+                  });
+                  
+                  console.log(`[AirQuality] Found data from OpenAQ at ${location.name} (${radius}m radius)`);
+                  return aqiData;
+                }
+              }
+            } catch (measurementError) {
+              // Continue to next location
+              continue;
+            }
+          }
+        }
+      } catch (error) {
+        console.warn(`[AirQuality] Attempt ${attempt + 1} failed at radius ${radius}m:`, error.message);
+        if (attempt < maxRetries - 1) {
+          // Wait before retry (exponential backoff)
+          await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+          continue;
         }
       }
     }
-
-    // If no data found, use mock data
-    if (!aqiData) {
-      aqiData = getMockAirQuality(lat, lon);
-    }
-
-    // Cache the result
-    aqiCache.set(cacheKey, {
-      data: aqiData,
-      timestamp: Date.now()
-    });
-
-    return aqiData;
-  } catch (error) {
-    console.error('[AirQuality] Error fetching data:', error.message);
-    // Return mock data on error
-    return getMockAirQuality(lat, lon);
   }
+
+  // If no data found after all attempts, throw error instead of using mock data
+  console.error(`[AirQuality] No OpenAQ data found after all attempts for ${lat}, ${lon}`);
+  throw new Error('Không thể lấy dữ liệu chất lượng không khí từ OpenAQ. Vui lòng thử lại sau.');
 }
 
 /**

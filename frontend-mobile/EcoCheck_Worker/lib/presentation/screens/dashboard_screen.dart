@@ -20,6 +20,7 @@ import '../blocs/route/route_state.dart';
 import '../widgets/dashboard/active_route_card.dart';
 import '../widgets/dashboard/today_collections_list.dart';
 import '../widgets/dashboard/quick_actions_grid.dart';
+import '../widgets/air_quality_widget.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -88,6 +89,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ],
                     ),
                     actions: [
+                      const Padding(
+                        padding: EdgeInsets.only(right: 8.0),
+                        child: AirQualityWidget(),
+                      ),
                       IconButton(
                         icon: const Icon(
                           Icons.notifications_outlined,

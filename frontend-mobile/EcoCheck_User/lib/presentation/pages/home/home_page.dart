@@ -24,6 +24,7 @@ import 'widgets/upcoming_schedule_card.dart';
 import 'widgets/quick_actions_grid.dart';
 import 'widgets/statistics_summary_card.dart';
 import 'widgets/eco_tips_carousel.dart';
+import 'widgets/air_quality_widget.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -134,6 +135,10 @@ class _HomeTabPageState extends State<HomeTabPage> {
           ],
         ),
         actions: [
+          const Padding(
+            padding: EdgeInsets.only(right: 8.0),
+            child: AirQualityWidget(),
+          ),
           IconButton(
             icon: const Icon(Icons.notifications_outlined),
             onPressed: () {
