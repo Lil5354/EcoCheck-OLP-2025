@@ -119,9 +119,27 @@ fi
 if [ -d "/app/backend" ]; then
     cd /app/backend
     echo "Working directory: $(pwd)"
+    
+    # Ensure uploads directory exists with correct permissions
+    echo "========================================="
+    echo "Ensuring uploads directory exists..."
+    mkdir -p /app/backend/public/uploads
+    chmod -R 755 /app/backend/public/uploads
+    echo "✓ Uploads directory: /app/backend/public/uploads"
+    ls -la /app/backend/public/uploads 2>/dev/null || echo "Directory created (empty)"
+    echo "========================================="
 elif [ -d "/app/src" ]; then
     cd /app
     echo "Working directory: $(pwd)"
+    
+    # Ensure uploads directory exists with correct permissions
+    echo "========================================="
+    echo "Ensuring uploads directory exists..."
+    mkdir -p /app/public/uploads
+    chmod -R 755 /app/public/uploads
+    echo "✓ Uploads directory: /app/public/uploads"
+    ls -la /app/public/uploads 2>/dev/null || echo "Directory created (empty)"
+    echo "========================================="
 else
     echo "ERROR: Cannot find backend directory!"
     exit 1

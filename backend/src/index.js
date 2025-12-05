@@ -287,6 +287,10 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Trust proxy for correct protocol detection behind reverse proxy (nginx, Render, etc.)
+// This is essential for production deployments where Express runs behind a proxy
+app.set('trust proxy', true);
+
 // File upload configuration
 const multer = require("multer");
 const fs = require("fs");
@@ -368,9 +372,15 @@ app.post("/api/upload", upload.single("image"), (req, res) => {
     }
 
     // Generate public URL for the uploaded image
-    const imageUrl = `${req.protocol}://${req.get("host")}/uploads/${
-      req.file.filename
-    }`;
+    // Use X-Forwarded-Proto if available (for reverse proxy), otherwise use req.protocol
+    // On Render/production, X-Forwarded-Proto will be 'https'
+    const protocol = req.get('X-Forwarded-Proto') || req.protocol || 'https';
+    const host = req.get('X-Forwarded-Host') || req.get('host') || req.hostname;
+    const imageUrl = `${protocol}://${host}/uploads/${req.file.filename}`;
+    
+    console.log(`[Upload] File uploaded: ${req.file.filename}`);
+    console.log(`[Upload] Protocol: ${protocol}, Host: ${host}`);
+    console.log(`[Upload] Generated URL: ${imageUrl}`);
 
     res.status(200).json({
       success: true,
@@ -392,8 +402,11 @@ app.post("/api/upload/multiple", upload.array("images", 5), (req, res) => {
       return res.status(400).json({ error: "No image files provided" });
     }
 
+    // Use X-Forwarded-Proto if available (for reverse proxy), otherwise use req.protocol
+    const protocol = req.get('X-Forwarded-Proto') || req.protocol || 'https';
+    const host = req.get('X-Forwarded-Host') || req.get('host') || req.hostname;
     const imageUrls = req.files.map((file) => ({
-      url: `${req.protocol}://${req.get("host")}/uploads/${file.filename}`,
+      url: `${protocol}://${host}/uploads/${file.filename}`,
       filename: file.filename,
       size: file.size,
       mimetype: file.mimetype,
