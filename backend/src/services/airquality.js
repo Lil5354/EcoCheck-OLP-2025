@@ -96,18 +96,101 @@ async function getAirQuality(lat, lon, maxRadius = 25000) {
     'X-API-Key': OPENAQ_API_KEY
   };
   
+  // First, try using /v3/latest endpoint directly with coordinates
+  // This is often more reliable than /v3/locations
+  try {
+    const latestUrl = `${OPENAQ_BASE_URL}/latest`;
+    const latestParams = {
+      coordinates: `${lat},${lon}`,
+      radius: effectiveMaxRadius,
+      limit: 50,
+      parameter: 'pm25' // Filter for PM2.5
+    };
+    
+    const latestResponse = await axios.get(latestUrl, {
+      params: latestParams,
+      headers: headers,
+      timeout: 10000
+    });
+    
+    const latestData = latestResponse.data.results || latestResponse.data.data || [];
+    
+    if (latestData.length > 0) {
+      // Find the closest measurement with PM2.5
+      for (const result of latestData) {
+        if (result.measurements && result.measurements.length > 0) {
+          const pm25Measurement = result.measurements.find(m => m.parameter === 'pm25');
+          if (pm25Measurement) {
+            const pm25 = pm25Measurement.value;
+            const pm10Measurement = result.measurements.find(m => m.parameter === 'pm10');
+            const pm10 = pm10Measurement?.value;
+            
+            const aqiData = calculateAQI(pm25);
+            aqiData.pm10 = pm10;
+            aqiData.location = result.location?.name || result.name || 'Unknown';
+            aqiData.distance = result.distance || 0;
+            aqiData.source = 'openaq';
+            aqiData.stationId = result.location?.id || result.id;
+            aqiData.lastUpdated = new Date().toISOString();
+            
+            // Cache the result
+            aqiCache.set(cacheKey, {
+              data: aqiData,
+              timestamp: Date.now()
+            });
+            
+            console.log(`[AirQuality] ✅ Found data from OpenAQ v3 /latest endpoint at ${aqiData.location}`);
+            console.log(`  - PM2.5: ${pm25} μg/m³, AQI: ${aqiData.aqi}`);
+            return aqiData;
+          }
+        }
+      }
+    }
+  } catch (latestError) {
+    // If /latest endpoint fails, continue with /locations endpoint
+    console.warn(`[AirQuality] /latest endpoint failed, trying /locations:`, latestError.message);
+  }
+  
+  // Fallback to /locations endpoint with progressive radius
   for (const radius of radiusSteps) {
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
         // OpenAQ API v3: Get latest measurements near location
+        // Try different parameter formats for OpenAQ v3
         const url = `${OPENAQ_BASE_URL}/locations`;
-        const response = await axios.get(url, {
-          params: {
+        
+        // OpenAQ v3 API: Try coordinates as string format "lat,lon"
+        // If this fails with 422, it might need different format
+        let params;
+        
+        // First attempt: coordinates as string (most common format)
+        if (attempt === 0) {
+          params = {
             coordinates: `${lat},${lon}`,
             radius: radius,
-            limit: 10,
-            order_by: 'distance'
-          },
+            limit: 10
+          };
+        } 
+        // Second attempt: try with separate lat/lon parameters
+        else if (attempt === 1) {
+          params = {
+            lat: lat,
+            lon: lon,
+            radius: radius,
+            limit: 10
+          };
+        }
+        // Third attempt: try coordinates as array format
+        else {
+          params = {
+            coordinates: [lat, lon].join(','),
+            radius: radius,
+            limit: 10
+          };
+        }
+        
+        const response = await axios.get(url, {
+          params: params,
           headers: headers,
           timeout: 10000
         });
@@ -169,13 +252,26 @@ async function getAirQuality(lat, lon, maxRadius = 25000) {
       } catch (error) {
         const errorMsg = error.response?.data?.message || error.message;
         const statusCode = error.response?.status;
+        const errorData = error.response?.data;
         
-        if (statusCode === 401) {
+        // Log detailed error for debugging
+        if (statusCode === 422) {
+          console.warn(`[AirQuality] Attempt ${attempt + 1} failed at radius ${radius}m: Request failed with status code 422`);
+          if (errorData) {
+            console.warn(`[AirQuality] Error details:`, JSON.stringify(errorData, null, 2));
+          }
+          // Log the request parameters for debugging
+          console.warn(`[AirQuality] Request params:`, JSON.stringify(params));
+        } else if (statusCode === 401) {
           console.error(`[AirQuality] ❌ Unauthorized - Invalid API key. Please check OPENAQ_API_KEY.`);
           throw new Error('OpenAQ API key không hợp lệ. Vui lòng kiểm tra lại OPENAQ_API_KEY trong file .env');
+        } else {
+          console.warn(`[AirQuality] Attempt ${attempt + 1} failed at radius ${radius}m:`, errorMsg);
+          if (errorData) {
+            console.warn(`[AirQuality] Error response:`, JSON.stringify(errorData, null, 2).substring(0, 500));
+          }
         }
         
-        console.warn(`[AirQuality] Attempt ${attempt + 1} failed at radius ${radius}m:`, errorMsg);
         if (attempt < maxRetries - 1) {
           // Wait before retry (exponential backoff)
           await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
