@@ -722,16 +722,19 @@ class EcoCheckRepository {
       final data = response.data as Map<String, dynamic>;
       if (data['ok'] == true && data['data'] != null) {
         return StatisticsSummary.fromJson(data['data'] as Map<String, dynamic>);
-      } else if (data['data'] != null) {
-        return StatisticsSummary.fromJson(data['data'] as Map<String, dynamic>);
       } else {
-        return StatisticsSummary.fromJson(data);
+        // Fallback to default
+        return const StatisticsSummary(
+          totalWasteThisMonth: 0,
+          totalCO2SavedThisMonth: 0,
+          monthlyData: [],
+          wasteDistribution: [],
+        );
       }
     } catch (e) {
-      print('Error in getStatisticsSummary: $e');
       // Return empty/default data if backend doesn't have this endpoint yet
       if (e.toString().contains('404') || e.toString().contains('not found')) {
-        print('Statistics API not available yet, returning default data');
+        // Silently return default data - this API is not yet implemented
         return const StatisticsSummary(
           totalWasteThisMonth: 0,
           totalCO2SavedThisMonth: 0,

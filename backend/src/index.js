@@ -289,7 +289,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Trust proxy for correct protocol detection behind reverse proxy (nginx, Render, etc.)
 // This is essential for production deployments where Express runs behind a proxy
-app.set('trust proxy', true);
+app.set("trust proxy", true);
 
 // File upload configuration
 const multer = require("multer");
@@ -374,10 +374,10 @@ app.post("/api/upload", upload.single("image"), (req, res) => {
     // Generate public URL for the uploaded image
     // Use X-Forwarded-Proto if available (for reverse proxy), otherwise use req.protocol
     // On Render/production, X-Forwarded-Proto will be 'https'
-    const protocol = req.get('X-Forwarded-Proto') || req.protocol || 'https';
-    const host = req.get('X-Forwarded-Host') || req.get('host') || req.hostname;
+    const protocol = req.get("X-Forwarded-Proto") || req.protocol || "https";
+    const host = req.get("X-Forwarded-Host") || req.get("host") || req.hostname;
     const imageUrl = `${protocol}://${host}/uploads/${req.file.filename}`;
-    
+
     console.log(`[Upload] File uploaded: ${req.file.filename}`);
     console.log(`[Upload] Protocol: ${protocol}, Host: ${host}`);
     console.log(`[Upload] Generated URL: ${imageUrl}`);
@@ -403,8 +403,8 @@ app.post("/api/upload/multiple", upload.array("images", 5), (req, res) => {
     }
 
     // Use X-Forwarded-Proto if available (for reverse proxy), otherwise use req.protocol
-    const protocol = req.get('X-Forwarded-Proto') || req.protocol || 'https';
-    const host = req.get('X-Forwarded-Host') || req.get('host') || req.hostname;
+    const protocol = req.get("X-Forwarded-Proto") || req.protocol || "https";
+    const host = req.get("X-Forwarded-Host") || req.get("host") || req.hostname;
     const imageUrls = req.files.map((file) => ({
       url: `${protocol}://${host}/uploads/${file.filename}`,
       filename: file.filename,
@@ -3253,12 +3253,12 @@ async function getOSRMRoute(waypoints) {
                       gap * 111000
                     )}m), requesting bridge route from OSRM`
                   );
-                  
+
                   try {
                     // Request a proper route between disconnected segments
                     const bridgeCoords = `${lastCoord[0]},${lastCoord[1]};${firstCoord[0]},${firstCoord[1]}`;
                     const bridgeUrl = `https://router.project-osrm.org/route/v1/driving/${bridgeCoords}?overview=full&geometries=geojson&alternatives=false&steps=false`;
-                    
+
                     const bridgeResponse = await axios.get(bridgeUrl, {
                       timeout: 10000,
                       headers: {
@@ -3273,13 +3273,20 @@ async function getOSRMRoute(waypoints) {
                       bridgeResponse.data.routes.length > 0 &&
                       bridgeResponse.data.routes[0].geometry
                     ) {
-                      const bridgeRouteCoords = bridgeResponse.data.routes[0].geometry.coordinates;
+                      const bridgeRouteCoords =
+                        bridgeResponse.data.routes[0].geometry.coordinates;
                       // Skip first point to avoid duplicate with lastCoord
                       allCoordinates.push(...bridgeRouteCoords.slice(1));
-                      console.log(`[OSRM] Bridge route added with ${bridgeRouteCoords.length - 1} points`);
+                      console.log(
+                        `[OSRM] Bridge route added with ${
+                          bridgeRouteCoords.length - 1
+                        } points`
+                      );
                     } else {
                       // Fallback: use linear interpolation if OSRM fails
-                      console.warn(`[OSRM] Bridge route failed, using linear interpolation`);
+                      console.warn(
+                        `[OSRM] Bridge route failed, using linear interpolation`
+                      );
                       const bridgePoints = 3;
                       for (let b = 1; b <= bridgePoints; b++) {
                         const t = b / (bridgePoints + 1);
@@ -3292,7 +3299,9 @@ async function getOSRMRoute(waypoints) {
                     }
                   } catch (bridgeError) {
                     // Fallback: use linear interpolation if OSRM fails
-                    console.warn(`[OSRM] Bridge route error: ${bridgeError.message}, using linear interpolation`);
+                    console.warn(
+                      `[OSRM] Bridge route error: ${bridgeError.message}, using linear interpolation`
+                    );
                     const bridgePoints = 3;
                     for (let b = 1; b <= bridgePoints; b++) {
                       const t = b / (bridgePoints + 1);
@@ -3402,12 +3411,12 @@ async function getOSRMRoute(waypoints) {
                         gap * 111000
                       )}m), requesting bridge route from OSRM`
                     );
-                    
+
                     try {
                       // Request a proper route between disconnected segments
                       const bridgeCoords = `${lastCoord[0]},${lastCoord[1]};${firstCoord[0]},${firstCoord[1]}`;
                       const bridgeUrl = `https://router.project-osrm.org/route/v1/driving/${bridgeCoords}?overview=full&geometries=geojson&alternatives=false&steps=false`;
-                      
+
                       const bridgeResponse = await axios.get(bridgeUrl, {
                         timeout: 10000,
                         headers: {
@@ -3422,13 +3431,20 @@ async function getOSRMRoute(waypoints) {
                         bridgeResponse.data.routes.length > 0 &&
                         bridgeResponse.data.routes[0].geometry
                       ) {
-                        const bridgeRouteCoords = bridgeResponse.data.routes[0].geometry.coordinates;
+                        const bridgeRouteCoords =
+                          bridgeResponse.data.routes[0].geometry.coordinates;
                         // Skip first point to avoid duplicate with lastCoord
                         allCoordinates.push(...bridgeRouteCoords.slice(1));
-                        console.log(`[OSRM] Bridge route added with ${bridgeRouteCoords.length - 1} points`);
+                        console.log(
+                          `[OSRM] Bridge route added with ${
+                            bridgeRouteCoords.length - 1
+                          } points`
+                        );
                       } else {
                         // Fallback: use linear interpolation if OSRM fails
-                        console.warn(`[OSRM] Bridge route failed, using linear interpolation`);
+                        console.warn(
+                          `[OSRM] Bridge route failed, using linear interpolation`
+                        );
                         const bridgePoints = 3;
                         for (let b = 1; b <= bridgePoints; b++) {
                           const t = b / (bridgePoints + 1);
@@ -3441,7 +3457,9 @@ async function getOSRMRoute(waypoints) {
                       }
                     } catch (bridgeError) {
                       // Fallback: use linear interpolation if OSRM fails
-                      console.warn(`[OSRM] Bridge route error: ${bridgeError.message}, using linear interpolation`);
+                      console.warn(
+                        `[OSRM] Bridge route error: ${bridgeError.message}, using linear interpolation`
+                      );
                       const bridgePoints = 3;
                       for (let b = 1; b <= bridgePoints; b++) {
                         const t = b / (bridgePoints + 1);
@@ -4218,12 +4236,14 @@ app.post("/api/vrp/optimize", async (req, res) => {
           } else {
             // Route doesn't start at depot, get proper route from depot to first route point
             console.log(
-              `[VRP] Route doesn't start at depot (${Math.round(distToDepot)}m away), requesting OSRM route from depot to route start`
+              `[VRP] Route doesn't start at depot (${Math.round(
+                distToDepot
+              )}m away), requesting OSRM route from depot to route start`
             );
             try {
               const depotToRouteCoords = `${depotCoords[0]},${depotCoords[1]};${firstRouteCoord[0]},${firstRouteCoord[1]}`;
               const depotToRouteUrl = `https://router.project-osrm.org/route/v1/driving/${depotToRouteCoords}?overview=full&geometries=geojson&alternatives=false&steps=false`;
-              
+
               const depotToRouteResponse = await axios.get(depotToRouteUrl, {
                 timeout: 10000,
                 headers: {
@@ -4238,23 +4258,30 @@ app.post("/api/vrp/optimize", async (req, res) => {
                 depotToRouteResponse.data.routes.length > 0 &&
                 depotToRouteResponse.data.routes[0].geometry
               ) {
-                const depotRouteCoords = depotToRouteResponse.data.routes[0].geometry.coordinates;
+                const depotRouteCoords =
+                  depotToRouteResponse.data.routes[0].geometry.coordinates;
                 // Add depot route (skip last point to avoid duplicate with firstRouteCoord)
                 newCoordinates.push(...depotRouteCoords.slice(0, -1));
                 // Then add all route coordinates
                 newCoordinates.push(...routeGeometry.coordinates);
                 console.log(
-                  `[VRP] Depot route added with ${depotRouteCoords.length - 1} points`
+                  `[VRP] Depot route added with ${
+                    depotRouteCoords.length - 1
+                  } points`
                 );
               } else {
                 // Fallback: add depot point and route coordinates
-                console.warn(`[VRP] Depot route failed, adding depot point directly`);
+                console.warn(
+                  `[VRP] Depot route failed, adding depot point directly`
+                );
                 newCoordinates.push(depotCoords);
                 newCoordinates.push(...routeGeometry.coordinates);
               }
             } catch (depotRouteError) {
               // Fallback: add depot point and route coordinates
-              console.warn(`[VRP] Depot route error: ${depotRouteError.message}, adding depot point directly`);
+              console.warn(
+                `[VRP] Depot route error: ${depotRouteError.message}, adding depot point directly`
+              );
               newCoordinates.push(depotCoords);
               newCoordinates.push(...routeGeometry.coordinates);
             }
@@ -4280,12 +4307,14 @@ app.post("/api/vrp/optimize", async (req, res) => {
           if (distToDump > 50) {
             // Route doesn't end at dump, get proper route from last route point to dump
             console.log(
-              `[VRP] Route doesn't end at dump (${Math.round(distToDump)}m away), requesting OSRM route from route end to dump`
+              `[VRP] Route doesn't end at dump (${Math.round(
+                distToDump
+              )}m away), requesting OSRM route from route end to dump`
             );
             try {
               const routeToDumpCoords = `${lastCoord[0]},${lastCoord[1]};${dumpCoords[0]},${dumpCoords[1]}`;
               const routeToDumpUrl = `https://router.project-osrm.org/route/v1/driving/${routeToDumpCoords}?overview=full&geometries=geojson&alternatives=false&steps=false`;
-              
+
               const routeToDumpResponse = await axios.get(routeToDumpUrl, {
                 timeout: 10000,
                 headers: {
@@ -4300,20 +4329,27 @@ app.post("/api/vrp/optimize", async (req, res) => {
                 routeToDumpResponse.data.routes.length > 0 &&
                 routeToDumpResponse.data.routes[0].geometry
               ) {
-                const dumpRouteCoords = routeToDumpResponse.data.routes[0].geometry.coordinates;
+                const dumpRouteCoords =
+                  routeToDumpResponse.data.routes[0].geometry.coordinates;
                 // Skip first point to avoid duplicate with lastCoord
                 newCoordinates.push(...dumpRouteCoords.slice(1));
                 console.log(
-                  `[VRP] Dump route added with ${dumpRouteCoords.length - 1} points`
+                  `[VRP] Dump route added with ${
+                    dumpRouteCoords.length - 1
+                  } points`
                 );
               } else {
                 // Fallback: add dump point directly
-                console.warn(`[VRP] Dump route failed, adding dump point directly`);
+                console.warn(
+                  `[VRP] Dump route failed, adding dump point directly`
+                );
                 newCoordinates.push(dumpCoords);
               }
             } catch (dumpRouteError) {
               // Fallback: add dump point directly
-              console.warn(`[VRP] Dump route error: ${dumpRouteError.message}, adding dump point directly`);
+              console.warn(
+                `[VRP] Dump route error: ${dumpRouteError.message}, adding dump point directly`
+              );
               newCoordinates.push(dumpCoords);
             }
           } else {
@@ -8179,6 +8215,16 @@ app.post("/api/worker/route-stops/:id/complete", async (req, res) => {
     const { id } = req.params;
     const { actual_weight_kg, photo_urls, notes } = req.body;
 
+    console.log(`📦 [Complete Stop] Request:`, {
+      id,
+      actual_weight_kg,
+      photo_urls,
+      notes,
+    });
+
+    // Use default weight if not provided (5kg)
+    const weight = actual_weight_kg || 5.0;
+
     // 1. Update route_stop
     const result = await db.query(
       `
@@ -8192,7 +8238,7 @@ app.post("/api/worker/route-stops/:id/complete", async (req, res) => {
       WHERE id = $1
       RETURNING *, route_id, point_id
       `,
-      [id, actual_weight_kg, photo_urls || [], notes]
+      [id, weight, photo_urls || [], notes]
     );
 
     if (result.rows.length === 0) {
@@ -8871,6 +8917,98 @@ app.get("/api/auth/me", async (req, res) => {
 });
 
 // ==================== GAMIFICATION API ====================
+
+/**
+ * GET /api/users/:userId/statistics/summary
+ * Get comprehensive user statistics summary
+ */
+app.get("/api/users/:userId/statistics/summary", async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // 1. Get total schedules created
+    const schedulesQuery = await db.query(
+      `SELECT COUNT(*) as total_schedules,
+              SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_schedules,
+              SUM(COALESCE(actual_weight, estimated_weight, 0)) as total_waste_kg
+       FROM schedules
+       WHERE citizen_id = $1`,
+      [userId]
+    );
+
+    const scheduleStats = schedulesQuery.rows[0] || {
+      total_schedules: 0,
+      completed_schedules: 0,
+      total_waste_kg: 0,
+    };
+
+    // 2. Get points and level
+    const pointsQuery = await db.query(
+      `SELECT points, level, total_checkins, streak_days
+       FROM user_points
+       WHERE user_id = $1`,
+      [userId]
+    );
+
+    const pointsData = pointsQuery.rows[0] || {
+      points: 0,
+      level: 1,
+      total_checkins: 0,
+      streak_days: 0,
+    };
+
+    // 3. Calculate CO2 saved (average 0.5kg CO2 per kg waste)
+    const co2Saved = (parseFloat(scheduleStats.total_waste_kg) || 0) * 0.5;
+
+    // 4. Get badges count
+    const badgesQuery = await db.query(
+      `SELECT COUNT(*) as total_badges
+       FROM user_badges
+       WHERE user_id = $1`,
+      [userId]
+    );
+
+    const totalBadges = parseInt(badgesQuery.rows[0]?.total_badges) || 0;
+
+    // 5. Determine rank tier
+    let rankTier = "Người mới";
+    if (pointsData.level >= 10) rankTier = "Huyền thoại";
+    else if (pointsData.level >= 7) rankTier = "Chuyên gia";
+    else if (pointsData.level >= 5) rankTier = "Chiến binh xanh";
+    else if (pointsData.level >= 3) rankTier = "Người tích cực";
+
+    // 6. Get leaderboard rank
+    const rankQuery = await db.query(
+      `SELECT COUNT(*) + 1 as rank
+       FROM user_points
+       WHERE points > (SELECT COALESCE(points, 0) FROM user_points WHERE user_id = $1)`,
+      [userId]
+    );
+
+    const rank = parseInt(rankQuery.rows[0]?.rank) || 1;
+
+    res.json({
+      ok: true,
+      data: {
+        totalSchedules: parseInt(scheduleStats.total_schedules) || 0,
+        completedSchedules: parseInt(scheduleStats.completed_schedules) || 0,
+        totalWasteKg: parseFloat(scheduleStats.total_waste_kg) || 0,
+        totalCO2Saved: parseFloat(co2Saved.toFixed(2)),
+        totalPoints: pointsData.points,
+        level: pointsData.level,
+        rankTier: rankTier,
+        rank: rank,
+        totalBadges: totalBadges,
+        streakDays: pointsData.streak_days,
+        totalCheckins: pointsData.total_checkins,
+      },
+    });
+  } catch (error) {
+    console.error("[Statistics] Get user summary error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 // Get user statistics (points, badges, rank)
 app.get("/api/gamification/stats/:userId", async (req, res) => {
   try {

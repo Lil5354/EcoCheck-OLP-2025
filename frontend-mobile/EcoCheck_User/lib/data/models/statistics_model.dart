@@ -74,12 +74,34 @@ class WasteTypeDistribution extends Equatable {
 
 /// Overall Statistics Summary
 class StatisticsSummary extends Equatable {
+  final int totalSchedules;
+  final int completedSchedules;
+  final double totalWasteKg;
+  final double totalCO2Saved;
+  final int totalPoints;
+  final int level;
+  final String rankTier;
+  final int rank;
+  final int totalBadges;
+  final int streakDays;
+  final int totalCheckins;
   final double totalWasteThisMonth;
   final double totalCO2SavedThisMonth;
   final List<MonthlyStatistics> monthlyData;
   final List<WasteTypeDistribution> wasteDistribution;
 
   const StatisticsSummary({
+    this.totalSchedules = 0,
+    this.completedSchedules = 0,
+    this.totalWasteKg = 0.0,
+    this.totalCO2Saved = 0.0,
+    this.totalPoints = 0,
+    this.level = 1,
+    this.rankTier = 'Người mới',
+    this.rank = 0,
+    this.totalBadges = 0,
+    this.streakDays = 0,
+    this.totalCheckins = 0,
     required this.totalWasteThisMonth,
     required this.totalCO2SavedThisMonth,
     required this.monthlyData,
@@ -88,6 +110,19 @@ class StatisticsSummary extends Equatable {
 
   factory StatisticsSummary.fromJson(Map<String, dynamic> json) {
     return StatisticsSummary(
+      totalSchedules: json['totalSchedules'] as int? ?? 0,
+      completedSchedules: json['completedSchedules'] as int? ?? 0,
+      totalWasteKg:
+          double.tryParse(json['totalWasteKg']?.toString() ?? '0') ?? 0.0,
+      totalCO2Saved:
+          double.tryParse(json['totalCO2Saved']?.toString() ?? '0') ?? 0.0,
+      totalPoints: json['totalPoints'] as int? ?? 0,
+      level: json['level'] as int? ?? 1,
+      rankTier: json['rankTier'] as String? ?? 'Người mới',
+      rank: json['rank'] as int? ?? 0,
+      totalBadges: json['totalBadges'] as int? ?? 0,
+      streakDays: json['streakDays'] as int? ?? 0,
+      totalCheckins: json['totalCheckins'] as int? ?? 0,
       totalWasteThisMonth:
           double.tryParse(
             json['totalWasteThisMonth']?.toString() ??
@@ -133,6 +168,17 @@ class StatisticsSummary extends Equatable {
 
   @override
   List<Object?> get props => [
+    totalSchedules,
+    completedSchedules,
+    totalWasteKg,
+    totalCO2Saved,
+    totalPoints,
+    level,
+    rankTier,
+    rank,
+    totalBadges,
+    streakDays,
+    totalCheckins,
     totalWasteThisMonth,
     totalCO2SavedThisMonth,
     monthlyData,
