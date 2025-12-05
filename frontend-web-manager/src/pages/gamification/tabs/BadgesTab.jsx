@@ -115,6 +115,8 @@ export default function BadgesTab({ showToast }) {
     rarity: "common",
     active: true,
   });
+  const [iconFile, setIconFile] = useState(null);
+  const [iconPreview, setIconPreview] = useState(null);
 
   useEffect(() => {
     loadBadges();
@@ -163,6 +165,13 @@ export default function BadgesTab({ showToast }) {
       rarity: badge.rarity || "common",
       active: badge.active !== undefined ? badge.active : true,
     });
+    setIconFile(null);
+    // Set preview if icon_url is an image URL
+    if (badge.icon_url && isImagePath(badge.icon_url)) {
+      setIconPreview(badge.icon_url);
+    } else {
+      setIconPreview(null);
+    }
     setModalOpen(true);
   }
 
@@ -176,6 +185,8 @@ export default function BadgesTab({ showToast }) {
       rarity: "common",
       active: true,
     });
+    setIconFile(null);
+    setIconPreview(null);
     setModalOpen(true);
   }
 
@@ -186,11 +197,33 @@ export default function BadgesTab({ showToast }) {
     }
 
     try {
+      // Upload icon file if a new file is selected
+      let iconUrl = formData.icon_url;
+      if (iconFile) {
+        const uploadRes = await api.uploadImage(iconFile);
+        if (!uploadRes.ok) {
+          showToast("Lỗi upload hình ảnh: " + uploadRes.error, "error");
+          return;
+        }
+        iconUrl = uploadRes.data.url;
+      }
+
+      // Prepare badge data
+      const badgeData = {
+        ...formData,
+        icon_url: iconUrl,
+        code: formData.name.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, ""),
+        // Default criteria based on points_reward (can be customized later)
+        criteria: {
+          min_checkins: Math.max(1, Math.floor(formData.points_reward / 10)),
+        },
+      };
+
       let res;
       if (selectedBadge) {
-        res = await api.updateBadge(selectedBadge.id, formData);
+        res = await api.updateBadge(selectedBadge.id, badgeData);
       } else {
-        res = await api.createBadge(formData);
+        res = await api.createBadge(badgeData);
       }
 
       if (res.ok) {
@@ -199,6 +232,8 @@ export default function BadgesTab({ showToast }) {
           "success"
         );
         setModalOpen(false);
+        setIconFile(null);
+        setIconPreview(null);
         loadBadges();
         loadAnalytics();
       } else {
@@ -206,6 +241,32 @@ export default function BadgesTab({ showToast }) {
       }
     } catch (error) {
       showToast("Lỗi: " + error.message, "error");
+    }
+  }
+
+  function handleIconFileChange(e) {
+    const file = e.target.files[0];
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith("image/")) {
+        showToast("Vui lòng chọn file ảnh", "error");
+        return;
+      }
+      
+      // Validate PNG
+      if (file.type !== "image/png") {
+        showToast("Vui lòng chọn file PNG", "error");
+        return;
+      }
+
+      setIconFile(file);
+      
+      // Create preview
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setIconPreview(reader.result);
+      };
+      reader.readAsDataURL(file);
     }
   }
 
@@ -555,6 +616,8 @@ export default function BadgesTab({ showToast }) {
         onClose={() => {
           setModalOpen(false);
           setSelectedBadge(null);
+          setIconFile(null);
+          setIconPreview(null);
         }}
         onSubmit={handleSaveBadge}
         submitLabel={selectedBadge ? "Cập nhật" : "Tạo mới"}
@@ -597,13 +660,12 @@ export default function BadgesTab({ showToast }) {
             </div>
             <div>
               <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "500" }}>
-                Icon (Emoji hoặc URL)
+                Icon (Upload file PNG)
               </label>
               <input
-                type="text"
-                value={formData.icon_url}
-                onChange={(e) => setFormData({ ...formData, icon_url: e.target.value })}
-                placeholder="🏆 hoặc URL hình ảnh"
+                type="file"
+                accept="image/png"
+                onChange={handleIconFileChange}
                 style={{
                   width: "100%",
                   padding: "0.75rem",
@@ -611,6 +673,46 @@ export default function BadgesTab({ showToast }) {
                   borderRadius: "4px",
                 }}
               />
+              {iconPreview && (
+                <div style={{ marginTop: "0.5rem" }}>
+                  <div style={{ fontSize: "0.875rem", color: "#666", marginBottom: "0.25rem" }}>
+                    Preview:
+                  </div>
+                  <img
+                    src={iconPreview}
+                    alt="Icon preview"
+                    style={{
+                      width: "64px",
+                      height: "64px",
+                      objectFit: "contain",
+                      border: "1px solid #ddd",
+                      borderRadius: "4px",
+                      padding: "0.25rem",
+                      background: "#f9fafb",
+                    }}
+                  />
+                </div>
+              )}
+              {!iconPreview && formData.icon_url && isImagePath(formData.icon_url) && (
+                <div style={{ marginTop: "0.5rem" }}>
+                  <div style={{ fontSize: "0.875rem", color: "#666", marginBottom: "0.25rem" }}>
+                    Icon hiện tại:
+                  </div>
+                  <img
+                    src={formData.icon_url}
+                    alt="Current icon"
+                    style={{
+                      width: "64px",
+                      height: "64px",
+                      objectFit: "contain",
+                      border: "1px solid #ddd",
+                      borderRadius: "4px",
+                      padding: "0.25rem",
+                      background: "#f9fafb",
+                    }}
+                  />
+                </div>
+              )}
             </div>
             <div>
               <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "500" }}>

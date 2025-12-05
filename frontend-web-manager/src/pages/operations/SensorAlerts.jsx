@@ -88,7 +88,7 @@ export default function SensorAlerts() {
         <main className="main">
           <div className="container">
             <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>
-              Cảnh báo thùng rác thông minh (Smart Container Sensors)
+              Cảnh báo thùng rác thông minh
             </h1>
 
             {/* Filters */}

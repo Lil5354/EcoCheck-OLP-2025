@@ -263,8 +263,48 @@ const api = {
   getBadges: () => request("/gamification/badges", { method: "GET" }),
   getBadgeAnalytics: () =>
     request("/gamification/badges/analytics", { method: "GET" }),
+  createBadge: (data) =>
+    request("/gamification/badges", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateBadge: (id, data) =>
+    request(`/gamification/badges/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
   deleteBadge: (id) =>
     request(`/gamification/badges/${id}`, { method: "DELETE" }),
+  uploadImage: async (file) => {
+    const formData = new FormData();
+    formData.append("image", file);
+    
+    try {
+      const response = await fetch(`${API_BASE}/upload`, {
+        method: "POST",
+        body: formData,
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok && data.success && data.url) {
+        return {
+          ok: true,
+          data: { url: data.url },
+        };
+      } else {
+        return {
+          ok: false,
+          error: data.error || "Upload failed",
+        };
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        error: error.message || "Network error",
+      };
+    }
+  },
   getPointTransactions: (params) =>
     request("/gamification/points/transactions", { method: "GET", params }),
   getPointsRules: () =>

@@ -220,7 +220,7 @@ export default function POI() {
         <main className="main">
           <div className="container">
             <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>
-              Điểm quan tâm (Points of Interest)
+              Điểm quan tâm
             </h1>
 
             {/* Search Controls */}
@@ -229,7 +229,7 @@ export default function POI() {
                 {/* Location Input */}
                 <div>
                   <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 500 }}>
-                    Vĩ độ (Latitude)
+                    Vĩ độ
                   </label>
                   <input
                     type="number"
@@ -242,7 +242,7 @@ export default function POI() {
                 </div>
                 <div>
                   <label style={{ display: 'block', marginBottom: 4, fontSize: 14, fontWeight: 500 }}>
-                    Kinh độ (Longitude)
+                    Kinh độ
                   </label>
                   <input
                     type="number"

@@ -73,7 +73,7 @@ export default function AirQuality() {
         <main className="main">
           <div className="container">
             <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 16 }}>
-              Chất lượng không khí (Air Quality Monitoring)
+              Chất lượng không khí
             </h1>
 
             {/* Location Selector */}

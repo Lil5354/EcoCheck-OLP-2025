@@ -393,9 +393,9 @@ export default function MapPicker({ center = [106.7, 10.78], zoom = 12, onPick, 
         <div style={{ marginBottom: 4 }}>
           <strong>Tọa độ:</strong> {
             (typeof coords[1] === 'number' ? coords[1] : parseFloat(coords[1]) || 0).toFixed(5)
-          } (Vĩ độ), {
+          } Vĩ độ, {
             (typeof coords[0] === 'number' ? coords[0] : parseFloat(coords[0]) || 0).toFixed(5)
-          } (Kinh độ)
+          } Kinh độ
         </div>
         <span style={{ fontSize: 11, color: '#aaa' }}>
           💡 Nhấp vào bản đồ hoặc kéo marker để chọn vị trí. Nhập địa chỉ để tìm kiếm tự động.

@@ -187,35 +187,164 @@ function DispatchModal({ isOpen, onClose, vehicles, alert, onAssign }) {
   };
 
   return (
-    <div className="modal-overlay">
-      <div className="modal">
-        <div className="modal-header">
-          <h3>Điều phối lại cho sự cố tại điểm {alert?.point_name || `ID: ${alert?.point_id}`}</h3>
-          <button onClick={onClose} className="close-button" disabled={assigning}>&times;</button>
+    <div 
+      className="modal-overlay"
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'rgba(0, 0, 0, 0.75)',
+        backdropFilter: 'blur(4px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 9999,
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !assigning) {
+          onClose();
+        }
+      }}
+    >
+      <div 
+        className="modal"
+        style={{
+          background: '#ffffff',
+          padding: '28px',
+          borderRadius: '12px',
+          width: '90%',
+          maxWidth: '600px',
+          boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1)',
+          border: '2px solid #3b82f6',
+          animation: 'fadeIn 0.2s ease-out',
+        }}
+      >
+        <div className="modal-header" style={{ borderBottom: '2px solid #e5e7eb', paddingBottom: '16px', marginBottom: '20px' }}>
+          <h3 style={{ margin: 0, fontSize: '20px', fontWeight: 600, color: '#1f2937' }}>
+            Điều phối lại cho sự cố tại điểm {alert?.point_name || `ID: ${alert?.point_id}`}
+          </h3>
+          <button 
+            onClick={onClose} 
+            className="close-button" 
+            disabled={assigning}
+            style={{
+              background: 'none',
+              border: 'none',
+              fontSize: '28px',
+              cursor: assigning ? 'not-allowed' : 'pointer',
+              color: '#6b7280',
+              padding: '0',
+              width: '32px',
+              height: '32px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: '4px',
+              transition: 'all 0.2s',
+            }}
+            onMouseEnter={(e) => {
+              if (!assigning) e.target.style.background = '#f3f4f6';
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.background = 'none';
+            }}
+          >
+            &times;
+          </button>
         </div>
         <div className="modal-body">
-          <p>Chọn một phương tiện gần nhất để xử lý:</p>
+          <p style={{ fontSize: '16px', color: '#4b5563', marginBottom: '20px', fontWeight: 500 }}>
+            Chọn một phương tiện gần nhất để xử lý:
+          </p>
           <div className="vehicle-suggestions">
             {vehicles.length > 0 ? (
               vehicles.map(v => (
-                <div key={v.id} className="vehicle-suggestion-item">
-                  <span><strong>Xe:</strong> {v.id} ({v.license_plate || 'N/A'})</span>
-                  <span><strong>Khoảng cách:</strong> {Math.round(v.distance)}m</span>
+                <div 
+                  key={v.id} 
+                  className="vehicle-suggestion-item"
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '16px',
+                    background: '#f9fafb',
+                    borderRadius: '8px',
+                    border: '1px solid #e5e7eb',
+                    transition: 'all 0.2s',
+                    marginBottom: '12px',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#f3f4f6';
+                    e.currentTarget.style.borderColor = '#3b82f6';
+                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(59, 130, 246, 0.15)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = '#f9fafb';
+                    e.currentTarget.style.borderColor = '#e5e7eb';
+                    e.currentTarget.style.boxShadow = 'none';
+                  }}
+                >
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
+                    <span style={{ fontSize: '15px', fontWeight: 600, color: '#1f2937' }}>
+                      <strong>Xe:</strong> {v.id} {v.license_plate ? `(${v.license_plate})` : ''}
+                    </span>
+                    <span style={{ fontSize: '14px', color: '#6b7280' }}>
+                      <strong>Khoảng cách:</strong> {Math.round(v.distance)}m
+                    </span>
+                  </div>
                   <button
                     className="btn btn-sm btn-success"
                     onClick={() => handleAssign(v.id)}
                     disabled={assigning}
+                    style={{
+                      padding: '10px 20px',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      borderRadius: '6px',
+                      border: 'none',
+                      cursor: assigning ? 'not-allowed' : 'pointer',
+                      background: assigning ? '#9ca3af' : '#22c55e',
+                      color: 'white',
+                      transition: 'all 0.2s',
+                      minWidth: '120px',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!assigning) {
+                        e.target.style.background = '#16a34a';
+                        e.target.style.transform = 'translateY(-1px)';
+                        e.target.style.boxShadow = '0 4px 12px rgba(34, 197, 94, 0.4)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      e.target.style.background = assigning ? '#9ca3af' : '#22c55e';
+                      e.target.style.transform = 'translateY(0)';
+                      e.target.style.boxShadow = 'none';
+                    }}
                   >
                     {assigning ? 'Đang giao...' : 'Giao việc'}
                   </button>
                 </div>
               ))
             ) : (
-              <p>Không có xe nào phù hợp.</p>
+              <p style={{ textAlign: 'center', color: '#6b7280', padding: '20px' }}>Không có xe nào phù hợp.</p>
             )}
           </div>
         </div>
       </div>
+      <style>{`
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+            transform: scale(0.95) translateY(-10px);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+          }
+        }
+      `}</style>
     </div>
   );
 }
