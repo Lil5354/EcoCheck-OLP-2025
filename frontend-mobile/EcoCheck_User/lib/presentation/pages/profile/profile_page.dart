@@ -58,8 +58,10 @@ class _ProfilePageState extends State<ProfilePage> {
 
           if (gamificationState is UserStatsLoaded) {
             totalPoints = gamificationState.points;
-            // Note: UserStatsLoaded doesn't have badges, use default
             totalBadges = 0;
+          } else if (gamificationState is GamificationDataLoaded) {
+            totalPoints = gamificationState.points;
+            totalBadges = gamificationState.badges.length;
           }
 
           return ListView(

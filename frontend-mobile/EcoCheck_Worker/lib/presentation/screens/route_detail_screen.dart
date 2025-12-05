@@ -105,7 +105,17 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
             backgroundColor: AppColors.completed,
           ),
         );
-        Navigator.pop(context);
+
+        // Reload routes list
+        context.read<RouteBloc>().add(
+          LoadRoutesRequested(personnelId: widget.route.workerId),
+        );
+
+        // Pop về màn hình chính
+        Navigator.of(context).popUntil((route) {
+          return route.isFirst ||
+              !route.settings.name?.contains('RouteDetail') == true;
+        });
       }
     });
   }
@@ -140,6 +150,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
         });
 
         // Update status qua BLoC với imageUrls (không có weight)
+        // BLoC sẽ tự động reload route detail sau khi update thành công
         context.read<RouteBloc>().add(
           UpdatePointStatusRequested(
             routeId: widget.route.id,
@@ -148,30 +159,6 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
             photoUrls: imageUrls,
           ),
         );
-
-        // Force reload để cập nhật map colors realtime
-        context.read<RouteBloc>().add(
-          LoadRoutesRequested(personnelId: widget.route.workerId),
-        );
-
-        // Show success snackbar
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                '✅ Đã hoàn thành điểm thu gom\n📍 ${point.address}',
-              ),
-              backgroundColor: AppColors.completed,
-              duration: const Duration(seconds: 2),
-            ),
-          );
-
-          // Auto-select next pending task
-          _autoSelectNextTask();
-
-          // Force rebuild UI để cập nhật markers và polylines
-          setState(() {});
-        }
 
         // Don't auto-show completion dialog - user must tap "Kết thúc chuyến" button
       },
@@ -277,7 +264,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
       body: BlocListener<RouteBloc, RouteState>(
         listener: (context, state) {
           if (state is RouteActionSuccess) {
-            // Nếu đã hoàn thành route, quay lại màn hình trước
+            // Nếu đã hoàn thành route, quay về trang chủ
             if (state.message.contains('hoàn thành lộ trình')) {
               // Show snackbar
               if (mounted) {
@@ -289,8 +276,18 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                   ),
                 );
 
-                // Pop immediately without delay to prevent black screen
-                Navigator.of(context).pop();
+                // Reload routes list
+                context.read<RouteBloc>().add(
+                  LoadRoutesRequested(personnelId: widget.route.workerId),
+                );
+
+                // Pop về màn hình chính (routes list)
+                // Sử dụng popUntil để đảm bảo quay về đúng màn hình
+                Navigator.of(context).popUntil((route) {
+                  // Pop until we reach a route that's not the detail screen
+                  return route.isFirst ||
+                      !route.settings.name?.contains('RouteDetail') == true;
+                });
               }
             }
           }
@@ -303,6 +300,26 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                   backgroundColor: Colors.red,
                 ),
               );
+            }
+          }
+
+          // Khi update point thành công, show snackbar và auto-select next task
+          if (state is RouteActionSuccess &&
+              state.message.contains('hoàn thành điểm thu gom')) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('✅ ${state.message}'),
+                  backgroundColor: AppColors.completed,
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+
+              // Auto-select next pending task
+              _autoSelectNextTask();
+
+              // Force rebuild UI
+              setState(() {});
             }
           }
         },

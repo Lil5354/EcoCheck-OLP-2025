@@ -1029,10 +1029,10 @@ app.post("/api/dev/seed-dashboard-data", async (req, res) => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
-    
+
     // Lấy user và personnel đầu tiên
     const userResult = await db.query(
       `SELECT id FROM users WHERE role = 'citizen' LIMIT 1`
@@ -1040,54 +1040,115 @@ app.post("/api/dev/seed-dashboard-data", async (req, res) => {
     const personnelResult = await db.query(
       `SELECT id FROM personnel WHERE status = 'active' LIMIT 1`
     );
-    
+
     if (userResult.rows.length === 0 || personnelResult.rows.length === 0) {
       return res.status(400).json({
         ok: false,
-        error: "No users or personnel found. Please run seed_data.sql first."
+        error: "No users or personnel found. Please run seed_data.sql first.",
       });
     }
-    
+
     const citizenId = userResult.rows[0].id;
     const employeeId = personnelResult.rows[0].id;
-    
+
     // Tạo schedules cho hôm nay
     const todaySchedules = [
       // Completed schedules (có actual_weight) - 6 schedules
-      { waste_type: 'household', weight: 25.5, status: 'completed', time_slot: 'morning' },
-      { waste_type: 'recyclable', weight: 18.2, status: 'completed', time_slot: 'morning' },
-      { waste_type: 'household', weight: 32.1, status: 'completed', time_slot: 'afternoon' },
-      { waste_type: 'bulky', weight: 45.8, status: 'completed', time_slot: 'afternoon' },
-      { waste_type: 'recyclable', weight: 22.3, status: 'completed', time_slot: 'evening' },
-      { waste_type: 'household', weight: 28.7, status: 'completed', time_slot: 'evening' },
+      {
+        waste_type: "household",
+        weight: 25.5,
+        status: "completed",
+        time_slot: "morning",
+      },
+      {
+        waste_type: "recyclable",
+        weight: 18.2,
+        status: "completed",
+        time_slot: "morning",
+      },
+      {
+        waste_type: "household",
+        weight: 32.1,
+        status: "completed",
+        time_slot: "afternoon",
+      },
+      {
+        waste_type: "bulky",
+        weight: 45.8,
+        status: "completed",
+        time_slot: "afternoon",
+      },
+      {
+        waste_type: "recyclable",
+        weight: 22.3,
+        status: "completed",
+        time_slot: "evening",
+      },
+      {
+        waste_type: "household",
+        weight: 28.7,
+        status: "completed",
+        time_slot: "evening",
+      },
       // In progress/assigned schedules (chưa completed) - 3 schedules
-      { waste_type: 'household', weight: null, status: 'in_progress', time_slot: 'morning' },
-      { waste_type: 'recyclable', weight: null, status: 'assigned', time_slot: 'afternoon' },
-      { waste_type: 'bulky', weight: null, status: 'assigned', time_slot: 'evening' },
+      {
+        waste_type: "household",
+        weight: null,
+        status: "in_progress",
+        time_slot: "morning",
+      },
+      {
+        waste_type: "recyclable",
+        weight: null,
+        status: "assigned",
+        time_slot: "afternoon",
+      },
+      {
+        waste_type: "bulky",
+        weight: null,
+        status: "assigned",
+        time_slot: "evening",
+      },
     ];
-    
+
     // Tạo schedules cho hôm qua (để có dữ liệu so sánh)
     const yesterdaySchedules = [
-      { waste_type: 'household', weight: 20.0, status: 'completed', time_slot: 'morning' },
-      { waste_type: 'recyclable', weight: 15.5, status: 'completed', time_slot: 'afternoon' },
-      { waste_type: 'household', weight: 30.0, status: 'completed', time_slot: 'evening' },
+      {
+        waste_type: "household",
+        weight: 20.0,
+        status: "completed",
+        time_slot: "morning",
+      },
+      {
+        waste_type: "recyclable",
+        weight: 15.5,
+        status: "completed",
+        time_slot: "afternoon",
+      },
+      {
+        waste_type: "household",
+        weight: 30.0,
+        status: "completed",
+        time_slot: "evening",
+      },
     ];
-    
+
     let insertedToday = 0;
     let insertedYesterday = 0;
-    
+
     // Insert today schedules
     for (const sched of todaySchedules) {
       const scheduledDate = new Date(today);
-      if (sched.time_slot === 'afternoon') scheduledDate.setHours(14, 0, 0, 0);
-      else if (sched.time_slot === 'evening') scheduledDate.setHours(18, 0, 0, 0);
+      if (sched.time_slot === "afternoon") scheduledDate.setHours(14, 0, 0, 0);
+      else if (sched.time_slot === "evening")
+        scheduledDate.setHours(18, 0, 0, 0);
       else scheduledDate.setHours(8, 0, 0, 0);
-      
-      const completedAt = sched.status === 'completed' ? new Date(today) : null;
+
+      const completedAt = sched.status === "completed" ? new Date(today) : null;
       if (completedAt) {
         completedAt.setHours(scheduledDate.getHours() + 1, 0, 0, 0);
       }
-      
+
       await db.query(
         `INSERT INTO schedules (
           citizen_id, scheduled_date, time_slot, waste_type,
@@ -1106,22 +1167,23 @@ app.post("/api/dev/seed-dashboard-data", async (req, res) => {
           completedAt,
           10.7769,
           106.7009,
-          '123 Đường Lê Lợi, Quận 1, TP.HCM'
+          "123 Đường Lê Lợi, Quận 1, TP.HCM",
         ]
       );
       insertedToday++;
     }
-    
+
     // Insert yesterday schedules
     for (const sched of yesterdaySchedules) {
       const scheduledDate = new Date(yesterday);
-      if (sched.time_slot === 'afternoon') scheduledDate.setHours(14, 0, 0, 0);
-      else if (sched.time_slot === 'evening') scheduledDate.setHours(18, 0, 0, 0);
+      if (sched.time_slot === "afternoon") scheduledDate.setHours(14, 0, 0, 0);
+      else if (sched.time_slot === "evening")
+        scheduledDate.setHours(18, 0, 0, 0);
       else scheduledDate.setHours(8, 0, 0, 0);
-      
+
       const completedAt = new Date(yesterday);
       completedAt.setHours(scheduledDate.getHours() + 1, 0, 0, 0);
-      
+
       await db.query(
         `INSERT INTO schedules (
           citizen_id, scheduled_date, time_slot, waste_type,
@@ -1140,29 +1202,34 @@ app.post("/api/dev/seed-dashboard-data", async (req, res) => {
           completedAt,
           10.7769,
           106.7009,
-          '123 Đường Lê Lợi, Quận 1, TP.HCM'
+          "123 Đường Lê Lợi, Quận 1, TP.HCM",
         ]
       );
       insertedYesterday++;
     }
-    
+
     const totalWeightToday = todaySchedules
-      .filter(s => s.status === 'completed')
+      .filter((s) => s.status === "completed")
       .reduce((sum, s) => sum + (s.weight || 0), 0);
-    const collectionRate = (todaySchedules.filter(s => s.status === 'completed').length / todaySchedules.length * 100).toFixed(1);
-    
+    const collectionRate = (
+      (todaySchedules.filter((s) => s.status === "completed").length /
+        todaySchedules.length) *
+      100
+    ).toFixed(1);
+
     res.json({
       ok: true,
       message: `Seeded ${insertedToday} schedules for today and ${insertedYesterday} for yesterday`,
       data: {
         today: insertedToday,
         yesterday: insertedYesterday,
-        totalWeightToday: totalWeightToday.toFixed(1) + ' kg',
-        totalWeightTodayTons: (totalWeightToday / 1000).toFixed(1) + ' t',
-        collectionRate: collectionRate + '%',
-        completedToday: todaySchedules.filter(s => s.status === 'completed').length,
-        totalToday: todaySchedules.length
-      }
+        totalWeightToday: totalWeightToday.toFixed(1) + " kg",
+        totalWeightTodayTons: (totalWeightToday / 1000).toFixed(1) + " t",
+        collectionRate: collectionRate + "%",
+        completedToday: todaySchedules.filter((s) => s.status === "completed")
+          .length,
+        totalToday: todaySchedules.length,
+      },
     });
   } catch (error) {
     console.error("[Dev] Seed dashboard data error:", error);
@@ -4285,13 +4352,28 @@ app.post("/api/vrp/save-routes", async (req, res) => {
         new Date().toISOString().split("T")[0];
 
       await db.query(
-        `INSERT INTO routes (id, vehicle_id, driver_id, depot_id, status, planned_distance_km, scheduled_date, name, meta)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        `INSERT INTO routes (id, vehicle_id, driver_id, depot_id, dump_id, depot_lat, depot_lon, dump_lat, dump_lon, status, planned_distance_km, scheduled_date, name, meta)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
         [
           routeId,
           routeData.vehicleId,
           routeData.driver_id || null, // Optional driver assignment
           routeData.depot_id || null,
+          routeData.dump_id || null,
+          // Store actual depot coordinates used by VRP (may differ from depot location)
+          routeData.depot && routeData.depot.lat
+            ? parseFloat(routeData.depot.lat)
+            : null,
+          routeData.depot && routeData.depot.lon
+            ? parseFloat(routeData.depot.lon)
+            : null,
+          // Store actual dump coordinates
+          routeData.dump && routeData.dump.lat
+            ? parseFloat(routeData.dump.lat)
+            : null,
+          routeData.dump && routeData.dump.lon
+            ? parseFloat(routeData.dump.lon)
+            : null,
           "planned", // Status: planned (ready to start), in_progress (active), completed, cancelled
           routeData.distance
             ? parseFloat((routeData.distance / 1000).toFixed(2))
@@ -4304,7 +4386,7 @@ app.post("/api/vrp/save-routes", async (req, res) => {
             eta: routeData.eta,
             geojson: routeData.geojson,
             vehiclePlate: routeData.vehiclePlate,
-            dump_id: routeData.dump_id || null, // Store in meta if needed
+            dump_id: routeData.dump_id || null, // Store in meta if needed (backup)
           }),
         ]
       );
@@ -4382,8 +4464,8 @@ app.post("/api/vrp/save-routes", async (req, res) => {
 
             // If pointId is not set yet (no lat/lon provided), find or create point for this schedule
             if (!pointId) {
-            const scheduleResult = await db.query(
-              `SELECT 
+              const scheduleResult = await db.query(
+                `SELECT 
                 latitude, 
                 longitude, 
                 location,
@@ -4392,35 +4474,35 @@ app.post("/api/vrp/save-routes", async (req, res) => {
                 address
                FROM schedules
                WHERE schedule_id = $1`,
-              [stop.id]
-            );
+                [stop.id]
+              );
 
-            if (scheduleResult.rows.length > 0) {
-              const schedule = scheduleResult.rows[0];
-              // Get lat/lon from schedule
-              const lat = schedule.lat;
-              const lon = schedule.lon;
+              if (scheduleResult.rows.length > 0) {
+                const schedule = scheduleResult.rows[0];
+                // Get lat/lon from schedule
+                const lat = schedule.lat;
+                const lon = schedule.lon;
 
-              if (lat && lon) {
-                // Try to find existing point at this location
-                const pointResult = await db.query(
-                  `SELECT id FROM points
+                if (lat && lon) {
+                  // Try to find existing point at this location
+                  const pointResult = await db.query(
+                    `SELECT id FROM points
                    WHERE ST_DWithin(geom, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, 11)
                    LIMIT 1`,
-                  [lon, lat]
-                );
-
-                if (pointResult.rows.length > 0) {
-                  pointId = pointResult.rows[0].id;
-                } else {
-                  // Create new point for this schedule using PostGIS geometry
-                  const newPointId = uuidv4();
-                  await db.query(
-                    `INSERT INTO points (id, geom, ghost, last_checkin_at)
-                     VALUES ($1, ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography, false, NOW())`,
-                    [newPointId, lon, lat]
+                    [lon, lat]
                   );
-                  pointId = newPointId;
+
+                  if (pointResult.rows.length > 0) {
+                    pointId = pointResult.rows[0].id;
+                  } else {
+                    // Create new point for this schedule using PostGIS geometry
+                    const newPointId = uuidv4();
+                    await db.query(
+                      `INSERT INTO points (id, geom, ghost, last_checkin_at)
+                     VALUES ($1, ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography, false, NOW())`,
+                      [newPointId, lon, lat]
+                    );
+                    pointId = newPointId;
                   }
                 }
               }
@@ -4428,14 +4510,23 @@ app.post("/api/vrp/save-routes", async (req, res) => {
           }
 
           // Create route stop with schedule_id in meta if available
-          const routeStopMeta = scheduleIdForMeta 
+          const routeStopMeta = scheduleIdForMeta
             ? JSON.stringify({ schedule_id: scheduleIdForMeta })
             : null;
-          
+
           await db.query(
             `INSERT INTO route_stops (id, route_id, point_id, seq, stop_order, status, planned_eta, meta)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-            [stopId, routeId, pointId, i + 1, stop.seq || i + 1, "pending", now, routeStopMeta]
+            [
+              stopId,
+              routeId,
+              pointId,
+              i + 1,
+              stop.seq || i + 1,
+              "pending",
+              now,
+              routeStopMeta,
+            ]
           );
         }
       }
@@ -4604,9 +4695,13 @@ app.post("/api/vrp/assign-route", async (req, res) => {
 
     let scheduleUpdates2 = [];
     if (scheduleIdsFromRouteStops.rows.length > 0) {
-      const scheduleIds = scheduleIdsFromRouteStops.rows.map(r => r.schedule_id);
-      const alreadyUpdatedIds = scheduleUpdates1.map(s => s.schedule_id);
-      const idsToUpdate = scheduleIds.filter(id => !alreadyUpdatedIds.includes(id));
+      const scheduleIds = scheduleIdsFromRouteStops.rows.map(
+        (r) => r.schedule_id
+      );
+      const alreadyUpdatedIds = scheduleUpdates1.map((s) => s.schedule_id);
+      const idsToUpdate = scheduleIds.filter(
+        (id) => !alreadyUpdatedIds.includes(id)
+      );
 
       if (idsToUpdate.length > 0) {
         const { rows } = await db.query(
@@ -5929,7 +6024,15 @@ app.get("/api/schedules", async (req, res) => {
         d.name as depot_name,
         s.longitude,
         s.latitude,
-        s.address as location_address
+        s.address as location_address,
+        CASE 
+          WHEN EXISTS (
+            SELECT 1 FROM point_transactions pt 
+            WHERE pt.user_id = s.citizen_id 
+            AND pt.reason LIKE 'Xác nhận hoàn thành thu gom - ' || s.schedule_id || '%'
+          ) THEN true 
+          ELSE false 
+        END as points_claimed
       FROM schedules s
       LEFT JOIN users u ON s.citizen_id = u.id::text OR s.citizen_id = u.phone
       LEFT JOIN personnel p ON s.employee_id = p.id
@@ -6050,7 +6153,16 @@ app.get("/api/schedules/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const { rows } = await db.query(
-      "SELECT * FROM schedules WHERE schedule_id = $1",
+      `SELECT s.*,
+        CASE 
+          WHEN EXISTS (
+            SELECT 1 FROM point_transactions pt 
+            WHERE pt.user_id = s.citizen_id 
+            AND pt.reason LIKE 'Xác nhận hoàn thành thu gom - ' || s.schedule_id || '%'
+          ) THEN true 
+          ELSE false 
+        END as points_claimed
+      FROM schedules s WHERE s.schedule_id = $1`,
       [id]
     );
 
@@ -7578,30 +7690,18 @@ app.get("/api/worker/routes", async (req, res) => {
         r.created_at,
         r.updated_at,
         r.depot_id,
-        r.dump_id,
         COALESCE(depot_info.name, 'Depot') as depot_name,
-        ST_Y(depot_info.geom::geometry) as depot_lat,
-        ST_X(depot_info.geom::geometry) as depot_lon,
-        COALESCE(dump_info.name, 
-          -- Fallback: get nearest dump if dump_id is null
-          (SELECT name FROM dumps ORDER BY dumps.geom <-> depot_info.geom LIMIT 1),
-          'Bãi Rác'
-        ) as dump_name,
-        COALESCE(
-          ST_Y(dump_info.geom::geometry),
-          -- Fallback: get nearest dump coordinates
-          (SELECT ST_Y(geom::geometry) FROM dumps ORDER BY dumps.geom <-> depot_info.geom LIMIT 1)
-        ) as dump_lat,
-        COALESCE(
-          ST_X(dump_info.geom::geometry),
-          -- Fallback: get nearest dump coordinates
-          (SELECT ST_X(geom::geometry) FROM dumps ORDER BY dumps.geom <-> depot_info.geom LIMIT 1)
-        ) as dump_lon
+        -- Use stored coordinates from routes table (VRP actual start point), fallback to depot geom
+        COALESCE(r.depot_lat, ST_Y(depot_info.geom::geometry)) as depot_lat,
+        COALESCE(r.depot_lon, ST_X(depot_info.geom::geometry)) as depot_lon,
+        'Bãi Rác' as dump_name,
+        -- Use stored coordinates from routes table for dump (VRP actual end point)
+        r.dump_lat,
+        r.dump_lon
       FROM routes r
       LEFT JOIN personnel p ON r.driver_id = p.id
       LEFT JOIN vehicles v ON r.vehicle_id = v.id
       LEFT JOIN depots depot_info ON r.depot_id::text = depot_info.id::text
-      LEFT JOIN dumps dump_info ON r.dump_id::text = dump_info.id::text
       WHERE r.driver_id = $1
     `;
     const params = [personnel_id];
@@ -7691,7 +7791,7 @@ app.get("/api/worker/routes/:id", async (req, res) => {
         r.scheduled_date,
         r.status,
         r.start_at as started_at,
-        r.completed_at,
+        r.end_at as completed_at,
         r.planned_distance_km as total_distance,
         p.name as worker_name,
         r.driver_id as worker_id,
@@ -7700,18 +7800,18 @@ app.get("/api/worker/routes/:id", async (req, res) => {
         -- Depot (Start point)
         r.depot_id,
         COALESCE(depot_info.name, 'Depot') as depot_name,
-        ST_Y(depot_info.geom::geometry) as depot_lat,
-        ST_X(depot_info.geom::geometry) as depot_lon,
+        -- Use stored coordinates from routes table (VRP actual start), fallback to depot geom
+        COALESCE(r.depot_lat, ST_Y(depot_info.geom::geometry)) as depot_lat,
+        COALESCE(r.depot_lon, ST_X(depot_info.geom::geometry)) as depot_lon,
         -- Dump (End point)  
-        r.dump_id,
-        COALESCE(dump_info.name, 'Dump') as dump_name,
-        ST_Y(dump_info.geom::geometry) as dump_lat,
-        ST_X(dump_info.geom::geometry) as dump_lon
+        'Bãi Rác' as dump_name,
+        -- Use stored coordinates from routes table (VRP actual end)
+        r.dump_lat,
+        r.dump_lon
       FROM routes r
       LEFT JOIN personnel p ON r.driver_id = p.id
       LEFT JOIN vehicles v ON r.vehicle_id = v.id
       LEFT JOIN depots depot_info ON r.depot_id::text = depot_info.id::text
-      LEFT JOIN dumps dump_info ON r.dump_id::text = dump_info.id::text
       WHERE r.id = $1`,
       [id]
     );
@@ -9116,6 +9216,23 @@ app.post("/api/gamification/points/adjust", async (req, res) => {
 
     const transactionType = points > 0 ? "adjustment" : "penalty";
 
+    // Check if this is a duplicate reward (for schedule completion)
+    if (reason && reason.includes("Xác nhận hoàn thành thu gom")) {
+      const existingTransaction = await db.query(
+        `SELECT id FROM point_transactions 
+         WHERE user_id = $1 AND reason = $2 
+         LIMIT 1`,
+        [actualUserId, reason]
+      );
+
+      if (existingTransaction.rows.length > 0) {
+        return res.status(400).json({
+          ok: false,
+          error: "Bạn đã nhận điểm thưởng cho lịch thu gom này rồi",
+        });
+      }
+    }
+
     // Add points transaction
     await db.query(
       `INSERT INTO point_transactions (user_id, points, type, reason)
@@ -9851,6 +9968,8 @@ app.get("/api/incidents", async (req, res) => {
     let query = `
       SELECT 
         i.*,
+        ST_Y(i.geom::geometry) as latitude,
+        ST_X(i.geom::geometry) as longitude,
         p.name as personnel_name,
         p.phone as personnel_phone,
         p.role as personnel_role,
@@ -9925,7 +10044,11 @@ app.get("/api/incidents/user/:userId", async (req, res) => {
     const { limit = 100, offset = 0 } = req.query;
 
     const { rows } = await db.query(
-      `SELECT * FROM incidents 
+      `SELECT 
+        *,
+        ST_Y(geom::geometry) as latitude,
+        ST_X(geom::geometry) as longitude
+       FROM incidents 
        WHERE reporter_id = $1 
        ORDER BY created_at DESC 
        LIMIT $2 OFFSET $3`,
@@ -9952,6 +10075,8 @@ app.get("/api/incidents/:id", async (req, res) => {
     const { rows } = await db.query(
       `SELECT 
         i.*,
+        ST_Y(i.geom::geometry) as latitude,
+        ST_X(i.geom::geometry) as longitude,
         p.name as personnel_name,
         p.phone as personnel_phone,
         p.role as personnel_role,
@@ -10029,27 +10154,48 @@ app.post("/api/incidents", async (req, res) => {
       });
     }
 
-    // Insert incident
-    const { rows } = await db.query(
-      `INSERT INTO incidents (
+    // Insert incident with PostGIS geometry
+    let query, params;
+
+    if (latitude && longitude) {
+      query = `INSERT INTO incidents (
         reporter_id, reporter_name, reporter_phone, report_category, type,
-        description, latitude, longitude, location_address, image_urls, priority, status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending')
-      RETURNING *`,
-      [
+        description, geom, location_address, image_urls, priority, status
+      ) VALUES ($1, $2, $3, $4, $5, $6, ST_SetSRID(ST_MakePoint($7, $8), 4326), $9, $10, $11, 'pending')
+      RETURNING *, ST_Y(geom::geometry) as latitude, ST_X(geom::geometry) as longitude`;
+      params = [
         reporter_id,
         reporter_name,
         reporter_phone,
         report_category,
         type,
         description,
-        latitude || null,
-        longitude || null,
+        longitude,
+        latitude,
         location_address || null,
         image_urls,
         priority,
-      ]
-    );
+      ];
+    } else {
+      query = `INSERT INTO incidents (
+        reporter_id, reporter_name, reporter_phone, report_category, type,
+        description, location_address, image_urls, priority, status
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')
+      RETURNING *`;
+      params = [
+        reporter_id,
+        reporter_name,
+        reporter_phone,
+        report_category,
+        type,
+        description,
+        location_address || null,
+        image_urls,
+        priority,
+      ];
+    }
+
+    const { rows } = await db.query(query, params);
 
     console.log(
       `📝 New incident report created: ${rows[0].id} (${report_category}/${type}) - ${image_urls.length} photos`

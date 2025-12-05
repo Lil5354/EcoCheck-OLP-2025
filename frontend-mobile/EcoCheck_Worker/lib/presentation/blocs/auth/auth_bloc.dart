@@ -8,7 +8,7 @@
 import 'package:eco_check_worker/data/models/user_model.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../../services/socket_service.dart';
+import '../../../core/services/socket_service.dart';
 import '../../../data/repositories/ecocheck_repository.dart';
 import 'auth_event.dart';
 import 'auth_state.dart';

@@ -10,7 +10,11 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:eco_check/core/constants/color_constants.dart';
 import 'package:eco_check/core/constants/text_constants.dart';
 import 'package:eco_check/data/models/schedule_model.dart';
+import 'package:eco_check/data/repositories/ecocheck_repository.dart';
+import 'package:eco_check/core/di/injection_container.dart' as di;
 import 'package:eco_check/presentation/widgets/collection/collection_status_widget.dart';
+import 'package:eco_check/presentation/blocs/auth/auth_bloc.dart';
+import 'package:eco_check/presentation/blocs/auth/auth_state.dart';
 import 'package:eco_check/presentation/blocs/schedule/schedule_bloc.dart';
 import 'package:eco_check/presentation/blocs/schedule/schedule_event.dart';
 import 'package:eco_check/presentation/blocs/schedule/schedule_state.dart';
@@ -27,7 +31,6 @@ class TrackingPage extends StatefulWidget {
 
 class _TrackingPageState extends State<TrackingPage> {
   ScheduleModel? _schedule;
-  bool _isAccepted = false;
 
   @override
   void initState() {
@@ -44,22 +47,84 @@ class _TrackingPageState extends State<TrackingPage> {
     }
   }
 
-  void _handleAcceptCompletion() {
-    setState(() {
-      _isAccepted = true;
-    });
+  Future<void> _handleAcceptCompletion() async {
+    if (_schedule == null) return;
 
-    // Show success message
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('🎉 Bạn đã nhận 50 điểm thưởng!'),
-        backgroundColor: AppColors.success,
-        duration: Duration(seconds: 3),
-      ),
-    );
+    try {
+      // Get user from auth bloc
+      final authState = context.read<AuthBloc>().state;
+      if (authState is! Authenticated) {
+        throw Exception('User not authenticated');
+      }
 
-    // TODO: Call API to mark as accepted and award points
-    // Example: context.read<ScheduleBloc>().add(AcceptCompletionEvent(scheduleId))
+      final userId = authState.user.id;
+      final repository = di.sl<EcoCheckRepository>();
+
+      // Call API to award points for completing collection
+      await repository.adjustPoints(
+        userId: userId,
+        points: 50,
+        reason: 'Xác nhận hoàn thành thu gom - ${_schedule!.id}',
+      );
+
+      // Update local schedule state to mark as claimed
+      setState(() {
+        _schedule = ScheduleModel(
+          id: _schedule!.id,
+          citizenId: _schedule!.citizenId,
+          scheduledDate: _schedule!.scheduledDate,
+          timeSlot: _schedule!.timeSlot,
+          wasteType: _schedule!.wasteType,
+          estimatedWeight: _schedule!.estimatedWeight,
+          actualWeight: _schedule!.actualWeight,
+          latitude: _schedule!.latitude,
+          longitude: _schedule!.longitude,
+          address: _schedule!.address,
+          specialInstructions: _schedule!.specialInstructions,
+          notes: _schedule!.notes,
+          photoUrls: _schedule!.photoUrls,
+          status: _schedule!.status,
+          priority: _schedule!.priority,
+          employeeId: _schedule!.employeeId,
+          completedAt: _schedule!.completedAt,
+          pointsClaimed: true, // Mark as claimed
+          createdAt: _schedule!.createdAt,
+          updatedAt: DateTime.now(),
+        );
+      });
+
+      // Show success message
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🎉 Bạn đã nhận 50 điểm thưởng!'),
+            backgroundColor: AppColors.success,
+            duration: Duration(seconds: 2),
+          ),
+        );
+
+        // Reload schedules to update UI
+        context.read<ScheduleBloc>().add(const SchedulesLoaded());
+
+        // Wait a bit then navigate back
+        await Future.delayed(const Duration(milliseconds: 1500));
+        if (mounted) {
+          Navigator.of(context).pop(); // Go back to schedule list
+        }
+      }
+    } catch (e) {
+      print('❌ [TrackingPage] Error awarding points: $e');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi nhận điểm: $e'),
+            backgroundColor: AppColors.error,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -73,14 +138,8 @@ class _TrackingPageState extends State<TrackingPage> {
           });
 
           print('📱 [TrackingPage] Schedule updated: ${state.schedule.status}');
-
-          // Show notification when status changes
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Trạng thái: ${state.schedule.statusDisplay}'),
-              backgroundColor: AppColors.primary,
-              duration: const Duration(seconds: 2),
-            ),
+          print(
+            '📱 [TrackingPage] Points claimed: ${state.schedule.pointsClaimed}',
           );
         } else if (state is ScheduleLoaded && _schedule == null) {
           // When schedules are loaded, pick the first active one
@@ -222,7 +281,7 @@ class _TrackingPageState extends State<TrackingPage> {
                         assignedAt: _schedule!.updatedAt,
                         completedAt: _schedule!.completedAt,
                         onAcceptCompletion: _handleAcceptCompletion,
-                        isAccepted: _isAccepted,
+                        isAccepted: _schedule!.pointsClaimed,
                       ),
                     ),
 

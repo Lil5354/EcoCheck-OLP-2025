@@ -27,6 +27,7 @@ class ScheduleModel extends Equatable {
   final int priority; // 0: normal, 1: high, 2: urgent
   final String? employeeId;
   final DateTime? completedAt;
+  final bool pointsClaimed; // User đã nhận điểm chưa
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -48,6 +49,7 @@ class ScheduleModel extends Equatable {
     this.priority = 0,
     this.employeeId,
     this.completedAt,
+    this.pointsClaimed = false,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -71,6 +73,7 @@ class ScheduleModel extends Equatable {
     priority,
     employeeId,
     completedAt,
+    pointsClaimed,
     createdAt,
     updatedAt,
   ];
@@ -145,6 +148,8 @@ class ScheduleModel extends Equatable {
         priority: int.tryParse(json['priority']?.toString() ?? '0') ?? 0,
         employeeId: json['employee_id']?.toString(),
         completedAt: parseDateNullable(json['completed_at']),
+        pointsClaimed:
+            json['points_claimed'] == true || json['points_claimed'] == 1,
         createdAt: parseDate(json['created_at'], now),
         updatedAt: parseDate(json['updated_at'], now),
       );

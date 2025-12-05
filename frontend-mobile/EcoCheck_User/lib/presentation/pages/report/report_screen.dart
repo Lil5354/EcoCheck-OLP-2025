@@ -98,6 +98,9 @@ class _ReportScreenState extends State<ReportScreen>
         title: const Text('Báo cáo'),
         bottom: TabBar(
           controller: _tabController,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          indicatorColor: Colors.white,
           tabs: const [
             Tab(icon: Icon(Icons.warning_amber_rounded), text: 'Vi phạm'),
             Tab(icon: Icon(Icons.build_circle_outlined), text: 'Hư hỏng'),

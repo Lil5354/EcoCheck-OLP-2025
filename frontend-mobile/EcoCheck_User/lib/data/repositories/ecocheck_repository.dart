@@ -881,6 +881,29 @@ class EcoCheckRepository {
     }
   }
 
+  /// Adjust user points (award or deduct)
+  Future<Map<String, dynamic>> adjustPoints({
+    required String userId,
+    required int points,
+    required String reason,
+  }) async {
+    try {
+      final response = await _apiClient.post(
+        '${ApiConstants.apiPrefix}/gamification/points/adjust',
+        data: {'user_id': userId, 'points': points, 'reason': reason},
+      );
+
+      final data = response.data as Map<String, dynamic>;
+      if (data['ok'] == true) {
+        return data['data'] as Map<String, dynamic>;
+      } else {
+        throw ApiException(message: data['error'] ?? 'Failed to adjust points');
+      }
+    } catch (e) {
+      throw _handleError(e);
+    }
+  }
+
   // ==================== Error Handling ====================
 
   Exception _handleError(dynamic error) {
