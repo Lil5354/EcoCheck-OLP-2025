@@ -423,6 +423,289 @@ app.post("/api/upload/multiple", upload.array("images", 5), (req, res) => {
   }
 });
 
+// ==================== AI IMAGE ANALYSIS ====================
+const { analyzeWasteImage } = require("./services/ai_analyzer");
+
+/**
+ * POST /api/ai/analyze-image
+ * Analyze waste image using AI to extract waste type, weight, etc.
+ */
+app.post("/api/ai/analyze-image", async (req, res) => {
+  try {
+    const { image_url } = req.body;
+
+    if (!image_url) {
+      return res.status(400).json({
+        ok: false,
+        error: "image_url is required",
+      });
+    }
+
+    console.log(`[AI] Analyzing image: ${image_url}`);
+
+    // Analyze image using AI service
+    const analysisResult = await analyzeWasteImage(image_url);
+
+    res.json({
+      ok: true,
+      data: {
+        waste_type: analysisResult.waste_type,
+        estimated_weight_kg: analysisResult.estimated_weight_kg,
+        weight_category: analysisResult.weight_category,
+        confidence: analysisResult.confidence,
+      },
+    });
+  } catch (error) {
+    console.error("[AI] Error analyzing image:", error);
+    res.status(500).json({
+      ok: false,
+      error: error.message || "Failed to analyze image",
+    });
+  }
+});
+
+// ==================== USER CHECK-IN API ====================
+
+/**
+ * POST /api/user/checkin
+ * User check-in endpoint - Submit waste check-in from mobile app
+ */
+app.post("/api/user/checkin", async (req, res) => {
+  try {
+    const {
+      user_id,
+      waste_type,
+      filling_level,
+      estimated_weight_kg,
+      photo_url,
+      latitude,
+      longitude,
+      address,
+    } = req.body;
+
+    // Validate required fields
+    if (!user_id) {
+      return res.status(400).json({
+        ok: false,
+        error: "user_id is required",
+      });
+    }
+
+    if (!waste_type) {
+      return res.status(400).json({
+        ok: false,
+        error: "waste_type is required",
+      });
+    }
+
+    if (filling_level === undefined || filling_level === null) {
+      return res.status(400).json({
+        ok: false,
+        error: "filling_level is required",
+      });
+    }
+
+    if (!latitude || !longitude) {
+      return res.status(400).json({
+        ok: false,
+        error: "latitude and longitude are required",
+      });
+    }
+
+    // Validate waste_type
+    const validWasteTypes = [
+      "household",
+      "recyclable",
+      "bulky",
+      "organic",
+      "hazardous",
+    ];
+    if (!validWasteTypes.includes(waste_type)) {
+      return res.status(400).json({
+        ok: false,
+        error: `Invalid waste_type. Must be one of: ${validWasteTypes.join(", ")}`,
+      });
+    }
+
+    // Validate filling_level (0-1)
+    if (filling_level < 0 || filling_level > 1) {
+      return res.status(400).json({
+        ok: false,
+        error: "filling_level must be between 0 and 1",
+      });
+    }
+
+    console.log(`[User Check-in] User ${user_id} checking in at ${latitude}, ${longitude}`);
+
+    // Generate UUID for checkin
+    const { v4: uuidv4 } = require("uuid");
+    const checkinId = uuidv4();
+
+    // Create geometry from lat/lon
+    const geom = `POINT(${longitude} ${latitude})`;
+
+    // Insert checkin into database
+    const insertQuery = `
+      INSERT INTO checkins (
+        id,
+        user_id,
+        waste_type,
+        filling_level,
+        geom,
+        photo_url,
+        source,
+        meta,
+        created_at
+      ) VALUES ($1, $2, $3, $4, ST_GeogFromText($5), $6, $7, $8, NOW())
+      RETURNING id, created_at
+    `;
+
+    const meta = {
+      estimated_weight_kg: estimated_weight_kg || null,
+      address: address || null,
+      ai_analyzed: true, // Mark as AI-analyzed
+    };
+
+    const result = await db.query(insertQuery, [
+      checkinId,
+      user_id,
+      waste_type,
+      filling_level,
+      geom,
+      photo_url || null,
+      "mobile_app",
+      JSON.stringify(meta),
+    ]);
+
+    // Update or create point at this location
+    // Find nearest point or create new one
+    const pointQuery = `
+      SELECT id, geom
+      FROM points
+      WHERE ST_DWithin(
+        geom,
+        ST_GeogFromText($1),
+        50
+      )
+      ORDER BY ST_Distance(geom, ST_GeogFromText($1))
+      LIMIT 1
+    `;
+
+    const pointResult = await db.query(pointQuery, [geom]);
+
+    let pointId = null;
+    if (pointResult.rows.length > 0) {
+      // Update existing point
+      pointId = pointResult.rows[0].id;
+      await db.query(
+        `UPDATE points 
+         SET last_waste_type = $1,
+             last_level = $2,
+             last_checkin_at = NOW()
+         WHERE id = $3`,
+        [waste_type, filling_level, pointId]
+      );
+    } else {
+      // Create new point
+      const newPointId = uuidv4();
+      await db.query(
+        `INSERT INTO points (id, geom, ghost, last_waste_type, last_level, last_checkin_at)
+         VALUES ($1, ST_GeogFromText($2), false, $3, $4, NOW())`,
+        [newPointId, geom, waste_type, filling_level]
+      );
+      pointId = newPointId;
+    }
+
+    // Update checkin with point_id
+    await db.query(`UPDATE checkins SET point_id = $1 WHERE id = $2`, [
+      pointId,
+      checkinId,
+    ]);
+
+    // Award points to user (gamification)
+    try {
+      const pointsAwarded = _calculateCheckinPoints(waste_type, filling_level);
+      
+      // Get or create user_points record
+      await db.query(
+        `INSERT INTO user_points (user_id, points, total_checkins, last_checkin_date, updated_at)
+         VALUES ($1, $2, 1, CURRENT_DATE, NOW())
+         ON CONFLICT (user_id) 
+         DO UPDATE SET 
+           points = user_points.points + $2,
+           total_checkins = user_points.total_checkins + 1,
+           last_checkin_date = CURRENT_DATE,
+           updated_at = NOW()`,
+        [user_id, pointsAwarded]
+      );
+
+      // Record transaction
+      await db.query(
+        `INSERT INTO point_transactions (user_id, points, type, description, created_at)
+         VALUES ($1, $2, 'earn', 'Check-in rác thải', NOW())`,
+        [user_id, pointsAwarded]
+      );
+
+      console.log(`[User Check-in] Awarded ${pointsAwarded} points to user ${user_id}`);
+    } catch (pointsError) {
+      console.error("[User Check-in] Error awarding points:", pointsError);
+      // Don't fail checkin if points fail
+    }
+
+    // Emit realtime event
+    io.emit("checkin:created", {
+      id: checkinId,
+      user_id,
+      waste_type,
+      filling_level,
+      latitude,
+      longitude,
+      created_at: result.rows[0].created_at,
+    });
+
+    console.log(`[User Check-in] ✅ Check-in created: ${checkinId}`);
+
+    res.json({
+      ok: true,
+      data: {
+        id: checkinId,
+        point_id: pointId,
+        created_at: result.rows[0].created_at,
+        message: "Check-in recorded successfully",
+      },
+    });
+  } catch (error) {
+    console.error("[User Check-in] Error:", error);
+    res.status(500).json({
+      ok: false,
+      error: error.message || "Failed to record check-in",
+    });
+  }
+});
+
+/**
+ * Helper function to calculate points for check-in
+ */
+function _calculateCheckinPoints(wasteType, fillingLevel) {
+  let basePoints = 10;
+
+  // Base points by waste type
+  if (wasteType === "recyclable") {
+    basePoints = 20;
+  } else if (wasteType === "bulky") {
+    basePoints = 30;
+  } else if (wasteType === "organic") {
+    basePoints = 15;
+  }
+
+  // Bonus for high filling level
+  if (fillingLevel >= 0.7) {
+    basePoints += 5;
+  }
+
+  return basePoints;
+}
+
 // API Routes
 app.get("/api/status", (req, res) => {
   res.json({
