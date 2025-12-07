@@ -6,11 +6,14 @@
  */
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:eco_check/core/constants/color_constants.dart';
 import 'package:eco_check/core/constants/text_constants.dart';
 import 'package:eco_check/core/constants/app_constants.dart';
 import 'package:eco_check/data/models/schedule_model.dart';
+import 'package:eco_check/data/services/air_quality_service.dart';
 import 'package:eco_check/presentation/blocs/auth/auth_bloc.dart';
 import 'package:eco_check/presentation/blocs/auth/auth_state.dart';
 import 'package:eco_check/presentation/blocs/schedule/schedule_bloc.dart';
@@ -24,6 +27,7 @@ import 'widgets/upcoming_schedule_card.dart';
 import 'widgets/quick_actions_grid.dart';
 import 'widgets/statistics_summary_card.dart';
 import 'widgets/eco_tips_carousel.dart';
+import '../../widgets/aqi_popup_dialog.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -93,6 +97,9 @@ class HomeTabPage extends StatefulWidget {
 }
 
 class _HomeTabPageState extends State<HomeTabPage> {
+  final AirQualityService _airQualityService = AirQualityService();
+  bool _hasShownAQIPopup = false;
+
   @override
   void initState() {
     super.initState();
@@ -100,8 +107,59 @@ class _HomeTabPageState extends State<HomeTabPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         context.read<ScheduleBloc>().add(const SchedulesLoaded());
+        // Show AQI popup on first load
+        _loadAndShowAQI();
       }
     });
+  }
+
+  /// Load AQI data and show popup
+  Future<void> _loadAndShowAQI() async {
+    if (_hasShownAQIPopup) return;
+
+    try {
+      // Try to get current location
+      double? lat;
+      double? lon;
+
+      try {
+        final position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.low,
+        );
+        lat = position.latitude;
+        lon = position.longitude;
+      } catch (e) {
+        // If location access fails, use default HCMC coordinates
+        lat = 10.8231; // HCMC default
+        lon = 106.6297;
+      }
+
+      // Fetch AQI data
+      final aqiData = await _airQualityService.getAirQuality(
+        lat: lat!,
+        lon: lon!,
+      );
+
+      // Debug: Check if healthRecommendation exists
+      if (mounted && kDebugMode) {
+        debugPrint('🌬️ [HomePage] AQI Data received:');
+        debugPrint('   AQI: ${aqiData.aqi}');
+        debugPrint('   Category: ${aqiData.category}');
+        debugPrint('   Health Recommendation: ${aqiData.healthRecommendation}');
+        debugPrint('   Has recommendation: ${aqiData.healthRecommendation != null && aqiData.healthRecommendation!.isNotEmpty}');
+      }
+
+      // Show popup
+      if (mounted && !_hasShownAQIPopup) {
+        _hasShownAQIPopup = true;
+        await AQIPopupDialog.show(context, aqiData);
+      }
+    } catch (e) {
+      // Silently fail - don't show error to user
+      if (mounted) {
+        debugPrint('❌ [HomePage] Failed to load AQI: $e');
+      }
+    }
   }
 
   @override

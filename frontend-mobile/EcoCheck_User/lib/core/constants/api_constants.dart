@@ -81,6 +81,12 @@ class ApiConstants {
   static const String uploadFile = '$apiPrefix/upload';
   static const String uploadImage = '$apiPrefix/upload/image';
 
+  // AI Waste Analysis Proxy
+  static const String aiWasteAnalysisProxy = '$apiPrefix/ai/analyze-waste';
+
+  // Air Quality Endpoints
+  static const String airQuality = '$apiPrefix/air-quality';
+
   // WebSocket
   static const String wsBaseUrl = 'wss://ecocheck-olp-2025.onrender.com';
   static const String wsTracking = '/tracking';

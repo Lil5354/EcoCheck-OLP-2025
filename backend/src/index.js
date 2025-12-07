@@ -423,6 +423,90 @@ app.post("/api/upload/multiple", upload.array("images", 5), (req, res) => {
   }
 });
 
+// AI Waste Analysis Proxy (to avoid CORS issues from Flutter Web)
+app.post("/api/ai/analyze-waste", async (req, res) => {
+  try {
+    const HF_API_KEY = process.env.HUGGINGFACE_API_KEY;
+    if (!HF_API_KEY) {
+      return res.status(500).json({
+        ok: false,
+        error: "HUGGINGFACE_API_KEY environment variable is not set",
+      });
+    }
+    const MODEL_NAME = "microsoft/swin-tiny-patch4-window7-224";
+    const HF_API_URL = `https://api-inference.huggingface.co/models/${MODEL_NAME}`;
+
+    // Get image data from request body
+    let imageBuffer;
+    if (req.body && req.body.image) {
+      // Base64 encoded image
+      imageBuffer = Buffer.from(req.body.image, "base64");
+    } else if (req.body && Buffer.isBuffer(req.body)) {
+      // Raw buffer
+      imageBuffer = req.body;
+    } else {
+      return res.status(400).json({ 
+        ok: false, 
+        error: "No image data provided. Send image as base64 string in 'image' field or raw buffer." 
+      });
+    }
+
+    console.log(`[AI Proxy] Analyzing waste image (${imageBuffer.length} bytes)`);
+
+    // Call Hugging Face API
+    const axios = require("axios");
+    const response = await axios.post(HF_API_URL, imageBuffer, {
+      headers: {
+        Authorization: `Bearer ${HF_API_KEY}`,
+        "Content-Type": "application/octet-stream",
+      },
+      timeout: 30000,
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+    });
+
+    console.log(`[AI Proxy] Hugging Face API response: ${response.status}`);
+
+    // Return the result directly
+    res.status(200).json({
+      ok: true,
+      data: response.data,
+    });
+  } catch (error) {
+    console.error("[AI Proxy] Error:", error.message);
+    
+    // Handle different error types
+    if (error.response) {
+      // Hugging Face API error
+      if (error.response.status === 503) {
+        // Model is loading
+        res.status(503).json({
+          ok: false,
+          error: "Model is loading, please try again in a few seconds",
+          retry: true,
+        });
+      } else {
+        res.status(error.response.status).json({
+          ok: false,
+          error: error.response.data?.error || error.message,
+        });
+      }
+    } else if (error.code === "ECONNABORTED") {
+      // Timeout
+      res.status(504).json({
+        ok: false,
+        error: "Request timeout",
+      });
+    } else {
+      // Other errors
+      res.status(500).json({
+        ok: false,
+        error: error.message || "AI analysis failed",
+      });
+    }
+  }
+});
+
 // API Routes
 app.get("/api/status", (req, res) => {
   res.json({

@@ -37,6 +37,36 @@ function getCacheKey(lat, lon) {
  * @param {number} pm25 - PM2.5 concentration (μg/m³)
  * @returns {Object} AQI data
  */
+/**
+ * Get health recommendation based on AQI category
+ * @param {string} category - AQI category
+ * @returns {string} Health recommendation in Vietnamese
+ */
+function getHealthRecommendation(category) {
+  // Normalize category to lowercase for comparison
+  const normalizedCategory = (category || '').toLowerCase().trim();
+  
+  switch (normalizedCategory) {
+    case 'good':
+      return 'Chất lượng không khí tốt. Mọi người có thể hoạt động ngoài trời bình thường.';
+    case 'moderate':
+      return 'Chất lượng không khí ở mức chấp nhận được. Những người nhạy cảm nên hạn chế hoạt động ngoài trời.';
+    case 'unhealthy for sensitive groups':
+    case 'unhealthyforsensitivegroups':
+      return 'Nhóm nhạy cảm (trẻ em, người già, người mắc bệnh hô hấp) nên hạn chế hoạt động ngoài trời. Người khỏe mạnh có thể hoạt động bình thường.';
+    case 'unhealthy':
+      return 'Mọi người nên hạn chế hoạt động ngoài trời. Nhóm nhạy cảm nên tránh hoàn toàn. Đeo khẩu trang khi ra ngoài.';
+    case 'very unhealthy':
+    case 'veryunhealthy':
+      return 'CẢNH BÁO: Chất lượng không khí rất kém. Mọi người nên tránh hoạt động ngoài trời. Đóng cửa sổ và sử dụng máy lọc không khí.';
+    case 'hazardous':
+      return 'CẢNH BÁO NGUY HIỂM: Chất lượng không khí cực kỳ nguy hiểm. Ở trong nhà, đóng tất cả cửa sổ. Chỉ ra ngoài khi thực sự cần thiết và đeo khẩu trang N95.';
+    default:
+      // Default recommendation for any unknown category
+      return 'Chất lượng không khí ở mức chấp nhận được. Những người nhạy cảm nên hạn chế hoạt động ngoài trời.';
+  }
+}
+
 function calculateAQI(pm25) {
   // US EPA AQI calculation for PM2.5
   let aqi, category, color;
@@ -67,7 +97,9 @@ function calculateAQI(pm25) {
     color = 'maroon';
   }
 
-  return { aqi, category, color, pm25 };
+  const healthRecommendation = getHealthRecommendation(category);
+
+  return { aqi, category, color, pm25, healthRecommendation };
 }
 
 /**
@@ -146,12 +178,17 @@ async function getAirQuality(lat, lon, radius = 5000) {
               : null;
             
             aqiData = calculateAQI(pm25);
-            aqiData.pm10 = pm10;
+            aqiData.pm10 = pm10 || pm25 * 1.5; // Fallback to estimated PM10 if not available
             aqiData.location = station.name;
             aqiData.distance = 0; // Fixed station, no distance calculation
             aqiData.lastUpdated = pm25Measurement.datetime?.local || pm25Measurement.datetime?.utc || new Date().toISOString();
             aqiData.source = 'OpenAQ'; // Mark as real data from OpenAQ
             aqiData.stationId = station.id;
+            // healthRecommendation is already included in calculateAQI result
+            // Add health recommendation if not already present
+            if (!aqiData.healthRecommendation) {
+              aqiData.healthRecommendation = getHealthRecommendation(aqiData.category);
+            }
             
             console.log(`[AirQuality] ✅ Found data from OpenAQ station ${station.id} (${station.name}): PM2.5: ${pm25.toFixed(1)} μg/m³`);
             break; // Use the first station with valid PM2.5 data
@@ -171,6 +208,12 @@ async function getAirQuality(lat, lon, radius = 5000) {
       console.warn(`[AirQuality] ⚠️ No OpenAQ data found from fixed stations. Using mock data.`);
       aqiData = getMockAirQuality(lat, lon);
       aqiData.source = 'Mock'; // Mark as mock data
+    }
+    
+    // Ensure healthRecommendation is always present
+    if (!aqiData.healthRecommendation || aqiData.healthRecommendation.trim() === '') {
+      aqiData.healthRecommendation = getHealthRecommendation(aqiData.category);
+      console.log(`[AirQuality] ✅ Added healthRecommendation: ${aqiData.healthRecommendation.substring(0, 50)}...`);
     }
 
     // Cache the result
@@ -194,7 +237,12 @@ async function getAirQuality(lat, lon, radius = 5000) {
       console.error('[AirQuality] ❌ Error fetching data:', error.message);
     }
     // Return mock data on error
-    return getMockAirQuality(lat, lon);
+    const mockData = getMockAirQuality(lat, lon);
+    // Ensure healthRecommendation is present
+    if (!mockData.healthRecommendation || mockData.healthRecommendation.trim() === '') {
+      mockData.healthRecommendation = getHealthRecommendation(mockData.category);
+    }
+    return mockData;
   }
 }
 
@@ -236,7 +284,8 @@ function getMockAirQuality(lat, lon) {
     pm10: pm25 * 1.5,
     location: 'Hồ Chí Minh',
     distance: 0,
-    source: 'Mock' // Mark as mock data
+    source: 'Mock', // Mark as mock data
+    healthRecommendation: aqiData.healthRecommendation || getHealthRecommendation(aqiData.category)
   };
 }
 
