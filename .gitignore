@@ -22,6 +22,8 @@ lib/
 lib64/
 # Exception: Don't ignore frontend source lib directory
 !frontend-web-manager/src/lib/
+# Exception: Don't ignore Flutter mobile lib directory
+!frontend-mobile/**/lib/
 parts/
 sdist/
 var/
