@@ -60,6 +60,10 @@ services:
         value: ecocheck
       - key: FIWARE_SERVICE_PATH
         value: /hcm
+      
+      # OpenAQ API Key for Air Quality
+      - key: AIRQUALITY_API_KEY
+        value: 306e1c40a4336e93cefd5779dfcf8c39e32a066fe039edfe7ba9a6a6d1df589d
     
     healthCheckPath: /health
     region: singapore # Choose your preferred region
