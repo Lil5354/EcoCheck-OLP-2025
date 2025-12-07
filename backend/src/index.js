@@ -424,10 +424,13 @@ app.post("/api/upload/multiple", upload.array("images", 5), (req, res) => {
 });
 
 // AI Waste Analysis Proxy (to avoid CORS issues from Flutter Web)
-app.post("/api/ai/analyze-waste", async (req, res) => {
+// Note: This endpoint must be defined BEFORE express.json() middleware for raw body
+// OR use express.raw() middleware specifically for this route
+app.post("/api/ai/analyze-waste", express.json({ limit: '10mb' }), async (req, res) => {
   try {
     const HF_API_KEY = process.env.HUGGINGFACE_API_KEY;
     if (!HF_API_KEY) {
+      console.error("[AI Proxy] HUGGINGFACE_API_KEY is not set");
       return res.status(500).json({
         ok: false,
         error: "HUGGINGFACE_API_KEY environment variable is not set",
@@ -436,18 +439,33 @@ app.post("/api/ai/analyze-waste", async (req, res) => {
     const MODEL_NAME = "microsoft/swin-tiny-patch4-window7-224";
     const HF_API_URL = `https://api-inference.huggingface.co/models/${MODEL_NAME}`;
 
+    console.log("[AI Proxy] Request received, body type:", typeof req.body);
+    console.log("[AI Proxy] Request body keys:", req.body ? Object.keys(req.body) : "null");
+
     // Get image data from request body
     let imageBuffer;
     if (req.body && req.body.image) {
       // Base64 encoded image
-      imageBuffer = Buffer.from(req.body.image, "base64");
+      const base64Data = req.body.image;
+      // Remove data URL prefix if present (e.g., "data:image/jpeg;base64,")
+      const base64String = base64Data.includes(',') 
+        ? base64Data.split(',')[1] 
+        : base64Data;
+      imageBuffer = Buffer.from(base64String, "base64");
+      console.log("[AI Proxy] Decoded base64 image, size:", imageBuffer.length, "bytes");
     } else if (req.body && Buffer.isBuffer(req.body)) {
       // Raw buffer
       imageBuffer = req.body;
+      console.log("[AI Proxy] Using raw buffer, size:", imageBuffer.length, "bytes");
     } else {
+      console.error("[AI Proxy] No image data found in request body");
       return res.status(400).json({ 
         ok: false, 
-        error: "No image data provided. Send image as base64 string in 'image' field or raw buffer." 
+        error: "No image data provided. Send image as base64 string in 'image' field or raw buffer.",
+        received: {
+          bodyType: typeof req.body,
+          bodyKeys: req.body ? Object.keys(req.body) : null,
+        }
       });
     }
 
