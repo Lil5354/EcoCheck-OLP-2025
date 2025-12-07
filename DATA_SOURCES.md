@@ -44,9 +44,10 @@ Dự án EcoCheck sử dụng kết hợp dữ liệu thật từ các API công
 - Sử dụng để hiển thị AQI trên dashboard và đưa ra khuyến nghị sức khỏe
 
 **API:**
-- **Endpoint**: `https://api.openaq.org/v2/latest`
+- **Endpoint**: `https://api.openaq.org/v3/latest`
 - **Documentation**: https://docs.openaq.org/
-- **API Key**: Không cần (public API)
+- **API Key**: ✅ Yêu cầu (API v3 yêu cầu API key authentication)
+- **API Key Header**: `X-API-Key`
 
 **Giấy phép:**
 - **License**: [CC0 1.0 Universal (Public Domain)](https://creativecommons.org/publicdomain/zero/1.0/)
@@ -55,8 +56,10 @@ Dự án EcoCheck sử dụng kết hợp dữ liệu thật từ các API công
 
 **Cách sử dụng trong dự án:**
 - Backend gọi API khi người dùng xem trang Air Quality
-- Dữ liệu được cache trong Redis
-- Fallback về mock data nếu API không khả dụng
+- Dữ liệu được cache trong memory (1 giờ)
+- Sử dụng API key từ biến môi trường `AIRQUALITY_API_KEY`
+- Tự động mở rộng bán kính tìm kiếm nếu không tìm thấy dữ liệu (5km → 10km → 250km)
+- Fallback về mock data nếu API không khả dụng hoặc không có API key
 
 **Vị trí trong code:**
 - `backend/src/index.js` - Air quality endpoints

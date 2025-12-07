@@ -1,10 +1,10 @@
 # Hướng Dẫn Lấy OpenAQ API Key
 
-## ⚠️ Vấn Đề Hiện Tại
+## ✅ Trạng Thái Hiện Tại
 
-OpenAQ API **v2 đã bị retired (ngừng hoạt động)**. Họ đã chuyển sang **API v3** và **v3 yêu cầu API key**.
+Hệ thống đã được cập nhật để sử dụng **OpenAQ API v3** với API key authentication. 
 
-Đó là lý do tại sao hệ thống vẫn đang sử dụng mock data.
+**Lưu ý:** OpenAQ API v2 đã bị retired (ngừng hoạt động). Hệ thống hiện sử dụng v3 và yêu cầu API key.
 
 ## 📝 Các Bước Lấy OpenAQ API Key
 

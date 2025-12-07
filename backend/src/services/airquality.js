@@ -9,8 +9,18 @@
 const axios = require('axios');
 
 // OpenAQ API configuration
-const OPENAQ_BASE_URL = 'https://api.openaq.org/v2';
+const OPENAQ_BASE_URL = 'https://api.openaq.org/v3';
 const CACHE_DURATION = 60 * 60 * 1000; // 1 hour (AQI changes slowly)
+
+// Get API key from environment variable
+const OPENAQ_API_KEY = process.env.AIRQUALITY_API_KEY;
+
+// Fixed OpenAQ station IDs for Ho Chi Minh City
+// Using fixed stations instead of radius search because Vietnam has limited stations
+const HCMC_FIXED_STATIONS = [
+  { id: 7440, name: 'US Diplomatic Post: Ho Chi Minh City' },
+  { id: 3276359, name: 'CMT8' }
+];
 
 // In-memory cache for air quality data
 const aqiCache = new Map();
@@ -76,45 +86,91 @@ async function getAirQuality(lat, lon, radius = 5000) {
     return cached.data;
   }
 
-  try {
-    // OpenAQ API: Get latest measurements near location
-    const url = `${OPENAQ_BASE_URL}/locations`;
-    const response = await axios.get(url, {
-      params: {
-        coordinates: `${lat},${lon}`,
-        radius: radius,
-        limit: 1,
-        order_by: 'distance'
-      },
-      timeout: 5000
-    });
+  // Check if API key is available
+  if (!OPENAQ_API_KEY) {
+    console.warn('[AirQuality] ⚠️ No OpenAQ API key found. Please set AIRQUALITY_API_KEY in .env file.');
+    return getMockAirQuality(lat, lon);
+  }
 
+  try {
+    // Use fixed stations for HCMC instead of radius search
+    // Vietnam has limited OpenAQ stations, so using fixed stations is more reliable
     let aqiData;
     
-    if (response.data.results && response.data.results.length > 0) {
-      const location = response.data.results[0];
-      
-      // Get latest measurements
-      const measurementsUrl = `${OPENAQ_BASE_URL}/locations/${location.id}/latest`;
-      const measurementsRes = await axios.get(measurementsUrl, { timeout: 5000 });
-      
-      if (measurementsRes.data.results && measurementsRes.data.results.length > 0) {
-        const latest = measurementsRes.data.results[0].measurements;
-        const pm25 = latest.find(m => m.parameter === 'pm25')?.value;
-        const pm10 = latest.find(m => m.parameter === 'pm10')?.value;
+    // Try each fixed station until we find valid PM2.5 data
+    for (const station of HCMC_FIXED_STATIONS) {
+      try {
+        // Get latest measurements for this fixed station
+        const measurementsUrl = `${OPENAQ_BASE_URL}/locations/${station.id}/latest`;
+        const measurementsRes = await axios.get(measurementsUrl, {
+          headers: {
+            'X-API-Key': OPENAQ_API_KEY
+          },
+          timeout: 5000
+        });
         
-        if (pm25) {
-          aqiData = calculateAQI(pm25);
-          aqiData.pm10 = pm10;
-          aqiData.location = location.name;
-          aqiData.distance = location.distance || 0;
+        // OpenAQ v3 response structure: { results: [{ value, datetime, sensorsId, locationsId, ... }] }
+        // Each result is a single measurement, not grouped by parameter
+        if (measurementsRes.data && measurementsRes.data.results && measurementsRes.data.results.length > 0) {
+          // Get location info to find which sensors measure PM2.5 and PM10
+          const locationUrl = `${OPENAQ_BASE_URL}/locations/${station.id}`;
+          const locationRes = await axios.get(locationUrl, {
+            headers: {
+              'X-API-Key': OPENAQ_API_KEY
+            },
+            timeout: 5000
+          });
+          
+          const location = locationRes.data?.results?.[0];
+          if (!location || !location.sensors) continue;
+          
+          // Find PM2.5 and PM10 sensor IDs
+          const pm25Sensor = location.sensors.find(s => s.parameter?.name === 'pm25');
+          const pm10Sensor = location.sensors.find(s => s.parameter?.name === 'pm10');
+          
+          if (!pm25Sensor) continue;
+          
+          // Find PM2.5 measurement value from results
+          const pm25Measurement = measurementsRes.data.results.find(m => m.sensorsId === pm25Sensor.id);
+          const pm10Measurement = pm10Sensor ? measurementsRes.data.results.find(m => m.sensorsId === pm10Sensor.id) : null;
+          
+          // Check if PM2.5 value is valid (not null, not undefined, and not invalid marker like -999)
+          if (pm25Measurement && 
+              pm25Measurement.value !== null && 
+              pm25Measurement.value !== undefined &&
+              pm25Measurement.value > 0 && // Valid PM2.5 should be positive
+              pm25Measurement.value < 1000) { // Sanity check: PM2.5 shouldn't exceed 1000
+            const pm25 = pm25Measurement.value;
+            const pm10 = (pm10Measurement && pm10Measurement.value > 0 && pm10Measurement.value < 1000) 
+              ? pm10Measurement.value 
+              : null;
+            
+            aqiData = calculateAQI(pm25);
+            aqiData.pm10 = pm10;
+            aqiData.location = station.name;
+            aqiData.distance = 0; // Fixed station, no distance calculation
+            aqiData.lastUpdated = pm25Measurement.datetime?.local || pm25Measurement.datetime?.utc || new Date().toISOString();
+            aqiData.source = 'OpenAQ'; // Mark as real data from OpenAQ
+            aqiData.stationId = station.id;
+            
+            console.log(`[AirQuality] ✅ Found data from OpenAQ station ${station.id} (${station.name}): PM2.5: ${pm25.toFixed(1)} μg/m³`);
+            break; // Use the first station with valid PM2.5 data
+          } else if (pm25Measurement) {
+            console.warn(`[AirQuality] ⚠️ Station ${station.id} has invalid PM2.5 value: ${pm25Measurement.value}`);
+          }
         }
+      } catch (err) {
+        // Skip this station if we can't get measurements
+        console.warn(`[AirQuality] ⚠️ Could not get data from station ${station.id}: ${err.message}`);
+        continue;
       }
     }
 
-    // If no data found, use mock data
+    // If no data found from fixed stations, use mock data
     if (!aqiData) {
+      console.warn(`[AirQuality] ⚠️ No OpenAQ data found from fixed stations. Using mock data.`);
       aqiData = getMockAirQuality(lat, lon);
+      aqiData.source = 'Mock'; // Mark as mock data
     }
 
     // Cache the result
@@ -125,7 +181,18 @@ async function getAirQuality(lat, lon, radius = 5000) {
 
     return aqiData;
   } catch (error) {
-    console.error('[AirQuality] Error fetching data:', error.message);
+    // Handle specific error cases
+    if (error.response) {
+      if (error.response.status === 401 || error.response.status === 403) {
+        console.error('[AirQuality] ❌ API Key authentication failed. Please check your API key.');
+      } else if (error.response.status === 429) {
+        console.error('[AirQuality] ⚠️ Rate limit exceeded. Using cached or mock data.');
+      } else {
+        console.error(`[AirQuality] ❌ API Error (${error.response.status}):`, error.response.data || error.message);
+      }
+    } else {
+      console.error('[AirQuality] ❌ Error fetching data:', error.message);
+    }
     // Return mock data on error
     return getMockAirQuality(lat, lon);
   }
@@ -168,7 +235,8 @@ function getMockAirQuality(lat, lon) {
     ...aqiData,
     pm10: pm25 * 1.5,
     location: 'Hồ Chí Minh',
-    distance: 0
+    distance: 0,
+    source: 'Mock' // Mark as mock data
   };
 }
 

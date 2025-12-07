@@ -352,59 +352,57 @@ export default function Reports() {
             </div>
 
             {/* Category Filter */}
-            {activeTab === "worker" && (
-              <div
+            <div
+              style={{
+                display: "flex",
+                gap: 8,
+                marginBottom: 16,
+                padding: "8px 0",
+              }}
+            >
+              <button
+                onClick={() => setActiveCategory("all")}
                 style={{
-                  display: "flex",
-                  gap: 8,
-                  marginBottom: 16,
-                  padding: "8px 0",
+                  padding: "8px 16px",
+                  border: "1px solid #ddd",
+                  borderRadius: 6,
+                  background: activeCategory === "all" ? "#1976d2" : "white",
+                  color: activeCategory === "all" ? "white" : "#666",
+                  cursor: "pointer",
+                  fontSize: 14,
                 }}
               >
-                <button
-                  onClick={() => setActiveCategory("all")}
-                  style={{
-                    padding: "8px 16px",
-                    border: "1px solid #ddd",
-                    borderRadius: 6,
-                    background: activeCategory === "all" ? "#1976d2" : "white",
-                    color: activeCategory === "all" ? "white" : "#666",
-                    cursor: "pointer",
-                    fontSize: 14,
-                  }}
-                >
-                  Tất cả
-                </button>
-                <button
-                  onClick={() => setActiveCategory("violation")}
-                  style={{
-                    padding: "8px 16px",
-                    border: "1px solid #ddd",
-                    borderRadius: 6,
-                    background: activeCategory === "violation" ? "#f44336" : "white",
-                    color: activeCategory === "violation" ? "white" : "#666",
-                    cursor: "pointer",
-                    fontSize: 14,
-                  }}
-                >
-                  Vi phạm
-                </button>
-                <button
-                  onClick={() => setActiveCategory("damage")}
-                  style={{
-                    padding: "8px 16px",
-                    border: "1px solid #ddd",
-                    borderRadius: 6,
-                    background: activeCategory === "damage" ? "#ff9800" : "white",
-                    color: activeCategory === "damage" ? "white" : "#666",
-                    cursor: "pointer",
-                    fontSize: 14,
-                  }}
-                >
-                  Hư hỏng
-                </button>
-              </div>
-            )}
+                Tất cả
+              </button>
+              <button
+                onClick={() => setActiveCategory("violation")}
+                style={{
+                  padding: "8px 16px",
+                  border: "1px solid #ddd",
+                  borderRadius: 6,
+                  background: activeCategory === "violation" ? "#f44336" : "white",
+                  color: activeCategory === "violation" ? "white" : "#666",
+                  cursor: "pointer",
+                  fontSize: 14,
+                }}
+              >
+                Vi phạm
+              </button>
+              <button
+                onClick={() => setActiveCategory("damage")}
+                style={{
+                  padding: "8px 16px",
+                  border: "1px solid #ddd",
+                  borderRadius: 6,
+                  background: activeCategory === "damage" ? "#ff9800" : "white",
+                  color: activeCategory === "damage" ? "white" : "#666",
+                  cursor: "pointer",
+                  fontSize: 14,
+                }}
+              >
+                Hư hỏng
+              </button>
+            </div>
 
             {/* Reports List */}
             {loading && filteredReports.length === 0 ? (
