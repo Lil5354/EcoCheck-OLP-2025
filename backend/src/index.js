@@ -447,16 +447,10 @@ app.post("/api/ai/analyze-waste", express.json({ limit: '10mb' }), async (req, r
     let lastError = null;
     let response = null;
     
-    // Try each model until one works
-    for (const MODEL_NAME of MODEL_NAMES) {
-      try {
-        const HF_API_URL = `https://api-inference.huggingface.co/models/${MODEL_NAME}`;
-        console.log(`[AI Proxy] Trying model: ${MODEL_NAME}`);
-
     console.log("[AI Proxy] Request received, body type:", typeof req.body);
     console.log("[AI Proxy] Request body keys:", req.body ? Object.keys(req.body) : "null");
 
-    // Get image data from request body
+    // Get image data from request body (only need to parse once)
     let imageBuffer;
     if (req.body && req.body.image) {
       // Base64 encoded image
@@ -483,26 +477,63 @@ app.post("/api/ai/analyze-waste", express.json({ limit: '10mb' }), async (req, r
       });
     }
 
-    console.log(`[AI Proxy] Analyzing waste image (${imageBuffer.length} bytes)`);
+    // Try each model until one works
+    for (const MODEL_NAME of MODEL_NAMES) {
+      try {
+        const HF_API_URL = `https://api-inference.huggingface.co/models/${MODEL_NAME}`;
+        console.log(`[AI Proxy] Trying model: ${MODEL_NAME} with ${imageBuffer.length} bytes`);
 
-    // Call Hugging Face API
-    const axios = require("axios");
-    const response = await axios.post(HF_API_URL, imageBuffer, {
-      headers: {
-        Authorization: `Bearer ${HF_API_KEY}`,
-        "Content-Type": "application/octet-stream",
-      },
-      timeout: 30000,
-      maxContentLength: Infinity,
-      maxBodyLength: Infinity,
-    });
+        // Call Hugging Face API
+        const axios = require("axios");
+        response = await axios.post(HF_API_URL, imageBuffer, {
+          headers: {
+            Authorization: `Bearer ${HF_API_KEY}`,
+            "Content-Type": "application/octet-stream",
+          },
+          timeout: 30000,
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity,
+        });
 
-    console.log(`[AI Proxy] Hugging Face API response: ${response.status}`);
-
-    // Return the result directly
-    res.status(200).json({
-      ok: true,
-      data: response.data,
+        console.log(`[AI Proxy] Hugging Face API response: ${response.status} from ${MODEL_NAME}`);
+        
+        // Success! Break out of loop
+        break;
+      } catch (error) {
+        lastError = error;
+        console.warn(`[AI Proxy] Model ${MODEL_NAME} failed: ${error.response?.status || error.message}`);
+        
+        // If it's a 410 or 404, try next model
+        if (error.response?.status === 410 || error.response?.status === 404) {
+          continue; // Try next model
+        }
+        // For other errors (503, timeout, etc.), also try next model
+        if (error.response?.status === 503) {
+          continue; // Model loading, try next
+        }
+        // For network errors, try next model
+        if (error.code === "ECONNABORTED" || error.code === "ENOTFOUND") {
+          continue;
+        }
+        // For other errors, break and return error
+        break;
+      }
+    }
+    
+    // If we got a successful response, return it
+    if (response && response.data) {
+      return res.status(200).json({
+        ok: true,
+        data: response.data,
+      });
+    }
+    
+    // If all models failed, return error
+    console.error(`[AI Proxy] All models failed. Last error: ${lastError?.response?.status || lastError?.message}`);
+    const errorStatus = lastError?.response?.status || 500;
+    return res.status(errorStatus).json({
+      ok: false,
+      error: lastError?.response?.data?.error || lastError?.message || "All AI models unavailable",
     });
   } catch (error) {
     console.error("[AI Proxy] Unexpected error:", error.message);
