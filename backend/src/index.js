@@ -423,6 +423,137 @@ app.post("/api/upload/multiple", upload.array("images", 5), (req, res) => {
   }
 });
 
+// AI Waste Analysis Proxy (to avoid CORS issues from Flutter Web)
+// Note: This endpoint must be defined BEFORE express.json() middleware for raw body
+// OR use express.raw() middleware specifically for this route
+app.post("/api/ai/analyze-waste", express.json({ limit: '10mb' }), async (req, res) => {
+  try {
+    const HF_API_KEY = process.env.HUGGINGFACE_API_KEY;
+    if (!HF_API_KEY) {
+      console.error("[AI Proxy] HUGGINGFACE_API_KEY is not set");
+      return res.status(500).json({
+        ok: false,
+        error: "HUGGINGFACE_API_KEY environment variable is not set",
+      });
+    }
+    
+    // Try multiple models in order of preference
+    const MODEL_NAMES = [
+      "google/vit-base-patch16-224", // More reliable alternative
+      "microsoft/swin-tiny-patch4-window7-224", // Original model
+      "facebook/deit-base-distilled-patch16-224", // Fallback
+    ];
+    
+    let lastError = null;
+    let response = null;
+    
+    console.log("[AI Proxy] Request received, body type:", typeof req.body);
+    console.log("[AI Proxy] Request body keys:", req.body ? Object.keys(req.body) : "null");
+
+    // Get image data from request body (only need to parse once)
+    let imageBuffer;
+    if (req.body && req.body.image) {
+      // Base64 encoded image
+      const base64Data = req.body.image;
+      // Remove data URL prefix if present (e.g., "data:image/jpeg;base64,")
+      const base64String = base64Data.includes(',') 
+        ? base64Data.split(',')[1] 
+        : base64Data;
+      imageBuffer = Buffer.from(base64String, "base64");
+      console.log("[AI Proxy] Decoded base64 image, size:", imageBuffer.length, "bytes");
+    } else if (req.body && Buffer.isBuffer(req.body)) {
+      // Raw buffer
+      imageBuffer = req.body;
+      console.log("[AI Proxy] Using raw buffer, size:", imageBuffer.length, "bytes");
+    } else {
+      console.error("[AI Proxy] No image data found in request body");
+      return res.status(400).json({ 
+        ok: false, 
+        error: "No image data provided. Send image as base64 string in 'image' field or raw buffer.",
+        received: {
+          bodyType: typeof req.body,
+          bodyKeys: req.body ? Object.keys(req.body) : null,
+        }
+      });
+    }
+
+    // Try each model until one works
+    for (const MODEL_NAME of MODEL_NAMES) {
+      try {
+        const HF_API_URL = `https://api-inference.huggingface.co/models/${MODEL_NAME}`;
+        console.log(`[AI Proxy] Trying model: ${MODEL_NAME} with ${imageBuffer.length} bytes`);
+
+        // Call Hugging Face API
+        const axios = require("axios");
+        response = await axios.post(HF_API_URL, imageBuffer, {
+          headers: {
+            Authorization: `Bearer ${HF_API_KEY}`,
+            "Content-Type": "application/octet-stream",
+          },
+          timeout: 30000,
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity,
+        });
+
+        console.log(`[AI Proxy] Hugging Face API response: ${response.status} from ${MODEL_NAME}`);
+        
+        // Success! Break out of loop
+        break;
+      } catch (error) {
+        lastError = error;
+        console.warn(`[AI Proxy] Model ${MODEL_NAME} failed: ${error.response?.status || error.message}`);
+        
+        // If it's a 410 or 404, try next model
+        if (error.response?.status === 410 || error.response?.status === 404) {
+          continue; // Try next model
+        }
+        // For other errors (503, timeout, etc.), also try next model
+        if (error.response?.status === 503) {
+          continue; // Model loading, try next
+        }
+        // For network errors, try next model
+        if (error.code === "ECONNABORTED" || error.code === "ENOTFOUND") {
+          continue;
+        }
+        // For other errors, break and return error
+        break;
+      }
+    }
+    
+    // If we got a successful response, return it
+    if (response && response.data) {
+      return res.status(200).json({
+        ok: true,
+        data: response.data,
+      });
+    }
+    
+    // If all models failed, return error
+    console.error(`[AI Proxy] All models failed. Last error: ${lastError?.response?.status || lastError?.message}`);
+    const errorStatus = lastError?.response?.status || 500;
+    return res.status(errorStatus).json({
+      ok: false,
+      error: lastError?.response?.data?.error || lastError?.message || "All AI models unavailable",
+    });
+  } catch (error) {
+    console.error("[AI Proxy] Unexpected error:", error.message);
+    
+    // This should not happen if all models were tried above
+    // But handle it just in case
+    if (error.response) {
+      res.status(error.response.status).json({
+        ok: false,
+        error: error.response.data?.error || error.message,
+      });
+    } else {
+      res.status(500).json({
+        ok: false,
+        error: error.message || "AI analysis failed - all models unavailable",
+      });
+    }
+  }
+});
+
 // API Routes
 app.get("/api/status", (req, res) => {
   res.json({
