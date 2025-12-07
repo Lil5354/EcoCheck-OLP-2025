@@ -436,8 +436,22 @@ app.post("/api/ai/analyze-waste", express.json({ limit: '10mb' }), async (req, r
         error: "HUGGINGFACE_API_KEY environment variable is not set",
       });
     }
-    const MODEL_NAME = "microsoft/swin-tiny-patch4-window7-224";
-    const HF_API_URL = `https://api-inference.huggingface.co/models/${MODEL_NAME}`;
+    
+    // Try multiple models in order of preference
+    const MODEL_NAMES = [
+      "google/vit-base-patch16-224", // More reliable alternative
+      "microsoft/swin-tiny-patch4-window7-224", // Original model
+      "facebook/deit-base-distilled-patch16-224", // Fallback
+    ];
+    
+    let lastError = null;
+    let response = null;
+    
+    // Try each model until one works
+    for (const MODEL_NAME of MODEL_NAMES) {
+      try {
+        const HF_API_URL = `https://api-inference.huggingface.co/models/${MODEL_NAME}`;
+        console.log(`[AI Proxy] Trying model: ${MODEL_NAME}`);
 
     console.log("[AI Proxy] Request received, body type:", typeof req.body);
     console.log("[AI Proxy] Request body keys:", req.body ? Object.keys(req.body) : "null");
@@ -491,35 +505,19 @@ app.post("/api/ai/analyze-waste", express.json({ limit: '10mb' }), async (req, r
       data: response.data,
     });
   } catch (error) {
-    console.error("[AI Proxy] Error:", error.message);
+    console.error("[AI Proxy] Unexpected error:", error.message);
     
-    // Handle different error types
+    // This should not happen if all models were tried above
+    // But handle it just in case
     if (error.response) {
-      // Hugging Face API error
-      if (error.response.status === 503) {
-        // Model is loading
-        res.status(503).json({
-          ok: false,
-          error: "Model is loading, please try again in a few seconds",
-          retry: true,
-        });
-      } else {
-        res.status(error.response.status).json({
-          ok: false,
-          error: error.response.data?.error || error.message,
-        });
-      }
-    } else if (error.code === "ECONNABORTED") {
-      // Timeout
-      res.status(504).json({
+      res.status(error.response.status).json({
         ok: false,
-        error: "Request timeout",
+        error: error.response.data?.error || error.message,
       });
     } else {
-      // Other errors
       res.status(500).json({
         ok: false,
-        error: error.message || "AI analysis failed",
+        error: error.message || "AI analysis failed - all models unavailable",
       });
     }
   }
