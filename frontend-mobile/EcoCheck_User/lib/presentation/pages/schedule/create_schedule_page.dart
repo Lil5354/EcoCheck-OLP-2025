@@ -10,16 +10,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:intl/intl.dart';
 import 'package:eco_check/core/constants/color_constants.dart';
 import 'package:eco_check/core/constants/text_constants.dart';
 import 'package:eco_check/core/constants/app_constants.dart';
+import 'package:eco_check/core/utils/image_helper.dart';
 import 'package:eco_check/core/network/api_client.dart';
 import 'package:eco_check/presentation/widgets/dialogs/dialogs.dart';
 import 'package:eco_check/presentation/blocs/auth/auth_bloc.dart';
 import 'package:eco_check/presentation/blocs/auth/auth_state.dart';
 import 'package:eco_check/data/repositories/ecocheck_repository.dart';
 import 'package:eco_check/data/services/image_upload_service.dart';
+import 'package:eco_check/data/services/ai_waste_analysis_service.dart';
+import 'package:flutter/foundation.dart';
 
 // Class to store photo metadata
 class PhotoWithMetadata {
@@ -35,6 +39,19 @@ class PhotoWithMetadata {
     this.latitude,
     this.longitude,
     this.address,
+  });
+}
+
+// Class to store aggregated AI results
+class _AggregatedResult {
+  final String wasteType;
+  final double totalWeight;
+  final double avgConfidence;
+
+  _AggregatedResult({
+    required this.wasteType,
+    required this.totalWeight,
+    required this.avgConfidence,
   });
 }
 
@@ -58,11 +75,43 @@ class _CreateSchedulePageState extends State<CreateSchedulePage> {
   String _address = '';
   String _notes = '';
   List<PhotoWithMetadata> _photos = [];
+  
+  // Default location (TPHCM center)
+  static const double _defaultLat = 10.8231; // TPHCM latitude
+  static const double _defaultLon = 106.6297; // TPHCM longitude
+  double? _currentLat;
+  double? _currentLon;
+  
+  // AI Analysis
+  bool _isAnalyzing = false;
+  WasteAnalysisResult? _lastAIResult;
+  List<WasteAnalysisResult> _allAIResults = []; // Store all AI results
 
   @override
   void initState() {
     super.initState();
     _repository = EcoCheckRepository(ApiClient());
+    // Try to get location on init, fallback to default TPHCM
+    _initializeLocation();
+  }
+
+  /// Initialize location - try GPS, fallback to default TPHCM
+  Future<void> _initializeLocation() async {
+    final position = await _getCurrentLocation();
+    if (position != null) {
+      setState(() {
+        _currentLat = position.latitude;
+        _currentLon = position.longitude;
+      });
+      await _updateAddressFromLocation(position.latitude, position.longitude);
+    } else {
+      // Use default TPHCM location
+      setState(() {
+        _currentLat = _defaultLat;
+        _currentLon = _defaultLon;
+      });
+      await _updateAddressFromLocation(_defaultLat, _defaultLon);
+    }
   }
 
   Future<Position?> _getCurrentLocation() async {
@@ -96,7 +145,14 @@ class _CreateSchedulePageState extends State<CreateSchedulePage> {
   Future<void> _takePhoto() async {
     try {
       // Get current location before taking photo
-      final position = await _getCurrentLocation();
+      Position? position = await _getCurrentLocation();
+      
+      // If no GPS location, try to get from photo metadata or use default TPHCM location
+      if (position == null) {
+        if (kDebugMode) {
+          print('⚠️ [Schedule] No GPS location, will try photo metadata or use TPHCM default');
+        }
+      }
 
       final XFile? photo = await _picker.pickImage(
         source: ImageSource.camera,
@@ -104,22 +160,56 @@ class _CreateSchedulePageState extends State<CreateSchedulePage> {
       );
 
       if (photo != null) {
+        if (kDebugMode) {
+          print('📸 [Schedule] Photo taken: ${photo.name}');
+        }
+
+        // Try to get location from photo metadata if GPS failed
+        double? photoLat = position?.latitude;
+        double? photoLon = position?.longitude;
+        
+        // Note: On Flutter Web, photo metadata might not be available
+        // We'll use default TPHCM location if no location is available
+        
+        // If still no location, use default TPHCM coordinates
+        if (photoLat == null || photoLon == null) {
+          // Default location: Ho Chi Minh City center
+          photoLat = 10.8231; // TPHCM latitude
+          photoLon = 106.6297; // TPHCM longitude
+          if (kDebugMode) {
+            print('📍 [Schedule] Using default TPHCM location: $photoLat, $photoLon');
+          }
+        }
+
         final photoWithMetadata = PhotoWithMetadata(
           photo: photo,
           capturedAt: DateTime.now(),
-          latitude: position?.latitude,
-          longitude: position?.longitude,
+          latitude: photoLat,
+          longitude: photoLon,
         );
 
         setState(() {
           _photos.add(photoWithMetadata);
+          _isAnalyzing = true;
         });
+
+        // Update address and current location from photo
+        if (photoLat != null && photoLon != null) {
+          setState(() {
+            _currentLat = photoLat;
+            _currentLon = photoLon;
+          });
+          await _updateAddressFromLocation(photoLat, photoLon);
+        }
+
+        // Analyze ALL photos with AI and accumulate results
+        await _analyzeImageWithAI(photo);
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                'Đã chụp ảnh ${_photos.length}/3${position != null ? " (có vị trí GPS)" : ""}',
+                'Đã chụp ảnh ${_photos.length}/3${position != null ? " (có vị trí GPS)" : " (vị trí mặc định TPHCM)"}',
               ),
               backgroundColor: AppColors.success,
               duration: const Duration(seconds: 2),
@@ -129,6 +219,9 @@ class _CreateSchedulePageState extends State<CreateSchedulePage> {
       }
     } catch (e) {
       if (mounted) {
+        if (kDebugMode) {
+          print('❌ [Schedule] Error taking photo: $e');
+        }
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Lỗi khi chụp ảnh: $e'),
@@ -139,9 +232,226 @@ class _CreateSchedulePageState extends State<CreateSchedulePage> {
     }
   }
 
+  /// Update address from location coordinates
+  Future<void> _updateAddressFromLocation(double lat, double lon) async {
+    try {
+      // Use geocoding to get address from coordinates
+      List<Placemark> placemarks = await placemarkFromCoordinates(lat, lon);
+      if (placemarks.isNotEmpty) {
+        final place = placemarks[0];
+        final addressParts = [
+          place.street,
+          place.subLocality,
+          place.locality,
+          place.administrativeArea,
+        ].where((s) => s != null && s.isNotEmpty).join(', ');
+        
+        if (addressParts.isNotEmpty) {
+          setState(() {
+            _address = addressParts;
+          });
+          if (kDebugMode) {
+            print('📍 [Schedule] Address updated from location: $_address');
+          }
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('⚠️ [Schedule] Error getting address from location: $e');
+      }
+      // Use default TPHCM address if geocoding fails
+      setState(() {
+        _address = 'Thành phố Hồ Chí Minh, Việt Nam';
+      });
+    }
+  }
+
+  /// Analyze image with AI and auto-fill form (accumulate results from all photos)
+  Future<void> _analyzeImageWithAI(XFile photo) async {
+    if (kDebugMode) {
+      print('🤖 [Schedule AI] Starting analysis for photo: ${photo.name} (Total photos: ${_photos.length})');
+    }
+
+    try {
+      final result = await AIWasteAnalysisService.analyzeImage(photo);
+
+      if (kDebugMode) {
+        print('🤖 [Schedule AI] Analysis result:');
+        print('  - Waste Type: ${result.wasteType}');
+        print('  - Weight Category: ${result.weightCategory}');
+        print('  - Estimated Weight: ${result.estimatedWeightKg}kg');
+        print('  - Confidence: ${result.confidence}');
+        print('  - Description: ${result.description}');
+      }
+
+      // Add result to list
+      _allAIResults.add(result);
+
+      if (mounted) {
+        // Aggregate results from all photos
+        final aggregatedResult = _aggregateAIResults(_allAIResults);
+
+        if (kDebugMode) {
+          print('🤖 [Schedule AI] Aggregated result from ${_allAIResults.length} photos:');
+          print('  - Dominant Waste Type: ${aggregatedResult.wasteType}');
+          print('  - Total Weight: ${aggregatedResult.totalWeight}kg');
+          print('  - Average Confidence: ${aggregatedResult.avgConfidence}');
+        }
+
+        // Map AI waste type to app constants
+        String mappedWasteType = AppConstants.wasteTypeOrganic;
+        if (aggregatedResult.wasteType == 'recyclable') {
+          mappedWasteType = AppConstants.wasteTypeRecyclable;
+        } else if (aggregatedResult.wasteType == 'bulky') {
+          mappedWasteType = AppConstants.wasteTypeHazardous;
+        }
+
+        // Use accumulated weight
+        double mappedWeight = aggregatedResult.totalWeight;
+
+        if (kDebugMode) {
+          print('🤖 [Schedule AI] Before setState:');
+          print('  - Current wasteType: $_selectedWasteType');
+          print('  - Current weight: $_estimatedWeight');
+          print('  - New wasteType: $mappedWasteType');
+          print('  - New weight: $mappedWeight');
+        }
+
+        setState(() {
+          _isAnalyzing = false;
+          _lastAIResult = result; // Keep last result for display
+          _selectedWasteType = mappedWasteType;
+          _estimatedWeight = mappedWeight;
+        });
+
+        if (kDebugMode) {
+          print('🤖 [Schedule AI] After setState:');
+          print('  - _selectedWasteType: $_selectedWasteType');
+          print('  - _estimatedWeight: $_estimatedWeight');
+        }
+
+        // Show success message
+        if (aggregatedResult.avgConfidence > 0.3) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.auto_awesome, color: Colors.white),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'AI đã phân tích ${_allAIResults.length} ảnh: ${aggregatedResult.totalWeight.toStringAsFixed(1)}kg ${_getWasteTypeName(mappedWasteType)}',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: AppColors.primary,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    } catch (e, stackTrace) {
+      if (mounted) {
+        setState(() {
+          _isAnalyzing = false;
+        });
+        if (kDebugMode) {
+          print('❌ [Schedule AI] Analysis Error: $e');
+          print('Stack trace: $stackTrace');
+        }
+        // Don't show error to user, just continue
+      }
+    }
+  }
+
+  /// Aggregate results from multiple AI analyses
+  _AggregatedResult _aggregateAIResults(List<WasteAnalysisResult> results) {
+    if (results.isEmpty) {
+      return _AggregatedResult(
+        wasteType: 'household',
+        totalWeight: 2.0,
+        avgConfidence: 0.0,
+      );
+    }
+
+    // Count waste types
+    final wasteTypeCounts = <String, int>{};
+    double totalWeight = 0.0;
+    double totalConfidence = 0.0;
+
+    for (final result in results) {
+      // Count waste types
+      wasteTypeCounts[result.wasteType] = (wasteTypeCounts[result.wasteType] ?? 0) + 1;
+
+      // Accumulate weight - Use estimatedWeightKg from Gemini if available, otherwise convert from category
+      double weight = (result.estimatedWeightKg ?? 2.0).toDouble();
+      if (weight <= 0) {
+        // Fallback to category-based estimation if estimatedWeightKg is not available
+        if (result.weightCategory == 'medium') {
+          weight = 5.0;
+        } else if (result.weightCategory == 'large') {
+          weight = 10.0;
+        } else {
+          weight = 2.0; // small
+        }
+      }
+      totalWeight += weight;
+
+      // Accumulate confidence
+      totalConfidence += result.confidence;
+    }
+
+    // Find dominant waste type
+    String dominantWasteType = 'household';
+    int maxCount = 0;
+    wasteTypeCounts.forEach((type, count) {
+      if (count > maxCount) {
+        maxCount = count;
+        dominantWasteType = type;
+      }
+    });
+
+    return _AggregatedResult(
+      wasteType: dominantWasteType,
+      totalWeight: totalWeight,
+      avgConfidence: totalConfidence / results.length,
+    );
+  }
+
+  String _getWasteTypeName(String wasteType) {
+    switch (wasteType) {
+      case AppConstants.wasteTypeOrganic:
+        return 'sinh hoạt';
+      case AppConstants.wasteTypeRecyclable:
+        return 'tái chế';
+      case AppConstants.wasteTypeHazardous:
+        return 'công nghiệp';
+      default:
+        return 'sinh hoạt';
+    }
+  }
+
   void _removePhoto(int index) {
     setState(() {
       _photos.removeAt(index);
+      // Remove corresponding AI result
+      if (index < _allAIResults.length) {
+        _allAIResults.removeAt(index);
+      }
+      // Recalculate aggregated results if we have remaining photos
+      if (_allAIResults.isNotEmpty) {
+        final aggregatedResult = _aggregateAIResults(_allAIResults);
+        String mappedWasteType = AppConstants.wasteTypeOrganic;
+        if (aggregatedResult.wasteType == 'recyclable') {
+          mappedWasteType = AppConstants.wasteTypeRecyclable;
+        } else if (aggregatedResult.wasteType == 'bulky') {
+          mappedWasteType = AppConstants.wasteTypeHazardous;
+        }
+        _selectedWasteType = mappedWasteType;
+        _estimatedWeight = aggregatedResult.totalWeight;
+      }
     });
   }
 
@@ -173,6 +483,29 @@ class _CreateSchedulePageState extends State<CreateSchedulePage> {
 
             // Waste Type Selection
             _buildLabel('1. Loại rác *'),
+            if (kDebugMode && _lastAIResult != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  '🤖 AI đã chọn: $_selectedWasteType (${(_lastAIResult!.confidence * 100).toStringAsFixed(0)}%)',
+                  style: const TextStyle(color: Colors.green, fontSize: 12),
+                ),
+              ),
+            if (_isAnalyzing)
+              const Padding(
+                padding: EdgeInsets.only(top: 4),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(width: 8),
+                    Text('AI đang phân tích ảnh...', style: TextStyle(fontSize: 12)),
+                  ],
+                ),
+              ),
             const SizedBox(height: 12),
             _buildWasteTypeCards(),
             const SizedBox(height: 24),
@@ -552,21 +885,25 @@ class _CreateSchedulePageState extends State<CreateSchedulePage> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '1600 Amphitheatre Pkwy, Mountain View, California',
+                  _address.isNotEmpty 
+                    ? _address 
+                    : 'Đang lấy địa chỉ...',
                   style: AppTextStyles.caption.copyWith(
                     color: AppColors.textSecondary,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  'Lat: 37.421998 Long: -122.084056',
-                  style: AppTextStyles.caption.copyWith(
-                    color: AppColors.grey,
-                    fontSize: 11,
+                if (_currentLat != null && _currentLon != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Lat: ${_currentLat!.toStringAsFixed(6)} Long: ${_currentLon!.toStringAsFixed(6)}',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.grey,
+                      fontSize: 11,
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
@@ -707,8 +1044,8 @@ class _CreateSchedulePageState extends State<CreateSchedulePage> {
                       // Photo
                       ClipRRect(
                         borderRadius: BorderRadius.circular(12),
-                        child: Image.file(
-                          File(photoData.photo.path),
+                        child: ImageHelper.buildImage(
+                          imageSource: photoData.photo,
                           width: 160,
                           height: 200,
                           fit: BoxFit.cover,
@@ -953,9 +1290,32 @@ class _CreateSchedulePageState extends State<CreateSchedulePage> {
         return;
       }
 
-      // Get user's location (use default if not available)
-      final latitude = user.latitude ?? 10.762622;
-      final longitude = user.longitude ?? 106.660172;
+      // Use location from photos (first photo) or current location or default TPHCM
+      double finalLat;
+      double finalLon;
+      
+      if (_photos.isNotEmpty && _photos[0].latitude != null && _photos[0].longitude != null) {
+        // Priority 1: Use location from first photo
+        finalLat = _photos[0].latitude!;
+        finalLon = _photos[0].longitude!;
+        if (kDebugMode) {
+          print('📍 [Schedule] Using location from first photo: $finalLat, $finalLon');
+        }
+      } else if (_currentLat != null && _currentLon != null) {
+        // Priority 2: Use current location
+        finalLat = _currentLat!;
+        finalLon = _currentLon!;
+        if (kDebugMode) {
+          print('📍 [Schedule] Using current location: $finalLat, $finalLon');
+        }
+      } else {
+        // Priority 3: Use default TPHCM location
+        finalLat = _defaultLat;
+        finalLon = _defaultLon;
+        if (kDebugMode) {
+          print('📍 [Schedule] Using default TPHCM location: $finalLat, $finalLon');
+        }
+      }
 
       // Create schedule via repository
       print('📤 Creating schedule...');
@@ -966,10 +1326,10 @@ class _CreateSchedulePageState extends State<CreateSchedulePage> {
         wasteType: _selectedWasteType,
         estimatedWeight: _estimatedWeight,
         address: _address.isEmpty
-            ? (user.address ?? 'Địa chỉ chưa cập nhật')
+            ? 'Thành phố Hồ Chí Minh, Việt Nam'
             : _address,
-        latitude: latitude,
-        longitude: longitude,
+        latitude: finalLat,
+        longitude: finalLon,
         notes: _notes.isEmpty ? null : _notes,
         photoUrls: photoUrls.isEmpty ? null : photoUrls,
       );

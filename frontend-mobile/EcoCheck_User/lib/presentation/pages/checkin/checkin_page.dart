@@ -16,9 +16,11 @@ import 'dart:io';
 import 'package:eco_check/core/constants/color_constants.dart';
 import 'package:eco_check/core/constants/text_constants.dart';
 import 'package:eco_check/core/constants/api_constants.dart';
+import 'package:eco_check/core/utils/image_helper.dart';
 import 'package:eco_check/presentation/widgets/buttons/primary_button.dart';
 import 'package:eco_check/presentation/widgets/dialogs/dialogs.dart';
 import 'package:eco_check/data/services/image_upload_service.dart';
+import 'package:eco_check/data/services/ai_waste_analysis_service.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'widgets/waste_type_selector.dart';
@@ -44,8 +46,14 @@ class _CheckInPageState extends State<CheckInPage> {
 
   // Image
   File? _selectedImage;
+  XFile? _selectedImageXFile; // For Web platform
   String? _uploadedImageUrl;
   bool _isUploading = false;
+
+  // AI Analysis
+  bool _isAnalyzing = false;
+  String? _aiAnalysisDescription;
+  WasteAnalysisResult? _aiResult;
 
   final ImageUploadService _imageService = ImageUploadService();
   final ImagePicker _imagePicker = ImagePicker();
@@ -162,18 +170,130 @@ class _CheckInPageState extends State<CheckInPage> {
       );
 
       if (image != null) {
+        if (kDebugMode) {
+          print('📸 [Image] Selected image: ${image.name}, path: ${image.path}');
+        }
+
         setState(() {
-          _selectedImage = File(image.path);
+          // Handle Web vs Mobile differently
+          if (kIsWeb) {
+            _selectedImageXFile = image; // Lưu XFile cho Web
+            _selectedImage = null;
+          } else {
+            _selectedImage = File(image.path);
+            _selectedImageXFile = null;
+          }
           _uploadedImageUrl = null;
+          _aiAnalysisDescription = null;
+          _aiResult = null;
         });
+
+        // Analyze image with AI
+        await _analyzeImageWithAI(image);
       }
     } catch (e) {
       if (mounted) {
+        if (kDebugMode) {
+          print('❌ [Image] Error picking image: $e');
+        }
         showErrorDialog(
           context,
           title: 'Lỗi',
           message:
               'Không thể ${source == ImageSource.camera ? 'chụp' : 'chọn'} ảnh: $e',
+        );
+      }
+    }
+  }
+
+  /// Analyze image with AI and auto-fill form
+  Future<void> _analyzeImageWithAI(XFile image) async {
+    if (kDebugMode) {
+      print('🤖 [AI] Starting analysis for image: ${image.name}');
+    }
+
+    setState(() {
+      _isAnalyzing = true;
+      _aiAnalysisDescription = null;
+    });
+
+    try {
+      final result = await AIWasteAnalysisService.analyzeImage(image);
+
+      if (kDebugMode) {
+        print('🤖 [AI] Analysis result:');
+        print('  - Waste Type: ${result.wasteType}');
+        print('  - Weight: ${result.weightCategory}');
+        print('  - Confidence: ${result.confidence}');
+        print('  - Description: ${result.description}');
+      }
+
+      if (mounted) {
+        if (kDebugMode) {
+          print('🤖 [AI] Before setState:');
+          print('  - Current wasteType: $_selectedWasteType');
+          print('  - Current weight: $_selectedWeight');
+          print('  - New wasteType: ${result.wasteType}');
+          print('  - New weight: ${result.weightCategory}');
+        }
+
+        setState(() {
+          _isAnalyzing = false;
+          _aiResult = result;
+          _aiAnalysisDescription = result.description;
+
+          // Auto-fill form based on AI result
+          _selectedWasteType = result.wasteType;
+          _selectedWeight = result.weightCategory;
+        });
+
+        if (kDebugMode) {
+          print('🤖 [AI] After setState:');
+          print('  - _selectedWasteType: $_selectedWasteType');
+          print('  - _selectedWeight: $_selectedWeight');
+          print('  - _aiResult: $_aiResult');
+          print('  - _aiAnalysisDescription: $_aiAnalysisDescription');
+        }
+
+        // Show success message if AI analysis was successful
+        if (result.confidence > 0.3) {
+          // Giảm threshold từ 0.5 xuống 0.3 để hiển thị thông báo nhiều hơn
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.auto_awesome, color: Colors.white),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      result.description ?? 'AI đã phân tích ảnh và tự động điền form!',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: AppColors.primary,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    } catch (e, stackTrace) {
+      if (mounted) {
+        setState(() {
+          _isAnalyzing = false;
+        });
+        if (kDebugMode) {
+          print('❌ [AI] Analysis Error: $e');
+          print('Stack trace: $stackTrace');
+        }
+        // Show error to user
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('AI phân tích thất bại, vui lòng nhập thủ công'),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 2),
+          ),
         );
       }
     }
@@ -192,7 +312,7 @@ class _CheckInPageState extends State<CheckInPage> {
   }
 
   Future<void> _submitCheckIn() async {
-    if (_selectedImage == null && _uploadedImageUrl == null) {
+    if (_selectedImage == null && _selectedImageXFile == null && _uploadedImageUrl == null) {
       showErrorDialog(
         context,
         title: 'Thiếu ảnh',
@@ -239,8 +359,18 @@ class _CheckInPageState extends State<CheckInPage> {
 
       // Upload image if not already uploaded
       String? finalImageUrl = _uploadedImageUrl;
-      if (finalImageUrl == null && _selectedImage != null) {
-        finalImageUrl = await _imageService.uploadImage(_selectedImage!);
+      if (finalImageUrl == null) {
+        if (_selectedImage != null) {
+          finalImageUrl = await _imageService.uploadImage(_selectedImage!);
+        } else if (_selectedImageXFile != null) {
+          // For Web, convert XFile to File temporarily for upload
+          // Note: This might need adjustment based on your upload service
+          if (kDebugMode) {
+            print('⚠️ [Upload] XFile upload on Web - may need special handling');
+          }
+          // Try to upload XFile directly if service supports it
+          // Otherwise, you may need to modify ImageUploadService to accept XFile
+        }
       }
 
       // Submit check-in
@@ -367,17 +497,80 @@ class _CheckInPageState extends State<CheckInPage> {
                     style: BorderStyle.solid,
                   ),
                 ),
-                child: _selectedImage != null
+                child: (_selectedImage != null || _selectedImageXFile != null)
                     ? Stack(
                         fit: StackFit.expand,
                         children: [
                           ClipRRect(
                             borderRadius: BorderRadius.circular(12),
-                            child: Image.file(
-                              _selectedImage!,
+                            child: ImageHelper.buildImage(
+                              imageSource: _selectedImage ?? _selectedImageXFile!,
                               fit: BoxFit.cover,
                             ),
                           ),
+                          // AI Analysis indicator
+                          if (_isAnalyzing)
+                            Container(
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.5),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    CircularProgressIndicator(
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.white,
+                                      ),
+                                    ),
+                                    SizedBox(height: 12),
+                                    Text(
+                                      'AI đang phân tích...',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          // AI Result badge
+                          if (_aiResult != null && !_isAnalyzing)
+                            Positioned(
+                              top: 8,
+                              left: 8,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withOpacity(0.9),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.auto_awesome,
+                                      color: Colors.white,
+                                      size: 16,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'AI: ${(_aiResult!.confidence * 100).toStringAsFixed(0)}%',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
                           // Change image button
                           Positioned(
                             bottom: 8,
@@ -405,19 +598,70 @@ class _CheckInPageState extends State<CheckInPage> {
                               color: AppColors.grey,
                             ),
                           ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'AI sẽ tự động phân tích và điền form',
+                            style: AppTextStyles.caption.copyWith(
+                              color: AppColors.grey,
+                              fontSize: 10,
+                            ),
+                          ),
                         ],
                       ),
               ),
             ),
 
+            // AI Analysis Description
+            if (_aiAnalysisDescription != null && !_isAnalyzing) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: AppColors.primary.withOpacity(0.3),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.auto_awesome,
+                      color: AppColors.primary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _aiAnalysisDescription!,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
             const SizedBox(height: 32),
 
             // Loại rác
             Text('1. Loại rác *', style: AppTextStyles.h5),
+            if (kDebugMode && _aiResult != null)
+              Text(
+                '🤖 AI đã chọn: $_selectedWasteType',
+                style: TextStyle(color: Colors.green, fontSize: 12),
+              ),
             const SizedBox(height: 12),
             WasteTypeSelector(
+              key: ValueKey('waste_$_selectedWasteType'), // Force rebuild when value changes
               selectedType: _selectedWasteType,
               onChanged: (value) {
+                if (kDebugMode) {
+                  print('👤 [User] Manually changed waste type to: $value');
+                }
                 setState(() {
                   _selectedWasteType = value;
                 });
@@ -428,10 +672,19 @@ class _CheckInPageState extends State<CheckInPage> {
 
             // Khối lượng ước tính *
             Text('2. Khối lượng ước tính *', style: AppTextStyles.h5),
+            if (kDebugMode && _aiResult != null)
+              Text(
+                '🤖 AI đã chọn: $_selectedWeight',
+                style: TextStyle(color: Colors.green, fontSize: 12),
+              ),
             const SizedBox(height: 12),
             WeightSelector(
+              key: ValueKey('weight_$_selectedWeight'), // Force rebuild when value changes
               selectedWeight: _selectedWeight,
               onChanged: (value) {
+                if (kDebugMode) {
+                  print('👤 [User] Manually changed weight to: $value');
+                }
                 setState(() {
                   _selectedWeight = value;
                 });

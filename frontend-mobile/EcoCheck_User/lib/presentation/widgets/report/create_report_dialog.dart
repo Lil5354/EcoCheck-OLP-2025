@@ -15,6 +15,7 @@ import 'dart:io';
 import '../../../data/services/image_upload_service.dart';
 import '../../../data/repositories/ecocheck_repository.dart';
 import '../../../core/di/injection_container.dart' as di;
+import '../../../core/utils/image_helper.dart';
 import '../../blocs/auth/auth_bloc.dart';
 import '../../blocs/auth/auth_state.dart';
 import '../../../core/constants/color_constants.dart';
@@ -679,8 +680,8 @@ class _CreateReportDialogState extends State<CreateReportDialog> {
                                     // Photo
                                     ClipRRect(
                                       borderRadius: BorderRadius.circular(8),
-                                      child: Image.file(
-                                        File(photoData.photo.path),
+                                      child: ImageHelper.buildImage(
+                                        imageSource: photoData.photo,
                                         width: 140,
                                         height: 180,
                                         fit: BoxFit.cover,
