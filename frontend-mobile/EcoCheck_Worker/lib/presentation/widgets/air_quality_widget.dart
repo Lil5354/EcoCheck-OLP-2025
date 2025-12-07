@@ -6,10 +6,7 @@
  */
 
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../../data/repositories/ecocheck_repository.dart';
-import '../../../core/di/injection_container.dart';
 
 class AirQualityWidget extends StatefulWidget {
   const AirQualityWidget({super.key});
@@ -37,15 +34,24 @@ class _AirQualityWidgetState extends State<AirQualityWidget> {
 
     try {
       // Get current location
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.medium,
-      );
+      // TODO: Use position to get air quality from API
+      // final position = await Geolocator.getCurrentPosition(
+      //   desiredAccuracy: LocationAccuracy.medium,
+      // );
 
-      final repository = getIt<EcoCheckRepository>();
-      final aqiData = await repository.getAirQuality(
-        lat: position.latitude,
-        lon: position.longitude,
-      );
+      // TODO: Implement getAirQuality method in EcoCheckRepository
+      // final repository = sl<EcoCheckRepository>();
+      // final aqiData = await repository.getAirQuality(
+      //   lat: position.latitude,
+      //   lon: position.longitude,
+      // );
+
+      // Mock data for now
+      final aqiData = {
+        'aqi': 75,
+        'quality': 'Moderate',
+        'location': 'Ho Chi Minh City',
+      };
 
       setState(() {
         _aqiData = aqiData;
@@ -198,11 +204,7 @@ class _AirQualityWidgetState extends State<AirQualityWidget> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              _getAQIIcon(aqi),
-              size: 20,
-              color: AppColors.white,
-            ),
+            Icon(_getAQIIcon(aqi), size: 20, color: AppColors.white),
             const SizedBox(width: 8),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -231,4 +233,3 @@ class _AirQualityWidgetState extends State<AirQualityWidget> {
     );
   }
 }
-

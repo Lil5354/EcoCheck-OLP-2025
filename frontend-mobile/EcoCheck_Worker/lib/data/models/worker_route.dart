@@ -59,6 +59,9 @@ class WorkerRoute {
     this.dumpLon,
   });
 
+  // Backward compatibility getter
+  DateTime get scheduleDate => scheduledDate;
+
   factory WorkerRoute.fromJson(Map<String, dynamic> json) {
     // API có thể trả về 'points' hoặc 'stops' tùy endpoint
     final pointsData = json['points'] ?? json['stops'] ?? [];
@@ -79,10 +82,10 @@ class WorkerRoute {
           .map((point) => RoutePoint.fromJson(point as Map<String, dynamic>))
           .toList(),
       startedAt: json['started_at'] != null
-          ? DateTime.parse(json['started_at'] as String)
+          ? DateTime.parse(json['started_at'] as String).toLocal()
           : null,
       completedAt: json['completed_at'] != null
-          ? DateTime.parse(json['completed_at'] as String)
+          ? DateTime.parse(json['completed_at'] as String).toLocal()
           : null,
       totalDistance: json['total_distance'] != null
           ? double.tryParse(json['total_distance'].toString())
@@ -98,10 +101,10 @@ class WorkerRoute {
                 ? int.tryParse(json['completed_stops'].toString())
                 : null),
       createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'] as String)
+          ? DateTime.parse(json['created_at'] as String).toLocal()
           : DateTime.now(),
       updatedAt: json['updated_at'] != null
-          ? DateTime.parse(json['updated_at'] as String)
+          ? DateTime.parse(json['updated_at'] as String).toLocal()
           : null,
       // Depot info
       depotId: json['depot_id'] as String?,
@@ -317,10 +320,12 @@ class RoutePoint {
       wasteType: json['waste_type'] as String?,
       status: json['status'] as String? ?? 'pending',
       arrivedAt: json['arrived_at'] ?? json['actual_at'] != null
-          ? DateTime.parse((json['arrived_at'] ?? json['actual_at']) as String)
+          ? DateTime.parse(
+              (json['arrived_at'] ?? json['actual_at']) as String,
+            ).toLocal()
           : null,
       completedAt: json['completed_at'] != null
-          ? DateTime.parse(json['completed_at'] as String)
+          ? DateTime.parse(json['completed_at'] as String).toLocal()
           : null,
       actualWeightKg: json['actual_weight_kg'] != null
           ? double.tryParse(json['actual_weight_kg'].toString())

@@ -216,7 +216,7 @@ class MockDataService {
         workerId: 'worker_001',
         workerName: 'Nguyễn Văn An',
         vehiclePlate: '51F-12345',
-        scheduleDate: today,
+        scheduledDate: today,
         status: 'in_progress',
         points: [
           RoutePoint(
@@ -294,7 +294,7 @@ class MockDataService {
         workerId: 'worker_001',
         workerName: 'Nguyễn Văn An',
         vehiclePlate: '51F-12345',
-        scheduleDate: today.subtract(const Duration(days: 1)),
+        scheduledDate: today.subtract(const Duration(days: 1)),
         status: 'completed',
         points: [
           RoutePoint(

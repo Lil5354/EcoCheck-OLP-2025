@@ -114,7 +114,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
         // Pop về màn hình chính
         Navigator.of(context).popUntil((route) {
           return route.isFirst ||
-              !route.settings.name?.contains('RouteDetail') == true;
+              !(route.settings.name?.contains('RouteDetail') ?? false);
         });
       }
     });
@@ -286,7 +286,7 @@ class _RouteDetailScreenState extends State<RouteDetailScreen> {
                 Navigator.of(context).popUntil((route) {
                   // Pop until we reach a route that's not the detail screen
                   return route.isFirst ||
-                      !route.settings.name?.contains('RouteDetail') == true;
+                      !(route.settings.name?.contains('RouteDetail') ?? false);
                 });
               }
             }

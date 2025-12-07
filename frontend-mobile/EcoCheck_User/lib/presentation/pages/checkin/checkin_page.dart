@@ -24,7 +24,7 @@ import 'dart:convert';
 import 'widgets/waste_type_selector.dart';
 import 'widgets/weight_selector.dart';
 
-/// Check-in Page - Chức năng cốt lõi "Tôi có rác" với AI tự động điền form
+/// Check-in Page - Chức năng cốt lõi "Tôi có rác"
 class CheckInPage extends StatefulWidget {
   const CheckInPage({super.key});
 
@@ -35,9 +35,8 @@ class CheckInPage extends StatefulWidget {
 class _CheckInPageState extends State<CheckInPage> {
   String _selectedWasteType = 'household'; // household, recyclable, bulky
   String _selectedWeight = 'medium'; // small, medium, large
-  double? _estimatedWeightKg;
-  
-  // Location
+
+  // Location (chỉ lấy 1 lần duy nhất khi vào page)
   double? _latitude;
   double? _longitude;
   String _address = 'Đang lấy vị trí...';
@@ -46,7 +45,6 @@ class _CheckInPageState extends State<CheckInPage> {
   // Image
   File? _selectedImage;
   String? _uploadedImageUrl;
-  bool _isAnalyzing = false;
   bool _isUploading = false;
 
   final ImageUploadService _imageService = ImageUploadService();
@@ -108,7 +106,8 @@ class _CheckInPageState extends State<CheckInPage> {
         }
       } catch (e) {
         setState(() {
-          _address = '${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}';
+          _address =
+              '${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}';
         });
       }
     } catch (e) {
@@ -167,129 +166,16 @@ class _CheckInPageState extends State<CheckInPage> {
           _selectedImage = File(image.path);
           _uploadedImageUrl = null;
         });
-
-        // Auto-upload and analyze
-        await _uploadAndAnalyzeImage(_selectedImage!);
       }
     } catch (e) {
       if (mounted) {
         showErrorDialog(
           context,
           title: 'Lỗi',
-          message: 'Không thể ${source == ImageSource.camera ? 'chụp' : 'chọn'} ảnh: $e',
+          message:
+              'Không thể ${source == ImageSource.camera ? 'chụp' : 'chọn'} ảnh: $e',
         );
       }
-    }
-  }
-
-  Future<void> _uploadAndAnalyzeImage(File imageFile) async {
-    setState(() {
-      _isUploading = true;
-      _isAnalyzing = true;
-    });
-
-    try {
-      // Step 1: Upload image
-      if (mounted) {
-        showLoadingDialog(context, message: 'Đang tải ảnh lên...');
-      }
-      
-      final imageUrl = await _imageService.uploadImage(imageFile);
-
-      if (imageUrl == null) {
-        throw Exception('Upload ảnh thất bại');
-      }
-
-      setState(() {
-        _uploadedImageUrl = imageUrl;
-      });
-
-      if (mounted) {
-        Navigator.of(context).pop(); // Close loading
-        showLoadingDialog(context, message: 'Đang phân tích ảnh bằng AI...');
-      }
-
-      // Step 2: Analyze with AI
-      final analysisResult = await _analyzeImageWithAI(imageUrl);
-
-      if (mounted) {
-        Navigator.of(context).pop(); // Close loading
-      }
-
-      if (analysisResult != null && mounted) {
-        // Auto-fill form
-        setState(() {
-          _selectedWasteType = analysisResult['waste_type'] ?? 'household';
-          _selectedWeight = analysisResult['weight_category'] ?? 'medium';
-          _estimatedWeightKg = analysisResult['estimated_weight_kg']?.toDouble();
-        });
-
-        showSuccessDialog(
-          context,
-          'Phân tích thành công!',
-          'AI đã tự động điền thông tin:\n'
-          '- Loại rác: ${_getWasteTypeName(_selectedWasteType)}\n'
-          '- Khối lượng: ${_estimatedWeightKg?.toStringAsFixed(1) ?? "N/A"} kg\n\n'
-          'Bạn có thể điều chỉnh nếu cần.',
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        Navigator.of(context).pop(); // Close loading
-        showErrorDialog(
-          context,
-          title: 'Lỗi',
-          message: 'Không thể phân tích ảnh: $e\n\nBạn vẫn có thể nhập thủ công.',
-        );
-      }
-    } finally {
-      setState(() {
-        _isUploading = false;
-        _isAnalyzing = false;
-      });
-    }
-  }
-
-  Future<Map<String, dynamic>?> _analyzeImageWithAI(String imageUrl) async {
-    try {
-      // Get base URL
-      final baseUrl = ApiConstants.devBaseUrl;
-      
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/ai/analyze-image'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'image_url': imageUrl}),
-      ).timeout(const Duration(seconds: 30));
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['ok'] == true && data['data'] != null) {
-          return data['data'] as Map<String, dynamic>;
-        }
-      } else {
-        if (kDebugMode) {
-          print('AI Analysis failed: ${response.statusCode} - ${response.body}');
-        }
-      }
-      return null;
-    } catch (e) {
-      if (kDebugMode) {
-        print('AI Analysis error: $e');
-      }
-      return null;
-    }
-  }
-
-  String _getWasteTypeName(String type) {
-    switch (type) {
-      case 'household':
-        return 'Rác thải sinh hoạt';
-      case 'recyclable':
-        return 'Rác tái chế';
-      case 'bulky':
-        return 'Rác cồng kềnh';
-      default:
-        return type;
     }
   }
 
@@ -327,11 +213,7 @@ class _CheckInPageState extends State<CheckInPage> {
     // Get user_id
     final userId = await _getUserId();
     if (userId == null || userId.isEmpty) {
-      showErrorDialog(
-        context,
-        title: 'Lỗi',
-        message: 'Vui lòng đăng nhập',
-      );
+      showErrorDialog(context, title: 'Lỗi', message: 'Vui lòng đăng nhập');
       return;
     }
 
@@ -340,14 +222,19 @@ class _CheckInPageState extends State<CheckInPage> {
     }
 
     try {
-      // Calculate filling_level from weight
+      // Calculate filling_level and weight from selector
       double fillingLevel = 0.5;
+      double estimatedWeight = 2.0;
+
       if (_selectedWeight == 'small') {
         fillingLevel = 0.3;
+        estimatedWeight = 1.0;
       } else if (_selectedWeight == 'medium') {
         fillingLevel = 0.5;
+        estimatedWeight = 2.0;
       } else if (_selectedWeight == 'large') {
         fillingLevel = 0.8;
+        estimatedWeight = 5.0;
       }
 
       // Upload image if not already uploaded
@@ -357,21 +244,23 @@ class _CheckInPageState extends State<CheckInPage> {
       }
 
       // Submit check-in
-      final baseUrl = ApiConstants.devBaseUrl;
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/user/checkin'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({
-          'user_id': userId,
-          'waste_type': _selectedWasteType,
-          'filling_level': fillingLevel,
-          'estimated_weight_kg': _estimatedWeightKg ?? 2.0,
-          'photo_url': finalImageUrl,
-          'latitude': _latitude,
-          'longitude': _longitude,
-          'address': _address,
-        }),
-      ).timeout(const Duration(seconds: 30));
+      final baseUrl = ApiConstants.baseUrl;
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl/api/user/checkin'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({
+              'user_id': userId,
+              'waste_type': _selectedWasteType,
+              'filling_level': fillingLevel,
+              'estimated_weight_kg': estimatedWeight,
+              'photo_url': finalImageUrl,
+              'latitude': _latitude,
+              'longitude': _longitude,
+              'address': _address,
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
 
       if (mounted) {
         Navigator.of(context).pop(); // Close loading
@@ -396,7 +285,9 @@ class _CheckInPageState extends State<CheckInPage> {
         }
       } else {
         final errorData = json.decode(response.body);
-        throw Exception(errorData['error'] ?? 'Lỗi server: ${response.statusCode}');
+        throw Exception(
+          errorData['error'] ?? 'Lỗi server: ${response.statusCode}',
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -413,10 +304,7 @@ class _CheckInPageState extends State<CheckInPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Check-in Rác'),
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text('Check-in Rác'), centerTitle: true),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -445,7 +333,7 @@ class _CheckInPageState extends State<CheckInPage> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Chụp/chọn ảnh rác để AI tự động điền thông tin',
+                    'Chụp ảnh rác và thêm thông tin để gửi yêu cầu thu gom',
                     style: AppTextStyles.bodyMedium.copyWith(
                       color: AppColors.grey,
                     ),
@@ -490,32 +378,13 @@ class _CheckInPageState extends State<CheckInPage> {
                               fit: BoxFit.cover,
                             ),
                           ),
-                          if (_isAnalyzing)
-                            Container(
-                              decoration: BoxDecoration(
-                                color: Colors.black54,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    CircularProgressIndicator(color: Colors.white),
-                                    SizedBox(height: 16),
-                                    Text(
-                                      'AI đang phân tích...',
-                                      style: TextStyle(color: Colors.white, fontSize: 16),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
                           // Change image button
                           Positioned(
                             bottom: 8,
                             right: 8,
                             child: FloatingActionButton.small(
                               onPressed: _showImageSourceDialog,
+                              backgroundColor: AppColors.primary,
                               child: const Icon(Icons.camera_alt),
                             ),
                           ),
@@ -541,30 +410,9 @@ class _CheckInPageState extends State<CheckInPage> {
               ),
             ),
 
-            if (_isAnalyzing)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Row(
-                  children: [
-                    const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Đang phân tích ảnh bằng AI...',
-                      style: AppTextStyles.caption.copyWith(
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
             const SizedBox(height: 32),
 
-            // Loại rác (Auto-filled by AI)
+            // Loại rác
             Text('1. Loại rác *', style: AppTextStyles.h5),
             const SizedBox(height: 12),
             WasteTypeSelector(
@@ -578,32 +426,8 @@ class _CheckInPageState extends State<CheckInPage> {
 
             const SizedBox(height: 32),
 
-            // Khối lượng (Auto-filled by AI)
+            // Khối lượng ước tính *
             Text('2. Khối lượng ước tính *', style: AppTextStyles.h5),
-            if (_estimatedWeightKg != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.auto_awesome, size: 16, color: AppColors.primary),
-                      const SizedBox(width: 8),
-            Text(
-                        'AI ước tính: ${_estimatedWeightKg!.toStringAsFixed(1)} kg',
-                        style: AppTextStyles.caption.copyWith(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-            ),
             const SizedBox(height: 12),
             WeightSelector(
               selectedWeight: _selectedWeight,
@@ -642,39 +466,39 @@ class _CheckInPageState extends State<CheckInPage> {
                       ],
                     )
                   : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.my_location,
-                        color: AppColors.primary,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Đã lấy vị trí GPS',
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.bold,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.my_location,
+                              color: AppColors.primary,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Đã lấy vị trí GPS',
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(_address, style: AppTextStyles.bodyMedium),
+                        const SizedBox(height: 8),
+                        Text(_address, style: AppTextStyles.bodyMedium),
                         if (_latitude != null && _longitude != null)
                           Padding(
                             padding: const EdgeInsets.only(top: 4),
                             child: Text(
                               'Lat: ${_latitude!.toStringAsFixed(6)}, Long: ${_longitude!.toStringAsFixed(6)}',
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.grey,
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.grey,
                               ),
+                            ),
+                          ),
+                      ],
                     ),
-                  ),
-                ],
-              ),
             ),
 
             const SizedBox(height: 32),

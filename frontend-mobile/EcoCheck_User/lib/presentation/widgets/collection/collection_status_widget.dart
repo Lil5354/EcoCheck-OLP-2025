@@ -6,9 +6,8 @@
  */
 
 import 'package:flutter/material.dart';
-import 'package:eco_check/core/constants/color_constants.dart';
-import 'package:eco_check/core/constants/text_constants.dart';
 import 'package:intl/intl.dart';
+import '../../../core/constants/color_constants.dart';
 
 class CollectionStatusWidget extends StatelessWidget {
   final String status;
@@ -83,7 +82,10 @@ class CollectionStatusWidget extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: _getStatusColor().withOpacity(0.1),
                   borderRadius: BorderRadius.circular(20),
@@ -107,10 +109,7 @@ class CollectionStatusWidget extends StatelessWidget {
                 const SizedBox(width: 8),
                 Text(
                   'Nhân viên: $employeeName',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                  ),
+                  style: const TextStyle(fontSize: 14, color: Colors.grey),
                 ),
               ],
             ),
@@ -123,10 +122,7 @@ class CollectionStatusWidget extends StatelessWidget {
                 const SizedBox(width: 8),
                 Text(
                   'Phân công: ${DateFormat('dd/MM/yyyy HH:mm').format(assignedAt!)}',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                  ),
+                  style: const TextStyle(fontSize: 14, color: Colors.grey),
                 ),
               ],
             ),
@@ -139,10 +135,7 @@ class CollectionStatusWidget extends StatelessWidget {
                 const SizedBox(width: 8),
                 Text(
                   'Hoàn thành: ${DateFormat('dd/MM/yyyy HH:mm').format(completedAt!)}',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.green,
-                  ),
+                  style: const TextStyle(fontSize: 14, color: Colors.green),
                 ),
               ],
             ),
@@ -197,6 +190,3 @@ class CollectionStatusWidget extends StatelessWidget {
     );
   }
 }
-
-
-

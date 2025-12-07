@@ -23,14 +23,8 @@ class AuthRepository {
       final response = await _dio.post(
         ApiConstants.loginUrl,
         data: phoneOrEmail.contains('@')
-            ? {
-                'email': phoneOrEmail,
-                'password': password,
-              }
-            : {
-                'phone': phoneOrEmail,
-                'password': password,
-              },
+            ? {'email': phoneOrEmail, 'password': password}
+            : {'phone': phoneOrEmail, 'password': password},
       );
 
       if (response.data['ok'] == true && response.data['data'] != null) {
@@ -39,7 +33,7 @@ class AuthRepository {
 
         // Save credentials
         await _prefs.setString('user_id', user.id);
-        await _prefs.setString('user_phone', user.phone ?? '');
+        await _prefs.setString('user_phone', user.phone);
         await _prefs.setString('user_email', user.email ?? '');
 
         return user;
@@ -78,7 +72,7 @@ class AuthRepository {
 
         // Save credentials
         await _prefs.setString('user_id', user.id);
-        await _prefs.setString('user_phone', user.phone ?? '');
+        await _prefs.setString('user_phone', user.phone);
         await _prefs.setString('user_email', user.email ?? '');
 
         return user;
@@ -120,4 +114,3 @@ class AuthRepository {
     await _prefs.remove('user_email');
   }
 }
-

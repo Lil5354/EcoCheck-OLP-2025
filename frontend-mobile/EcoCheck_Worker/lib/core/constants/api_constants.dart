@@ -12,9 +12,8 @@ import 'package:flutter/foundation.dart';
 class ApiConstants {
   ApiConstants._();
 
-  // Base URL - Railway Production
-  static const String baseUrl =
-      'https://ecocheck-olp-2025-production.up.railway.app';
+  // Base URL - Render Production
+  static const String baseUrl = 'https://ecocheck-olp-2025.onrender.com';
 
   // Development Base URL - Platform specific
   static String get devBaseUrl {
@@ -108,8 +107,7 @@ class ApiConstants {
   static const String uploadImage = '$apiPrefix/upload/image';
 
   // WebSocket
-  static const String wsBaseUrl =
-      'wss://ecocheck-olp-2025-production.up.railway.app';
+  static const String wsBaseUrl = 'wss://ecocheck-olp-2025.onrender.com';
   static const String wsTracking = '/tracking';
 
   // Google Maps API
@@ -120,6 +118,15 @@ class ApiConstants {
   static String getFullUrl(String endpoint) {
     return '$baseUrl$endpoint';
   }
+
+  // Alias methods for backward compatibility
+  static String getUrl(String endpoint) => getFullUrl(endpoint);
+  static String get loginEndpoint => login;
+  static String get activeRouteEndpoint => activeRoute;
+  static String startRouteEndpoint(String id) => startWorkerRoute(id);
+  static String completeRouteEndpoint(String id) => completeWorkerRoute(id);
+  static String updateScheduleEndpoint(String id) => updateSchedule(id);
+  static String get assignedSchedulesEndpoint => assignedSchedules;
 
   /// Headers
   static Map<String, String> get defaultHeaders => {

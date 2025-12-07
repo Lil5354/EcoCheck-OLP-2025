@@ -22,17 +22,14 @@ class AuthRepository {
   Future<Worker> login(String email, String password) async {
     try {
       // Call backend API
-      final response = await _apiClient.post(
-        ApiConstants.loginEndpoint,
-        {
-          'email': email,
-          'password': password,
-        },
-      );
+      final response = await _apiClient.post(ApiConstants.loginEndpoint, {
+        'email': email,
+        'password': password,
+      });
 
       if (response['ok'] == true && response['data'] != null) {
         final userData = response['data'];
-        
+
         // Check if user is a worker
         if (userData['role'] != 'worker') {
           throw Exception('Tài khoản này không phải là nhân viên');
@@ -41,7 +38,6 @@ class AuthRepository {
         // Get personnel info if available
         final workerId = userData['workerId'];
         final workerName = userData['workerName'] ?? userData['fullName'];
-        final workerRole = userData['workerRole'] ?? 'collector';
         final depotId = userData['depotId'];
         final depotName = userData['depotName'];
 
@@ -58,9 +54,11 @@ class AuthRepository {
           status: userData['isActive'] == true ? 'active' : 'inactive',
           teamId: depotId,
           teamName: depotName,
-          createdAt: DateTime.parse(userData['createdAt'] ?? DateTime.now().toIso8601String()),
-          updatedAt: userData['updatedAt'] != null 
-              ? DateTime.parse(userData['updatedAt']) 
+          createdAt: DateTime.parse(
+            userData['createdAt'] ?? DateTime.now().toIso8601String(),
+          ),
+          updatedAt: userData['updatedAt'] != null
+              ? DateTime.parse(userData['updatedAt'])
               : null,
         );
 
@@ -76,7 +74,7 @@ class AuthRepository {
     } catch (e) {
       // Fallback to mock for development if API fails
       print('API login failed, using mock: ${e.toString()}');
-      
+
       // Mock validation for development
       if (email == 'worker@ecocheck.com' && password == '123456') {
         final worker = MockDataService.getCurrentWorker();
@@ -84,7 +82,7 @@ class AuthRepository {
         await _prefs.setString('worker_email', email);
         return worker;
       }
-      
+
       throw Exception(e.toString().replaceAll('Exception: ', ''));
     }
   }

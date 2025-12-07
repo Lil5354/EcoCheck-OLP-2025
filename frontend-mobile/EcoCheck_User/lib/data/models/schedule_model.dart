@@ -106,7 +106,9 @@ class ScheduleModel extends Equatable {
       DateTime? parseDateNullable(dynamic value) {
         if (value == null) return null;
         try {
-          return DateTime.parse(value.toString());
+          final parsed = DateTime.parse(value.toString());
+          // Convert to local timezone for display
+          return parsed.toLocal();
         } catch (e) {
           return null;
         }
@@ -115,7 +117,9 @@ class ScheduleModel extends Equatable {
       DateTime parseDate(dynamic value, DateTime fallback) {
         if (value == null) return fallback;
         try {
-          return DateTime.parse(value.toString());
+          final parsed = DateTime.parse(value.toString());
+          // Convert to local timezone for display
+          return parsed.toLocal();
         } catch (e) {
           return fallback;
         }

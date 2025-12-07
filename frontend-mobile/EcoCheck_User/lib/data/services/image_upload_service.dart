@@ -11,22 +11,12 @@ import 'dart:convert';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
-import 'package:flutter/foundation.dart';
 import 'package:http_parser/http_parser.dart';
+import '../../core/constants/api_constants.dart';
 
 class ImageUploadService {
-  // Use platform-specific URL for development
-  static String get baseUrl {
-    if (kDebugMode) {
-      // Android emulator uses 10.0.2.2 to access host machine
-      if (!kIsWeb && Platform.isAndroid) {
-        return 'http://10.0.2.2:3000';
-      }
-      // iOS simulator and macOS can use localhost
-      return 'http://localhost:3000';
-    }
-    return 'https://api.ecocheck.vn'; // Production URL
-  }
+  // Use Render production URL
+  static String get baseUrl => ApiConstants.baseUrl;
 
   /// Compress image before upload to reduce size
   Future<File?> compressImage(File file) async {

@@ -76,13 +76,13 @@ class CollectionRequest {
       status: json['status'] as String,
       priority: json['priority'] as String,
       scheduledDate: json['scheduled_date'] != null
-          ? DateTime.parse(json['scheduled_date'] as String)
+          ? DateTime.parse(json['scheduled_date'] as String).toLocal()
           : null,
       assignedWorkerId: json['assigned_worker_id'] as String?,
       assignedWorkerName: json['assigned_worker_name'] as String?,
       routeId: json['route_id'] as String?,
       collectedAt: json['collected_at'] != null
-          ? DateTime.parse(json['collected_at'] as String)
+          ? DateTime.parse(json['collected_at'] as String).toLocal()
           : null,
       actualWeight: json['actual_weight'] != null
           ? (json['actual_weight'] as num).toDouble()
@@ -91,9 +91,9 @@ class CollectionRequest {
       collectionImages: json['collection_images'] != null
           ? List<String>.from(json['collection_images'] as List)
           : null,
-      createdAt: DateTime.parse(json['created_at'] as String),
+      createdAt: DateTime.parse(json['created_at'] as String).toLocal(),
       updatedAt: json['updated_at'] != null
-          ? DateTime.parse(json['updated_at'] as String)
+          ? DateTime.parse(json['updated_at'] as String).toLocal()
           : null,
     );
   }

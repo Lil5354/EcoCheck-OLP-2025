@@ -8,6 +8,7 @@
 
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:flutter/foundation.dart';
+import '../constants/api_constants.dart';
 
 /// Socket.IO Service for realtime updates
 class SocketService {
@@ -25,9 +26,9 @@ class SocketService {
 
     try {
       // Connect to backend Socket.IO server
-      // In production, this should use environment variable
-      const baseUrl = 'http://localhost:3000';
-      
+      // Use Render production URL
+      final baseUrl = ApiConstants.baseUrl;
+
       _socket = IO.io(
         baseUrl,
         IO.OptionBuilder()
@@ -136,8 +137,3 @@ class SocketService {
   /// Check if socket is connected
   bool get isConnected => _isConnected;
 }
-
-
-
-
-

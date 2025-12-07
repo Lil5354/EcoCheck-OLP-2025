@@ -8,7 +8,6 @@
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import 'package:flutter/foundation.dart';
 import 'package:eco_check_worker/core/constants/api_constants.dart';
-import 'dart:io';
 
 /// Socket.IO Service for real-time communication
 class SocketService {
@@ -24,9 +23,9 @@ class SocketService {
     }
 
     try {
-      // Use devBaseUrl for development, baseUrl for production
-      final baseUrl = kDebugMode ? ApiConstants.devBaseUrl : ApiConstants.baseUrl;
-      
+      // Use Render production URL
+      final baseUrl = ApiConstants.baseUrl;
+
       // Convert http/https to ws/wss for socket.io
       String socketUrl = baseUrl;
       if (baseUrl.startsWith('http://')) {
@@ -40,7 +39,9 @@ class SocketService {
         IO.OptionBuilder()
             .setTransports(['websocket', 'polling'])
             .enableAutoConnect()
-            .setExtraHeaders(token != null ? {'Authorization': 'Bearer $token'} : {})
+            .setExtraHeaders(
+              token != null ? {'Authorization': 'Bearer $token'} : {},
+            )
             .build(),
       );
 
@@ -105,35 +106,34 @@ class SocketService {
       _socket!.clearListeners();
     }
   }
-  
+
   /// Remove all listeners (alias for offAll)
   void removeAllListeners() {
     offAll();
   }
-  
+
   /// Listen for route stop completed event
   void onRouteStopCompleted(Function(dynamic) callback) {
     on('route:stop:completed', callback);
   }
-  
+
   /// Listen for route started event
   void onRouteStarted(Function(dynamic) callback) {
     on('route:started', callback);
   }
-  
+
   /// Listen for route completed event
   void onRouteCompleted(Function(dynamic) callback) {
     on('route:completed', callback);
   }
-  
+
   /// Listen for new route event
   void onRouteNew(Function(dynamic) callback) {
     on('route:new', callback);
   }
-  
+
   /// Listen for route assigned event
   void onRouteAssigned(Function(dynamic) callback) {
     on('route:assigned', callback);
   }
 }
-
