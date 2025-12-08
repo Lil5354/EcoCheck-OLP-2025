@@ -86,6 +86,7 @@ Dự án chọn MIT License vì:
 | geolocator | ^10.1.0 | MIT | ✅ | Location services |
 | flutter_map | ^7.0.2 | BSD 3-Clause | ✅ | Map library |
 | shared_preferences | ^2.2.2 | BSD 3-Clause | ✅ | Local storage |
+| google_generative_ai | ^0.2.2 | Apache-2.0 | ✅ | Google Gemini AI SDK |
 
 **Tổng kết Frontend Mobile**: ✅ Tất cả dependencies đều tương thích với MIT License
 

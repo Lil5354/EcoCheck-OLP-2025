@@ -11,6 +11,7 @@
 - ✅ Route optimization với Hybrid CI-SA algorithm
 - ✅ Dynamic dispatch system
 - ✅ Analytics và predictive modeling
+- ✅ AI proxy endpoint cho waste analysis
 - ✅ Kết nối PostgreSQL (PostGIS, TimescaleDB), MongoDB, Redis
 
 ### 🌐 Frontend Web Manager
@@ -32,6 +33,19 @@
   - Gamification system (badges, points, leaderboard)
   - Check-in và thống kê cá nhân
   - Report issues
+  - **AI Waste Analysis với Google Gemini 2.5 Flash**
+    - Tự động phân loại rác từ ảnh (household, recyclable, bulky, hazardous)
+    - Ước tính trọng lượng (kg) từ ảnh
+    - Confidence score và mô tả chi tiết
+    - Checkpoint system với khả năng rollback về Hugging Face
+
+### 🤖 AI Features
+- ✅ **Google Gemini 2.5 Flash Integration**
+  - Multimodal AI cho phân tích ảnh rác thải
+  - Automatic waste classification
+  - Weight estimation from images
+  - Checkpoint system cho AI providers (Gemini/Hugging Face)
+  - Backend proxy endpoint: `POST /api/ai/analyze-waste`
 
 ### 🗄️ Database
 - ✅ 27+ tables với comprehensive schema

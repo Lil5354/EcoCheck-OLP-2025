@@ -38,7 +38,7 @@ class WasteAnalysisResult {
 class AIWasteAnalysisServiceGemini {
   // Gemini API Key - Get from: https://makersuite.google.com/app/apikey
   // Or set via environment variable: GEMINI_API_KEY
-  static const String _defaultApiKey = 'AIzaSyCSTjmE9Ni4UXZ9vo5r9fcTDQ3r1DlfNEw'; // ✅ Updated
+  static const String _defaultApiKey = 'AIzaSyDsYOlyPw4PlmNXqz8bB4vkuhmnmOxA2O0';
   static String get _apiKey {
     // Try to get from environment variable first
     const String envKey = String.fromEnvironment('GEMINI_API_KEY', defaultValue: '');

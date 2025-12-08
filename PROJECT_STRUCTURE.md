@@ -249,17 +249,67 @@ flutter build ios             # iOS build
 
 #### 3.2 EcoCheck_User
 
-**Cấu trúc tương tự EcoCheck_Worker**, nhưng tập trung vào:
+**Công nghệ:**
+- Flutter/Dart
+- BLoC pattern
+- Dio (HTTP client)
+- Socket.IO client
+- Geolocator
+- **Google Gemini AI** (google_generative_ai)
+
+**Cấu trúc:**
+```
+EcoCheck_User/
+├── lib/
+│   ├── main.dart              # Entry point
+│   ├── core/
+│   │   ├── constants/
+│   │   │   └── api_constants.dart  # API configuration
+│   │   └── di/
+│   │       └── injection_container.dart
+│   ├── data/
+│   │   ├── models/            # Data models
+│   │   ├── repositories/      # Data repositories
+│   │   ├── data_sources/      # API data sources
+│   │   └── services/          # Service layer
+│   │       ├── ai_waste_analysis_service.dart (Wrapper)
+│   │       ├── ai_waste_analysis_service_gemini.dart (Gemini implementation)
+│   │       ├── ai_waste_analysis_service_huggingface_backup.dart (Backup)
+│   │       └── ai_service_config.dart (Configuration)
+│   ├── domain/
+│   │   ├── entities/          # Business entities
+│   │   └── usecases/          # Business logic
+│   └── presentation/
+│       ├── blocs/             # BLoC state management
+│       ├── screens/           # Screen components
+│       └── widgets/           # Reusable widgets
+├── pubspec.yaml
+└── android/                   # Android-specific
+└── ios/                       # iOS-specific
+```
+
+**Tính năng chính:**
 - Gamification (badges, points, leaderboard)
 - Schedule booking
-- Check-in functionality
+- Check-in functionality với **AI Waste Analysis**
+  - Tự động phân loại rác từ ảnh (Google Gemini 2.5 Flash)
+  - Ước tính trọng lượng từ ảnh
+  - Confidence score và mô tả chi tiết
 - User statistics
+
+**AI Service Architecture:**
+- **Checkpoint System**: Cho phép chuyển đổi giữa Gemini và Hugging Face
+- **Wrapper Service**: `ai_waste_analysis_service.dart` route đến provider được cấu hình
+- **Gemini Implementation**: Sử dụng Google Gemini 2.5 Flash cho phân tích ảnh
+- **Backup Implementation**: Hugging Face implementation được giữ làm backup
 
 **Cách Build:**
 ```bash
 cd frontend-mobile/EcoCheck_User
 flutter pub get
-flutter run
+flutter run                    # Development mode
+flutter build apk             # Android build
+flutter build ios             # iOS build
 ```
 
 ---

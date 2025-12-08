@@ -18,6 +18,10 @@ class ApiConstants {
   // Development Base URL - Platform specific
   static String get devBaseUrl {
     if (kDebugMode) {
+      // For web, use Render database
+      if (kIsWeb) {
+        return baseUrl; // Use Render database for web
+      }
       // Android emulator uses 10.0.2.2 to access host machine
       if (!kIsWeb && Platform.isAndroid) {
         return 'http://10.0.2.2:3000';

@@ -200,6 +200,11 @@ Dự án EcoCheck được tổ chức theo mô hình **Monorepo**, bao gồm 3 
 - Gamification (badges, points, leaderboard)
 - Check-in rác thải và thống kê cá nhân
 - Family Account (quản lý hộ gia đình)
+- **AI Waste Analysis với Google Gemini 2.5 Flash**
+  - Tự động phân loại rác từ ảnh (household, recyclable, bulky, hazardous)
+  - Ước tính trọng lượng (kg) từ ảnh
+  - Confidence score và mô tả chi tiết
+  - Checkpoint system với khả năng rollback về Hugging Face
 
 **Cách build**: `cd frontend-mobile/EcoCheck_User && flutter pub get && flutter build apk`
 
@@ -346,6 +351,9 @@ kill -9 <PID>
 - `GET /api/analytics/summary` - Analytics summary
 - `GET /api/analytics/timeseries` - Time series data
 - `GET /api/analytics/predict?days=7` - Predictions
+
+### AI Services
+- `POST /api/ai/analyze-waste` - AI waste analysis (proxy endpoint for mobile apps)
 
 ## 📋 Lưu Ý Quan Trọng
 
@@ -750,10 +758,12 @@ backend/
 
 #### Các tính năng AI khác có thể mở rộng:
 
-1. **Computer Vision**: Tự động phân loại rác từ ảnh check-in
-   - Sử dụng MobileNet/EfficientNet
-   - Tự động nhận diện `waste_type` và `filling_level`
-   - Phát hiện ảnh không hợp lệ
+1. **Computer Vision**: Tự động phân loại rác từ ảnh check-in -
+   - Sử dụng Google Gemini 2.5 Flash (multimodal AI)
+   - Tự động nhận diện `waste_type` (household, recyclable, bulky, hazardous)
+   - Ước tính trọng lượng từ ảnh
+   - Confidence score và mô tả chi tiết
+   - Checkpoint system cho khả năng rollback
 
 2. **Anomaly Detection**: Phát hiện bất thường trong hoạt động
    - Isolation Forest hoặc Autoencoder

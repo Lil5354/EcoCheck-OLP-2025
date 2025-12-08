@@ -36,6 +36,11 @@ và dự án này tuân thủ [Semantic Versioning](https://semver.org/spec/v2.0
     - Gamification system (badges, points, leaderboard)
     - Check-in và thống kê cá nhân
     - Report issues
+    - **AI Waste Analysis với Google Gemini 2.5 Flash**
+      - Tự động phân loại rác từ ảnh (household, recyclable, bulky, hazardous)
+      - Ước tính trọng lượng (kg) từ ảnh
+      - Confidence score và mô tả chi tiết
+      - Checkpoint system với khả năng rollback về Hugging Face
 
 - **Database Schema**
   - 27+ tables với đầy đủ relationships
@@ -69,7 +74,6 @@ và dự án này tuân thủ [Semantic Versioning](https://semver.org/spec/v2.0
 - Real-time features yêu cầu WebSocket connection
 
 ### Future Enhancements
-- Tích hợp AI cho phân loại rác (Computer Vision)
 - Predictive Analytics cho dự đoán nhu cầu
 - Anomaly Detection cho phát hiện bất thường
 - API documentation với Swagger/OpenAPI
