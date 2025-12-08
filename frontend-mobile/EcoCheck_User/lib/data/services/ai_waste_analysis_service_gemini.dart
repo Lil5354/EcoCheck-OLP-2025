@@ -38,20 +38,17 @@ class WasteAnalysisResult {
 class AIWasteAnalysisServiceGemini {
   // Gemini API Key - Get from: https://makersuite.google.com/app/apikey
   // Or set via environment variable: GEMINI_API_KEY
-  static const String _defaultApiKey = 'AIzaSyDN6gXOhEBlQijWJAV_CjdCqhtkURBd4mg';
+  static const String _defaultApiKey = 'AIzaSyCSTjmE9Ni4UXZ9vo5r9fcTDQ3r1DlfNEw'; // ✅ Updated
   static String get _apiKey {
     // Try to get from environment variable first
     const String envKey = String.fromEnvironment('GEMINI_API_KEY', defaultValue: '');
     return envKey.isNotEmpty ? envKey : _defaultApiKey;
   }
 
-  // Model: Gemini 1.5 Flash (fast, free tier)
+  // Model: Gemini 2.5 Flash (latest, fast, free tier)
   // List of models to try in order (fallback if one fails)
   static const List<String> _modelNames = [
-    'gemini-1.5-flash-latest',  // Latest version
-    'gemini-1.5-flash',         // Standard name
-    'gemini-pro-vision',        // Older but stable
-    'gemini-pro',               // Pro model
+    'gemini-2.5-flash',         // Latest Gemini 2.5 Flash ✅
   ];
 
   /// Analyze waste image and return waste type and weight estimate
@@ -89,10 +86,13 @@ class AIWasteAnalysisServiceGemini {
       // Create prompt for waste analysis
       const prompt = '''
 Analyze this waste image and provide:
-1. Waste type: Choose ONE from: "household", "recyclable", or "bulky"
+1. Waste type: Choose ONE from: "household", "recyclable", "bulky", or "hazardous"
    - "household": General household waste, organic waste, food scraps
    - "recyclable": Plastic bottles, paper, cardboard, metal cans, glass
    - "bulky": Large items, furniture, appliances, construction waste
+   - "hazardous": Industrial waste, batteries, pesticides, chemicals, toxic materials, 
+                  electronic waste with batteries, medical waste, paint, oil, 
+                  anything dangerous or requiring special disposal
 
 2. Weight estimate: Estimate the weight in kilograms (kg) based on:
    - Size of objects in the image
@@ -101,9 +101,12 @@ Analyze this waste image and provide:
 
 3. Confidence: Rate your confidence (0.0 to 1.0)
 
+IMPORTANT: If you see batteries, pesticides, chemicals, toxic substances, or industrial waste, 
+you MUST classify as "hazardous".
+
 Respond in JSON format:
 {
-  "wasteType": "household|recyclable|bulky",
+  "wasteType": "household|recyclable|bulky|hazardous",
   "estimatedWeightKg": <number>,
   "confidence": <0.0-1.0>,
   "description": "<brief explanation>"
@@ -220,7 +223,9 @@ Respond in JSON format:
 
       // Validate waste type
       String validWasteType = 'household';
-      if (wasteType == 'recyclable' || wasteType == 'bulky') {
+      if (wasteType == 'recyclable' || 
+          wasteType == 'bulky' || 
+          wasteType == 'hazardous') {
         validWasteType = wasteType;
       }
 
@@ -256,8 +261,24 @@ Respond in JSON format:
 
     final lowerText = text.toLowerCase();
 
-    // Try to detect waste type from text
-    if (lowerText.contains('recyclable') || 
+    // Try to detect waste type from text - check hazardous first (highest priority)
+    if (lowerText.contains('hazardous') || 
+        lowerText.contains('battery') || 
+        lowerText.contains('batteries') ||
+        lowerText.contains('pesticide') ||
+        lowerText.contains('chemical') ||
+        lowerText.contains('toxic') ||
+        lowerText.contains('industrial') ||
+        lowerText.contains('pin') ||
+        lowerText.contains('thuốc trừ sâu') ||
+        (lowerText.contains('thuốc') && lowerText.contains('sâu')) ||
+        lowerText.contains('dangerous') ||
+        lowerText.contains('medical waste') ||
+        lowerText.contains('paint') ||
+        lowerText.contains('oil') && lowerText.contains('waste')) {
+      wasteType = 'hazardous';
+      confidence = 0.7;
+    } else if (lowerText.contains('recyclable') || 
         lowerText.contains('plastic') || 
         lowerText.contains('paper') ||
         lowerText.contains('cardboard') ||

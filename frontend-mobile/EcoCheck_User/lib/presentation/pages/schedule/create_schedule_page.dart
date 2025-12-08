@@ -23,6 +23,7 @@ import 'package:eco_check/presentation/blocs/auth/auth_state.dart';
 import 'package:eco_check/data/repositories/ecocheck_repository.dart';
 import 'package:eco_check/data/services/image_upload_service.dart';
 import 'package:eco_check/data/services/ai_waste_analysis_service.dart';
+import 'package:eco_check/presentation/pages/report/report_issue_page.dart';
 import 'package:flutter/foundation.dart';
 
 // Class to store photo metadata
@@ -304,24 +305,67 @@ class _CreateSchedulePageState extends State<CreateSchedulePage> {
           mappedWasteType = AppConstants.wasteTypeRecyclable;
         } else if (aggregatedResult.wasteType == 'bulky') {
           mappedWasteType = AppConstants.wasteTypeHazardous;
+        } else if (aggregatedResult.wasteType == 'hazardous') {
+          mappedWasteType = AppConstants.wasteTypeHazardous;
         }
 
         // Use accumulated weight
         double mappedWeight = aggregatedResult.totalWeight;
+
+        // Validate weight - nếu > 50kg thì hiển thị thông báo và clamp về 50
+        if (mappedWeight > 50) {
+          if (mounted) {
+            showDialog(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded, color: Colors.orange),
+                    SizedBox(width: 8),
+                    Expanded(child: Text('Rác vượt quy định')),
+                  ],
+                ),
+                content: const Text(
+                  'Đối với rác vượt ngoài quy định (trên 50kg), bạn có thể gửi đến "Báo cáo sự cố" để được xử lý.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Đóng'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      // Navigate to Report Issue page
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const ReportIssuePage(),
+                        ),
+                      );
+                    },
+                    child: const Text('Đến Báo cáo sự cố'),
+                  ),
+                ],
+              ),
+            );
+          }
+          // Clamp weight to max 50 for slider
+          mappedWeight = 50.0;
+        }
 
         if (kDebugMode) {
           print('🤖 [Schedule AI] Before setState:');
           print('  - Current wasteType: $_selectedWasteType');
           print('  - Current weight: $_estimatedWeight');
           print('  - New wasteType: $mappedWasteType');
-          print('  - New weight: $mappedWeight');
+          print('  - New weight: $mappedWeight (clamped if > 50)');
         }
 
         setState(() {
           _isAnalyzing = false;
           _lastAIResult = result; // Keep last result for display
           _selectedWasteType = mappedWasteType;
-          _estimatedWeight = mappedWeight;
+          _estimatedWeight = mappedWeight.clamp(1.0, 50.0);
         });
 
         if (kDebugMode) {

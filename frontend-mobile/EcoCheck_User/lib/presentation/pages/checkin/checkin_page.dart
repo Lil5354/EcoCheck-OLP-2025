@@ -25,6 +25,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'widgets/waste_type_selector.dart';
 import 'widgets/weight_selector.dart';
+import '../report/report_issue_page.dart';
 
 /// Check-in Page - Chức năng cốt lõi "Tôi có rác"
 class CheckInPage extends StatefulWidget {
@@ -224,8 +225,54 @@ class _CheckInPageState extends State<CheckInPage> {
         print('🤖 [AI] Analysis result:');
         print('  - Waste Type: ${result.wasteType}');
         print('  - Weight: ${result.weightCategory}');
+        print('  - Estimated Weight: ${result.estimatedWeightKg}kg');
         print('  - Confidence: ${result.confidence}');
         print('  - Description: ${result.description}');
+      }
+
+      // Validate weight - nếu > 50kg thì hiển thị thông báo
+      if (result.estimatedWeightKg != null && result.estimatedWeightKg! > 50) {
+        if (mounted) {
+          setState(() {
+            _isAnalyzing = false;
+          });
+          
+          // Hiển thị dialog thông báo
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, color: Colors.orange),
+                  SizedBox(width: 8),
+                  Expanded(child: Text('Rác vượt quy định')),
+                ],
+              ),
+              content: const Text(
+                'Đối với rác vượt ngoài quy định (trên 50kg), bạn có thể gửi đến "Báo cáo sự cố" để được xử lý.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Đóng'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    // Navigate to Report Issue page
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const ReportIssuePage(),
+                      ),
+                    );
+                  },
+                  child: const Text('Đến Báo cáo sự cố'),
+                ),
+              ],
+            ),
+          );
+        }
+        return; // Dừng xử lý, không auto-fill form
       }
 
       if (mounted) {

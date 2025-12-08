@@ -15,8 +15,8 @@ enum AIProvider {
 /// AI Service Configuration
 class AIServiceConfig {
   // Change this to switch between AI providers
-  // Temporarily using Hugging Face because Gemini models are not available
-  static const AIProvider currentProvider = AIProvider.huggingFace;
+  // ✅ Using Google Gemini 1.5 Flash for better accuracy
+  static const AIProvider currentProvider = AIProvider.gemini;
 
   /// Get the current provider name
   static String get providerName {

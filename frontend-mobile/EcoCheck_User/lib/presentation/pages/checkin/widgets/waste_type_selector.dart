@@ -47,6 +47,14 @@ class WasteTypeSelector extends StatelessWidget {
         'description': 'Đồ nội thất, đồ điện tử lớn',
         'points': '+30 điểm',
       },
+      {
+        'id': 'hazardous',
+        'label': 'Rác công nghiệp',
+        'icon': Icons.dangerous,
+        'color': AppColors.wasteHazardous,
+        'description': 'Pin, thuốc trừ sâu, hóa chất',
+        'points': '+40 điểm',
+      },
     ];
 
     return Column(
