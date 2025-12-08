@@ -25,7 +25,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'widgets/waste_type_selector.dart';
 import 'widgets/weight_selector.dart';
-import '../report/report_issue_page.dart';
+import '../../widgets/report/create_report_dialog.dart';
 
 /// Check-in Page - Chức năng cốt lõi "Tôi có rác"
 class CheckInPage extends StatefulWidget {
@@ -258,11 +258,12 @@ class _CheckInPageState extends State<CheckInPage> {
                 ),
                 ElevatedButton(
                   onPressed: () {
-                    Navigator.pop(context);
-                    // Navigate to Report Issue page
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const ReportIssuePage(),
+                    Navigator.pop(context); // Đóng dialog cảnh báo
+                    // Hiển thị form popup báo cáo
+                    showDialog(
+                      context: context,
+                      builder: (context) => const CreateReportDialog(
+                        category: 'violation', // Báo cáo vi phạm
                       ),
                     );
                   },

@@ -23,7 +23,7 @@ import 'package:eco_check/presentation/blocs/auth/auth_state.dart';
 import 'package:eco_check/data/repositories/ecocheck_repository.dart';
 import 'package:eco_check/data/services/image_upload_service.dart';
 import 'package:eco_check/data/services/ai_waste_analysis_service.dart';
-import 'package:eco_check/presentation/pages/report/report_issue_page.dart';
+import 'package:eco_check/presentation/widgets/report/create_report_dialog.dart';
 import 'package:flutter/foundation.dart';
 
 // Class to store photo metadata
@@ -335,11 +335,12 @@ class _CreateSchedulePageState extends State<CreateSchedulePage> {
                   ),
                   ElevatedButton(
                     onPressed: () {
-                      Navigator.pop(context);
-                      // Navigate to Report Issue page
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const ReportIssuePage(),
+                      Navigator.pop(context); // Đóng dialog cảnh báo
+                      // Hiển thị form popup báo cáo
+                      showDialog(
+                        context: context,
+                        builder: (context) => const CreateReportDialog(
+                          category: 'violation', // Báo cáo vi phạm
                         ),
                       );
                     },
