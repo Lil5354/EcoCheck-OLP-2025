@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:eco_check/core/constants/color_constants.dart';
 import 'package:eco_check/core/constants/text_constants.dart';
+import 'package:eco_check/core/di/injection_container.dart';
 import 'package:eco_check/presentation/widgets/dialogs/dialogs.dart';
 import 'package:eco_check/presentation/pages/auth/login_page.dart';
 import 'package:eco_check/presentation/blocs/auth/auth_bloc.dart';
@@ -17,6 +18,9 @@ import 'package:eco_check/presentation/blocs/auth/auth_state.dart';
 import 'package:eco_check/presentation/blocs/gamification/gamification_bloc.dart';
 import 'package:eco_check/presentation/blocs/gamification/gamification_event.dart';
 import 'package:eco_check/presentation/blocs/gamification/gamification_state.dart';
+import 'package:eco_check/presentation/blocs/statistics/statistics_bloc.dart';
+import 'package:eco_check/presentation/blocs/statistics/statistics_event.dart';
+import 'package:eco_check/presentation/blocs/statistics/statistics_state.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -48,182 +52,206 @@ class _ProfilePageState extends State<ProfilePage> {
       userPhone = authState.user.phone;
     }
 
-    return Scaffold(
-      appBar: AppBar(title: const Text(AppStrings.profile)),
-      body: BlocBuilder<GamificationBloc, GamificationState>(
-        builder: (context, gamificationState) {
-          // Get stats from GamificationBloc
-          int totalPoints = 0;
-          int totalBadges = 0;
+    return BlocProvider(
+      create: (_) {
+        final bloc = sl<StatisticsBloc>();
+        final authState = context.read<AuthBloc>().state;
+        if (authState is Authenticated) {
+          bloc.add(LoadStatisticsSummary(authState.user.id));
+        }
+        return bloc;
+      },
+      child: Scaffold(
+        appBar: AppBar(title: const Text(AppStrings.profile)),
+        body: BlocBuilder<StatisticsBloc, StatisticsState>(
+          builder: (context, statisticsState) {
+            // Get stats from StatisticsBloc
+            int totalPoints = 0;
+            int totalBadges = 0;
+            double co2Saved = 0;
 
-          if (gamificationState is UserStatsLoaded) {
-            totalPoints = gamificationState.points;
-            totalBadges = 0;
-          } else if (gamificationState is GamificationDataLoaded) {
-            totalPoints = gamificationState.points;
-            totalBadges = gamificationState.badges.length;
-          }
+            if (statisticsState is StatisticsLoaded) {
+              totalPoints = statisticsState.summary.totalPoints;
+              totalBadges = statisticsState.summary.totalBadges;
+              co2Saved = statisticsState.summary.totalCO2Saved;
+            }
 
-          return ListView(
-            children: [
-              // Profile Header
-              Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.1),
-                ),
-                child: Column(
-                  children: [
-                    CircleAvatar(
-                      radius: 50,
-                      backgroundColor: AppColors.primary,
-                      child: Text(
-                        userName.isNotEmpty ? userName[0].toUpperCase() : 'U',
-                        style: AppTextStyles.h2.copyWith(
-                          color: AppColors.white,
+            return ListView(
+              children: [
+                // Profile Header
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                  ),
+                  child: Column(
+                    children: [
+                      CircleAvatar(
+                        radius: 50,
+                        backgroundColor: AppColors.primary,
+                        child: Text(
+                          userName.isNotEmpty ? userName[0].toUpperCase() : 'U',
+                          style: AppTextStyles.h2.copyWith(
+                            color: AppColors.white,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(userName, style: AppTextStyles.h4),
-                    const SizedBox(height: 4),
-                    Text(
-                      userPhone,
-                      style: AppTextStyles.bodyMedium.copyWith(
-                        color: AppColors.grey,
+                      const SizedBox(height: 16),
+                      Text(userName, style: AppTextStyles.h4),
+                      const SizedBox(height: 4),
+                      Text(
+                        userPhone,
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.grey,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    if (gamificationState is GamificationLoading)
-                      const CircularProgressIndicator()
-                    else
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          _ProfileStat(
-                            icon: Icons.star,
-                            value: totalPoints.toString(),
-                            label: 'Điểm',
-                          ),
-                          const SizedBox(width: 24),
-                          _ProfileStat(
-                            icon: Icons.emoji_events,
-                            value: totalBadges.toString(),
-                            label: 'Thành tích',
-                          ),
-                          const SizedBox(width: 24),
-                          _ProfileStat(
-                            icon: Icons.eco,
-                            value:
-                                '${(totalPoints * 0.1).toStringAsFixed(0)}kg',
-                            label: 'CO2 giảm',
-                          ),
-                        ],
+                      const SizedBox(height: 16),
+                      if (statisticsState is StatisticsLoading)
+                        const CircularProgressIndicator()
+                      else
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _ProfileStat(
+                              icon: Icons.star,
+                              value: totalPoints.toString(),
+                              label: 'Điểm',
+                            ),
+                            const SizedBox(width: 24),
+                            _ProfileStat(
+                              icon: Icons.emoji_events,
+                              value: totalBadges.toString(),
+                              label: 'Thành tích',
+                            ),
+                            const SizedBox(width: 24),
+                            _ProfileStat(
+                              icon: Icons.eco,
+                              value: '${co2Saved.toStringAsFixed(0)}kg',
+                              label: 'CO2 giảm',
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+
+                // Menu Items
+                _MenuItem(
+                  icon: Icons.person,
+                  title: 'Thông tin cá nhân',
+                  onTap: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Tính năng đang phát triển'),
                       ),
-                  ],
+                    );
+                  },
                 ),
-              ),
-
-              const SizedBox(height: 16),
-
-              // Menu Items
-              _MenuItem(
-                icon: Icons.person,
-                title: 'Thông tin cá nhân',
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Tính năng đang phát triển')),
-                  );
-                },
-              ),
-              _MenuItem(
-                icon: Icons.location_on,
-                title: 'Địa chỉ của tôi',
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Tính năng đang phát triển')),
-                  );
-                },
-              ),
-              _MenuItem(
-                icon: Icons.history,
-                title: 'Lịch sử thu gom',
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Tính năng đang phát triển')),
-                  );
-                },
-              ),
-              _MenuItem(
-                icon: Icons.card_giftcard,
-                title: 'Đổi thưởng',
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Tính năng đang phát triển')),
-                  );
-                },
-              ),
-
-              const Divider(height: 32),
-
-              _MenuItem(
-                icon: Icons.notifications,
-                title: 'Thông báo',
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Tính năng đang phát triển')),
-                  );
-                },
-              ),
-              _MenuItem(
-                icon: Icons.settings,
-                title: 'Cài đặt',
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Tính năng đang phát triển')),
-                  );
-                },
-              ),
-              _MenuItem(
-                icon: Icons.help,
-                title: 'Trợ giúp & Hỗ trợ',
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Tính năng đang phát triển')),
-                  );
-                },
-              ),
-              _MenuItem(
-                icon: Icons.info,
-                title: 'Về EcoCheck',
-                onTap: () {
-                  _showAboutDialog(context);
-                },
-              ),
-
-              const Divider(height: 32),
-
-              _MenuItem(
-                icon: Icons.logout,
-                title: 'Đăng xuất',
-                textColor: AppColors.error,
-                onTap: () => _handleLogout(context),
-              ),
-
-              const SizedBox(height: 32),
-
-              // Version
-              Center(
-                child: Text(
-                  'Phiên bản 1.0.0',
-                  style: AppTextStyles.caption.copyWith(color: AppColors.grey),
+                _MenuItem(
+                  icon: Icons.location_on,
+                  title: 'Địa chỉ của tôi',
+                  onTap: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Tính năng đang phát triển'),
+                      ),
+                    );
+                  },
                 ),
-              ),
+                _MenuItem(
+                  icon: Icons.history,
+                  title: 'Lịch sử thu gom',
+                  onTap: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Tính năng đang phát triển'),
+                      ),
+                    );
+                  },
+                ),
+                _MenuItem(
+                  icon: Icons.card_giftcard,
+                  title: 'Đổi thưởng',
+                  onTap: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Tính năng đang phát triển'),
+                      ),
+                    );
+                  },
+                ),
 
-              const SizedBox(height: 16),
-            ],
-          );
-        },
+                const Divider(height: 32),
+
+                _MenuItem(
+                  icon: Icons.notifications,
+                  title: 'Thông báo',
+                  onTap: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Tính năng đang phát triển'),
+                      ),
+                    );
+                  },
+                ),
+                _MenuItem(
+                  icon: Icons.settings,
+                  title: 'Cài đặt',
+                  onTap: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Tính năng đang phát triển'),
+                      ),
+                    );
+                  },
+                ),
+                _MenuItem(
+                  icon: Icons.help,
+                  title: 'Trợ giúp & Hỗ trợ',
+                  onTap: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Tính năng đang phát triển'),
+                      ),
+                    );
+                  },
+                ),
+                _MenuItem(
+                  icon: Icons.info,
+                  title: 'Về EcoCheck',
+                  onTap: () {
+                    _showAboutDialog(context);
+                  },
+                ),
+
+                const Divider(height: 32),
+
+                _MenuItem(
+                  icon: Icons.logout,
+                  title: 'Đăng xuất',
+                  textColor: AppColors.error,
+                  onTap: () => _handleLogout(context),
+                ),
+
+                const SizedBox(height: 32),
+
+                // Version
+                Center(
+                  child: Text(
+                    'Phiên bản 1.0.0',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.grey,
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 16),
+              ],
+            );
+          },
+        ),
       ),
     );
   }

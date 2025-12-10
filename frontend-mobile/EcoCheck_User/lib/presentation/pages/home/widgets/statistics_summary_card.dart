@@ -9,11 +9,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:eco_check/core/constants/color_constants.dart';
 import 'package:eco_check/core/constants/text_constants.dart';
+import 'package:eco_check/core/di/injection_container.dart';
 import 'package:eco_check/presentation/blocs/auth/auth_bloc.dart';
 import 'package:eco_check/presentation/blocs/auth/auth_state.dart';
-import 'package:eco_check/presentation/blocs/gamification/gamification_bloc.dart';
-import 'package:eco_check/presentation/blocs/gamification/gamification_event.dart';
-import 'package:eco_check/presentation/blocs/gamification/gamification_state.dart';
+import 'package:eco_check/presentation/blocs/statistics/statistics_bloc.dart';
+import 'package:eco_check/presentation/blocs/statistics/statistics_event.dart';
+import 'package:eco_check/presentation/blocs/statistics/statistics_state.dart';
 
 /// Statistics Summary Card Widget
 class StatisticsSummaryCard extends StatefulWidget {
@@ -25,79 +26,78 @@ class StatisticsSummaryCard extends StatefulWidget {
 
 class _StatisticsSummaryCardState extends State<StatisticsSummaryCard> {
   @override
-  void initState() {
-    super.initState();
-    // Load user stats from backend
-    final authState = context.read<AuthBloc>().state;
-    if (authState is Authenticated) {
-      context.read<GamificationBloc>().add(LoadUserStats(authState.user.id));
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return BlocBuilder<GamificationBloc, GamificationState>(
-      builder: (context, state) {
-        // Default values
-        String wasteCollected = '0';
-        String co2Saved = '0';
-        String points = '0';
-
-        if (state is UserStatsLoaded) {
-          points = state.points.toString();
-          // Calculate waste and CO2 from points (approximation)
-          wasteCollected = (state.points * 0.2).toStringAsFixed(0);
-          co2Saved = (state.points * 0.1).toStringAsFixed(0);
+    return BlocProvider(
+      create: (_) {
+        final bloc = sl<StatisticsBloc>();
+        final authState = context.read<AuthBloc>().state;
+        if (authState is Authenticated) {
+          bloc.add(LoadStatisticsSummary(authState.user.id));
         }
+        return bloc;
+      },
+      child: BlocBuilder<StatisticsBloc, StatisticsState>(
+        builder: (context, state) {
+          // Default values
+          String wasteCollected = '0';
+          String co2Saved = '0';
+          String points = '0';
 
-        if (state is GamificationLoading) {
-          return const Card(
+          if (state is StatisticsLoaded) {
+            wasteCollected = state.summary.totalWasteKg.toStringAsFixed(0);
+            co2Saved = state.summary.totalCO2Saved.toStringAsFixed(0);
+            points = state.summary.totalPoints.toString();
+          }
+
+          if (state is StatisticsLoading) {
+            return const Card(
+              child: Padding(
+                padding: EdgeInsets.all(40.0),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            );
+          }
+
+          return Card(
             child: Padding(
-              padding: EdgeInsets.all(40.0),
-              child: Center(child: CircularProgressIndicator()),
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: StatItem(
+                      icon: Icons.delete_outline,
+                      value: wasteCollected,
+                      unit: 'kg',
+                      label: 'Rác đã thu',
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  Container(width: 1, height: 40, color: AppColors.lightGrey),
+                  Expanded(
+                    child: StatItem(
+                      icon: Icons.eco,
+                      value: co2Saved,
+                      unit: 'kg',
+                      label: 'CO2 tiết kiệm',
+                      color: AppColors.success,
+                    ),
+                  ),
+                  Container(width: 1, height: 40, color: AppColors.lightGrey),
+                  Expanded(
+                    child: StatItem(
+                      icon: Icons.star,
+                      value: points,
+                      unit: '',
+                      label: 'Điểm',
+                      color: AppColors.warning,
+                    ),
+                  ),
+                ],
+              ),
             ),
           );
-        }
-
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: StatItem(
-                    icon: Icons.delete_outline,
-                    value: wasteCollected,
-                    unit: 'kg',
-                    label: 'Rác đã thu',
-                    color: AppColors.primary,
-                  ),
-                ),
-                Container(width: 1, height: 40, color: AppColors.lightGrey),
-                Expanded(
-                  child: StatItem(
-                    icon: Icons.eco,
-                    value: co2Saved,
-                    unit: 'kg',
-                    label: 'CO2 tiết kiệm',
-                    color: AppColors.success,
-                  ),
-                ),
-                Container(width: 1, height: 40, color: AppColors.lightGrey),
-                Expanded(
-                  child: StatItem(
-                    icon: Icons.star,
-                    value: points,
-                    unit: '',
-                    label: 'Điểm',
-                    color: AppColors.warning,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+        },
+      ),
     );
   }
 }

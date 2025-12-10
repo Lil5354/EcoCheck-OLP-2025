@@ -109,13 +109,17 @@ class StatisticsSummary extends Equatable {
   });
 
   factory StatisticsSummary.fromJson(Map<String, dynamic> json) {
+    // Parse totalWasteKg and totalCO2Saved
+    final totalWaste =
+        double.tryParse(json['totalWasteKg']?.toString() ?? '0') ?? 0.0;
+    final totalCO2 =
+        double.tryParse(json['totalCO2Saved']?.toString() ?? '0') ?? 0.0;
+
     return StatisticsSummary(
       totalSchedules: json['totalSchedules'] as int? ?? 0,
       completedSchedules: json['completedSchedules'] as int? ?? 0,
-      totalWasteKg:
-          double.tryParse(json['totalWasteKg']?.toString() ?? '0') ?? 0.0,
-      totalCO2Saved:
-          double.tryParse(json['totalCO2Saved']?.toString() ?? '0') ?? 0.0,
+      totalWasteKg: totalWaste,
+      totalCO2Saved: totalCO2,
       totalPoints: json['totalPoints'] as int? ?? 0,
       level: json['level'] as int? ?? 1,
       rankTier: json['rankTier'] as String? ?? 'Người mới',
@@ -123,20 +127,24 @@ class StatisticsSummary extends Equatable {
       totalBadges: json['totalBadges'] as int? ?? 0,
       streakDays: json['streakDays'] as int? ?? 0,
       totalCheckins: json['totalCheckins'] as int? ?? 0,
+      // Use totalWasteKg as fallback for totalWasteThisMonth if not provided
       totalWasteThisMonth:
           double.tryParse(
             json['totalWasteThisMonth']?.toString() ??
                 json['total_waste_this_month']?.toString() ??
+                json['totalWasteKg']?.toString() ??
                 '0',
           ) ??
-          0.0,
+          totalWaste,
+      // Use totalCO2Saved as fallback for totalCO2SavedThisMonth if not provided
       totalCO2SavedThisMonth:
           double.tryParse(
             json['totalCO2SavedThisMonth']?.toString() ??
                 json['total_co2_saved_this_month']?.toString() ??
+                json['totalCO2Saved']?.toString() ??
                 '0',
           ) ??
-          0.0,
+          totalCO2,
       monthlyData:
           (json['monthlyData'] as List<dynamic>?)
               ?.map(

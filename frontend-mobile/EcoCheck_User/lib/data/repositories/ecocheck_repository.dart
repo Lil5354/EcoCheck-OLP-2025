@@ -403,12 +403,25 @@ class EcoCheckRepository {
       );
 
       final responseData = response.data as Map<String, dynamic>;
+
+      // Debug log
+      print('[EcoCheckRepository] getUserStatistics response: $responseData');
+
       final data = responseData['data'] as Map<String, dynamic>;
+
+      print('[EcoCheckRepository] Parsed data: $data');
+      print(
+        '[EcoCheckRepository] Badges count: ${data['badges']?.length ?? 0}',
+      );
 
       // Map backend response to UserStatisticsModel
       return UserStatisticsModel(
         userId: userId,
-        totalPoints: data['totalPoints'] ?? data['total_points'] ?? 0,
+        totalPoints:
+            data['totalPoints'] ??
+            data['total_points'] ??
+            data['currentPoints'] ??
+            0,
         totalCheckins: data['totalCheckins'] ?? data['total_checkins'] ?? 0,
         totalWasteCollected:
             double.tryParse(
@@ -426,7 +439,11 @@ class EcoCheckRepository {
             ) ??
             0,
         rankTier: data['rankTier'] ?? data['rank_tier'] ?? 'Người mới',
-        currentStreak: data['streakDays'] ?? data['streak_days'] ?? 0,
+        currentStreak:
+            data['currentStreak'] ??
+            data['streakDays'] ??
+            data['streak_days'] ??
+            0,
         longestStreak:
             data['longestStreak'] ??
             data['longest_streak'] ??
@@ -442,6 +459,7 @@ class EcoCheckRepository {
             [],
       );
     } catch (e) {
+      print('[EcoCheckRepository] getUserStatistics ERROR: $e');
       throw _handleError(e);
     }
   }
@@ -493,8 +511,7 @@ class EcoCheckRepository {
   Future<List<BadgeModel>> getUserBadges(String userId) async {
     try {
       final response = await _apiClient.get(
-        '${ApiConstants.apiPrefix}/citizen/badges',
-        queryParameters: {'user_id': userId},
+        '${ApiConstants.apiPrefix}/gamification/badges',
       );
 
       final data = response.data as Map<String, dynamic>;
@@ -720,9 +737,29 @@ class EcoCheckRepository {
       );
 
       final data = response.data as Map<String, dynamic>;
+      print('[EcoCheckRepository] Statistics API Response: $data');
+
       if (data['ok'] == true && data['data'] != null) {
-        return StatisticsSummary.fromJson(data['data'] as Map<String, dynamic>);
+        final statsData = data['data'] as Map<String, dynamic>;
+        print('[EcoCheckRepository] Statistics Data: $statsData');
+        print(
+          '[EcoCheckRepository] totalWasteKg: ${statsData['totalWasteKg']}',
+        );
+        print(
+          '[EcoCheckRepository] totalCO2Saved: ${statsData['totalCO2Saved']}',
+        );
+
+        final summary = StatisticsSummary.fromJson(statsData);
+        print(
+          '[EcoCheckRepository] Parsed Summary - totalWasteThisMonth: ${summary.totalWasteThisMonth}',
+        );
+        print(
+          '[EcoCheckRepository] Parsed Summary - totalCO2SavedThisMonth: ${summary.totalCO2SavedThisMonth}',
+        );
+
+        return summary;
       } else {
+        print('[EcoCheckRepository] Statistics API returned no data');
         // Fallback to default
         return const StatisticsSummary(
           totalWasteThisMonth: 0,
@@ -732,6 +769,7 @@ class EcoCheckRepository {
         );
       }
     } catch (e) {
+      print('[EcoCheckRepository] Statistics API Error: $e');
       // Return empty/default data if backend doesn't have this endpoint yet
       if (e.toString().contains('404') || e.toString().contains('not found')) {
         // Silently return default data - this API is not yet implemented

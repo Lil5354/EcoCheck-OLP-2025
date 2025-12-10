@@ -6,6 +6,8 @@
  */
 
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:eco_check/core/constants/api_constants.dart';
 import 'package:eco_check/core/constants/color_constants.dart';
 import 'package:eco_check/core/constants/text_constants.dart';
 import 'package:eco_check/presentation/blocs/gamification/gamification_state.dart';
@@ -49,8 +51,27 @@ class _BadgeIcon extends StatelessWidget {
 
   const _BadgeIcon({required this.badge});
 
+  bool _isImageUrl(String icon) {
+    return icon.startsWith('/') ||
+        icon.startsWith('http://') ||
+        icon.startsWith('https://') ||
+        icon.contains('.png') ||
+        icon.contains('.jpg') ||
+        icon.contains('.jpeg') ||
+        icon.contains('.svg');
+  }
+
+  String _buildImageUrl(String icon) {
+    if (icon.startsWith('http://') || icon.startsWith('https://')) {
+      return icon;
+    }
+    return '${ApiConstants.baseUrl}$icon';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final bool isImage = _isImageUrl(badge.icon);
+
     return Container(
       width: 64,
       height: 64,
@@ -61,13 +82,34 @@ class _BadgeIcon extends StatelessWidget {
             : AppColors.disabled.withOpacity(0.1),
       ),
       child: Center(
-        child: Text(
-          badge.icon,
-          style: TextStyle(
-            fontSize: 32,
-            color: badge.unlocked ? null : AppColors.disabled,
-          ),
-        ),
+        child: isImage
+            ? ClipOval(
+                child: CachedNetworkImage(
+                  imageUrl: _buildImageUrl(badge.icon),
+                  width: 48,
+                  height: 48,
+                  fit: BoxFit.contain,
+                  placeholder: (context, url) => const Icon(
+                    Icons.emoji_events,
+                    size: 32,
+                    color: AppColors.primary,
+                  ),
+                  errorWidget: (context, url, error) => Text(
+                    '🏆',
+                    style: TextStyle(
+                      fontSize: 32,
+                      color: badge.unlocked ? null : AppColors.disabled,
+                    ),
+                  ),
+                ),
+              )
+            : Text(
+                badge.icon,
+                style: TextStyle(
+                  fontSize: 32,
+                  color: badge.unlocked ? null : AppColors.disabled,
+                ),
+              ),
       ),
     );
   }
