@@ -74,7 +74,7 @@ Dự án chọn MIT License vì:
 | geolocator | ^11.0.0 | MIT | ✅ | Location services |
 | flutter_map | ^8.0.0 | BSD 3-Clause | ✅ | OpenStreetMap rendering (bao gồm LatLng) |
 | flutter_map_tile_caching | ^10.0.2 | BSD 3-Clause | ✅ | Offline map caching |
-| image_picker | ^1.0.7 | MIT | ✅ | Image picker |
+| image_picker | ^1.0.7 | BSD 3-Clause / Apache 2.0 | ✅ | Image picker (dual license) |
 | shared_preferences | ^2.2.2 | BSD 3-Clause | ✅ | Local storage |
 | flutter_secure_storage | ^9.0.0 | MIT | ✅ | Secure storage |
 
@@ -89,9 +89,27 @@ Dự án chọn MIT License vì:
 | flutter_map | ^8.0.0 | BSD 3-Clause | ✅ | OpenStreetMap rendering (bao gồm LatLng) |
 | flutter_map_tile_caching | ^10.0.2 | BSD 3-Clause | ✅ | Offline map caching |
 | shared_preferences | ^2.2.2 | BSD 3-Clause | ✅ | Local storage |
+| google_generative_ai | ^0.2.2 | Apache 2.0 | ✅ | Google Gemini AI SDK |
+| image_picker | ^1.0.4 | BSD 3-Clause / Apache 2.0 | ✅ | Image picker (dual license) |
+| flutter_image_compress | ^2.1.0 | MIT | ✅ | Image compression |
+| http | ^1.1.0 | BSD 3-Clause | ✅ | HTTP client |
+| path_provider | ^2.1.1 | BSD 3-Clause | ✅ | File system paths |
+| equatable | ^2.0.5 | MIT | ✅ | Value equality |
+| get_it | ^7.6.4 | MIT | ✅ | Dependency injection |
+| cached_network_image | ^3.3.0 | MIT | ✅ | Image caching |
+| flutter_svg | ^2.0.9 | MIT | ✅ | SVG support |
+| permission_handler | ^11.0.1 | MIT | ✅ | Runtime permissions |
+| geocoding | ^3.0.0 | MIT | ✅ | Address lookup |
+| url_launcher | ^6.2.1 | BSD 3-Clause | ✅ | Launch URLs |
+| intl | ^0.18.1 | BSD 3-Clause | ✅ | Internationalization |
 
 
 **Tổng kết Frontend Mobile**: ✅ Tất cả dependencies đều tương thích với MIT License
+
+**Lưu ý về Apache 2.0**:
+- Apache 2.0 tương thích 100% với MIT License
+- google_generative_ai là SDK chính thức của Google cho Gemini API
+- Apache 2.0 cung cấp patent protection và trademark clauses bổ sung
 
 **Lưu ý về BSD 3-Clause**:
 - BSD 3-Clause tương thích 100% với MIT License
@@ -111,6 +129,20 @@ Dự án chọn MIT License vì:
 | Docker | Apache 2.0 | ✅ | Containerization |
 | Flutter | BSD 3-Clause | ✅ | Mobile framework |
 | Git | GPL v2 | ✅ | Version control tool (không bundle) |
+
+### External APIs & Services
+
+| Service | Type | License/Terms | Tương Thích MIT | Ghi Chú |
+|---------|------|---------------|-----------------|---------|
+| Google Gemini API | AI/ML API | Google API Terms | ✅ | Multimodal AI (vision + text), client-server |
+| OpenStreetMap | Map Data | ODbL | ✅ | Tile data only (read-only access) |
+| Hugging Face API | AI/ML API | Apache 2.0 | ✅ | Alternative AI service (backup) |
+
+**Lưu ý về External APIs**:
+- Các API được truy cập qua HTTPS (client-server), không bundle vào mã nguồn
+- Google Gemini API Terms cho phép sử dụng trong ứng dụng MIT license
+- Dữ liệu từ API không ảnh hưởng đến license của mã nguồn
+- Free tier có giới hạn rate limit nhưng không hạn chế license
 
 **Giải thích PostGIS (GPL v2+) và MIT License - Tại sao TƯƠNG THÍCH:**
 
@@ -144,15 +176,16 @@ Các giấy phép sau đây **tương thích hoàn toàn** với MIT License:
 - ✅ **ISC License**: Tương thích 100% (tương đương MIT)
 - ✅ **BSD 2-Clause**: Tương thích 100%
 - ✅ **BSD 3-Clause**: Tương thích 100%
+- ✅ **Apache 2.0**: Tương thích 100% (có patent protection bổ sung)
 - ✅ **PostgreSQL License**: Tương thích 100% (tương đương BSD)
 
 ### Các Giấy Phép Cần Lưu Ý (Đã Xác Nhận An Toàn)
 
 - ✅ **GPL v2+ (PostGIS)**: Sử dụng qua client-server (SQL) - HOÀN TOÀN TƯƠNG THÍCH
 - ✅ **GPL v2 (Git)**: Build tool, không bundle vào distribution - TƯƠNG THÍCH
-- ✅ **ODbL (OpenStreetMap data)**: Chỉ đọc dữ liệu, không sửa đổi - TƯƠNG THÍCH
-
----
+- ✅ **ODbL (OpenStreetMap data)**: Chỉ đọc dữ liệu tile, không sửa đổi - TƯƠNG THÍCH
+- ✅ **Google API Terms (Gemini)**: Sử dụng qua REST API (client-server) - TƯƠNG THÍCH
+- ✅ **Apache 2.0 (google_generative_ai SDK)**: Permissive license, tương thích MIT - TƯƠNG THÍCH
 
 ## 📋 Checklist Tương Thích
 
@@ -160,6 +193,10 @@ Các giấy phép sau đây **tương thích hoàn toàn** với MIT License:
 - [x] Không có giấy phép xung đột
 - [x] Tất cả thư viện đều có giấy phép tương thích
 - [x] Infrastructure tools sử dụng đúng cách (client-server, không link)
+- [x] PostGIS (GPL) sử dụng qua PostgreSQL client-server - hoàn toàn hợp pháp
+- [x] Dữ liệu từ nguồn mở tuân thủ giấy phép tương ứng
+- [x] Google Gemini API sử dụng qua HTTPS REST API - không ảnh hưởng license
+- [x] Apache 2.0 licenses (google_generative_ai, TimescaleDB) - tương thích hoàn toànerver, không link)
 - [x] PostGIS (GPL) sử dụng qua PostgreSQL client-server - hoàn toàn hợp pháp
 - [x] Dữ liệu từ nguồn mở tuân thủ giấy phép tương ứng
 
@@ -195,6 +232,30 @@ flutter pub deps --style=tree | grep -E "MIT|Apache|BSD"
 - [Choose a License](https://choosealicense.com/)
 - [SPDX License List](https://spdx.org/licenses/)
 
+## 🤖 Google Gemini AI Integration
+
+### API Usage và License Compliance
+
+EcoCheck sử dụng **Google Gemini 1.5 Flash API** cho tính năng phân tích rác thải bằng AI:
+
+#### Cách Sử Dụng
+- **Client-Server Architecture**: Ứng dụng gọi Gemini API qua HTTPS REST endpoint
+- **SDK**: `google_generative_ai` package (Apache 2.0 license)
+- **No Bundling**: API key và model chạy trên Google Cloud, không bundle vào app
+- **Free Tier**: Google cung cấp free tier với giới hạn requests/phút
+
+#### License Compliance
+1. ✅ **google_generative_ai SDK (Apache 2.0)**: Tương thích 100% với MIT
+2. ✅ **Google API Terms of Service**: Cho phép sử dụng trong ứng dụng open source
+3. ✅ **Client-Server Model**: Không tạo derivative work, không ảnh hưởng license
+4. ✅ **API Key**: Người dùng tự đăng ký API key miễn phí tại https://makersuite.google.com
+
+#### Alternatives
+Nếu không muốn sử dụng Gemini API, có thể thay thế bằng:
+- Hugging Face Inference API (Apache 2.0) - đã có implementation backup
+- OpenAI API (với API key riêng)
+- Self-hosted open source models (LLaMA, etc.)
+
 ---
 
 ## ⚖️ Tuyên Bố Pháp Lý
@@ -206,8 +267,16 @@ Dự án EcoCheck đã thực hiện đánh giá kỹ lưỡng về tương thí
 3. **PostGIS (GPL v2+)** được sử dụng đúng cách qua client-server architecture - hoàn toàn hợp pháp
 4. **Dữ liệu từ nguồn mở** được sử dụng tuân thủ giấy phép tương ứng
 5. **Infrastructure tools** (Git) chỉ là build tools, không ảnh hưởng license
+6. **Google Gemini API** sử dụng qua HTTPS REST API - không bundle, không ảnh hưởng license
+7. **Apache 2.0 dependencies** (google_generative_ai, TimescaleDB, Docker) - tương thích hoàn toàn với MIT
 
-**Xác nhận pháp lý**: Việc sử dụng PostGIS (GPL) qua PostgreSQL client-server interface không tạo ra derivative work, do đó không yêu cầu dự án phải GPL. Điều này được xác nhận bởi FSF và được áp dụng rộng rãi trong ngành (ví dụ: MySQL-GPL được sử dụng bởi hàng triệu dự án proprietary và non-GPL open source).
+**Xác nhận pháp lý**: 
+- Việc sử dụng PostGIS (GPL) qua PostgreSQL client-server interface không tạo ra derivative work, do đó không yêu cầu dự án phải GPL. Điều này được xác nhận bởi FSF và được áp dụng rộng rãi trong ngành (ví dụ: MySQL-GPL được sử dụng bởi hàng triệu dự án proprietary và non-GPL open source).
+- Việc sử dụng Google Gemini API qua HTTPS không ảnh hưởng đến license của mã nguồn, tương tự như việc sử dụng Google Maps API, AWS API, hay bất kỳ web service nào khác.
+- Apache 2.0 license cho các dependencies (google_generative_ai, etc.) tương thích 100% với MIT và thậm chí cung cấp thêm patent protection.
+- **image_picker** sử dụng dual license (BSD-3-Clause / Apache 2.0): Mã nguồn chính được phát hành dưới BSD-3-Clause (Copyright 2013 The Flutter Authors), nhưng bao gồm component aFileChooser được phát hành dưới Apache 2.0 (Copyright 2011-2013 Paul Burke). Cả hai giấy phép đều tương thích 100% với MIT License.
+
+Nếu phát hiện bất kỳ vấn đề về giấy phép, vui lòng báo cáo qua [GitHub Issues](https://github.com/Lil5354/EcoCheck-OLP-2025/issues).u cầu dự án phải GPL. Điều này được xác nhận bởi FSF và được áp dụng rộng rãi trong ngành (ví dụ: MySQL-GPL được sử dụng bởi hàng triệu dự án proprietary và non-GPL open source).
 
 Nếu phát hiện bất kỳ vấn đề về giấy phép, vui lòng báo cáo qua [GitHub Issues](https://github.com/Lil5354/EcoCheck-OLP-2025/issues).
 
