@@ -95,9 +95,13 @@ class ApiConstants {
   static const String wsBaseUrl = 'wss://ecocheck-olp-2025.onrender.com';
   static const String wsTracking = '/tracking';
 
-  // Google Maps API
-  static const String googleMapsApiKey =
-      'YOUR_GOOGLE_MAPS_API_KEY'; // TODO: Add key
+  // OpenStreetMap Tiles (100% Open Source)
+  static const String osmTileUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+  static const String osmAttribution = '© OpenStreetMap contributors';
+  
+  // Alternative OSM Tile Servers (for redundancy)
+  static const String osmHotTileUrl = 'https://tile-a.openstreetmap.fr/hot/{z}/{x}/{y}.png';
+  static const String cartoLightTileUrl = 'https://cartodb-basemaps-a.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png';
 
   // Firebase
   static const String firebaseProjectId = 'eco-check-vn'; // TODO: Update
