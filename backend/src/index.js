@@ -13,6 +13,9 @@ const dotenv = require("dotenv");
 const cron = require("node-cron");
 const http = require("http");
 const ARIMA = require("arima");
+const swaggerUi = require("swagger-ui-express");
+const YAML = require("yamljs");
+const path = require("path");
 
 // Load environment variables
 dotenv.config();
@@ -343,6 +346,18 @@ app.use(
   "/contexts",
   express.static(path.join(__dirname, "..", "public", "contexts"))
 );
+
+// Swagger UI Documentation
+try {
+  const swaggerDocument = YAML.load(path.join(__dirname, "..", "..", "docs", "openapi.yaml"));
+  app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument, {
+    customCss: '.swagger-ui .topbar { display: none }',
+    customSiteTitle: "EcoCheck API Documentation"
+  }));
+  console.log("📚 Swagger UI available at /api-docs");
+} catch (error) {
+  console.warn("⚠️  Could not load OpenAPI spec:", error.message);
+}
 
 // FIWARE notification endpoint (Orion-LD Subscriptions)
 app.post("/fiware/notify", (req, res) => {

@@ -28,7 +28,9 @@
     "node-cron": "^3.0.3",
     "pg": "^8.11.3",
     "socket.io": "^4.7.5",
-    "uuid": "^9.0.1"
+    "swagger-ui-express": "^5.0.0",
+    "uuid": "^9.0.1",
+    "yamljs": "^0.3.0"
   },
   "devDependencies": {
     "jest": "^29.7.0",

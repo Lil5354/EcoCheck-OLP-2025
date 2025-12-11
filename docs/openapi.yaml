@@ -1,0 +1,898 @@
+openapi: 3.0.3
+info:
+  title: EcoCheck API
+  description: |
+    EcoCheck API is a comprehensive RESTful API for dynamic waste collection management system.
+    Built on FIWARE Orion-LD Context Broker with real-time capabilities via Socket.IO.
+    
+    ## Features
+    - Authentication & Authorization
+    - Real-time vehicle tracking
+    - Route optimization (VRP)
+    - Analytics & reporting
+    - Gamification system
+    - Master data management
+    
+    ## Base URLs
+    - **Production:** https://ecocheck-olp-2025.onrender.com
+    - **Development:** http://localhost:3000
+    
+  version: 1.0.0
+  contact:
+    name: EcoCheck Support
+    email: support@ecocheck.com
+    url: https://github.com/Lil5354/EcoCheck-OLP-2025
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://ecocheck-olp-2025.onrender.com
+    description: Production server
+  - url: http://localhost:3000
+    description: Development server
+
+tags:
+  - name: Authentication
+    description: User authentication and authorization
+  - name: Core
+    description: Core system endpoints
+  - name: Master Data
+    description: Fleet, depots, and dump sites management
+  - name: Schedules
+    description: Route scheduling and management
+  - name: Worker
+    description: Worker-specific operations
+  - name: Real-time
+    description: Real-time tracking and updates
+  - name: Analytics
+    description: Analytics and reporting
+  - name: Gamification
+    description: Gamification and leaderboards
+  - name: VRP
+    description: Vehicle Routing Problem optimization
+  - name: Alerts
+    description: Alert management
+  - name: Upload
+    description: File upload operations
+  - name: Personnel
+    description: Personnel and group management
+
+paths:
+  /health:
+    get:
+      tags:
+        - Core
+      summary: Health check
+      description: Check if the API is running and healthy
+      responses:
+        '200':
+          description: System is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  timestamp:
+                    type: string
+                    format: date-time
+                  database:
+                    type: string
+                    example: connected
+
+  /api/auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Manager login
+      description: Authenticate manager user and receive JWT token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - password
+              properties:
+                username:
+                  type: string
+                  example: manager1
+                password:
+                  type: string
+                  format: password
+                  example: password123
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      token:
+                        type: string
+                        example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                      user:
+                        $ref: '#/components/schemas/Manager'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+
+  /api/auth/worker/login:
+    post:
+      tags:
+        - Authentication
+      summary: Worker login
+      description: Authenticate worker by phone and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - phone
+                - password
+              properties:
+                phone:
+                  type: string
+                  example: "0901234567"
+                password:
+                  type: string
+                  format: password
+                  example: worker123
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      token:
+                        type: string
+                      user:
+                        $ref: '#/components/schemas/Worker'
+
+  /api/auth/me:
+    get:
+      tags:
+        - Authentication
+      summary: Get current user
+      description: Get authenticated user information
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: User information retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    oneOf:
+                      - $ref: '#/components/schemas/Manager'
+                      - $ref: '#/components/schemas/Worker'
+
+  /api/master/fleet:
+    get:
+      tags:
+        - Master Data
+      summary: Get all vehicles
+      description: Retrieve list of all fleet vehicles
+      parameters:
+        - name: depot_id
+          in: query
+          schema:
+            type: integer
+          description: Filter by depot ID
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, inactive, maintenance]
+      responses:
+        '200':
+          description: Vehicles retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Vehicle'
+    post:
+      tags:
+        - Master Data
+      summary: Create new vehicle
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VehicleInput'
+      responses:
+        '201':
+          description: Vehicle created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Vehicle'
+
+  /api/master/fleet/{id}:
+    patch:
+      tags:
+        - Master Data
+      summary: Update vehicle
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VehicleInput'
+      responses:
+        '200':
+          description: Vehicle updated successfully
+    delete:
+      tags:
+        - Master Data
+      summary: Delete vehicle
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Vehicle deleted successfully
+
+  /api/schedules:
+    get:
+      tags:
+        - Schedules
+      summary: Get all schedules
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, in_progress, completed, cancelled]
+        - name: date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: district
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Schedules retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Schedule'
+    post:
+      tags:
+        - Schedules
+      summary: Create new schedule
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleInput'
+      responses:
+        '201':
+          description: Schedule created successfully
+
+  /api/worker/routes:
+    get:
+      tags:
+        - Worker
+      summary: Get worker's assigned routes
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, in_progress, completed]
+      responses:
+        '200':
+          description: Routes retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WorkerRoute'
+
+  /api/worker/routes/{id}/start:
+    post:
+      tags:
+        - Worker
+      summary: Start a route
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                start_latitude:
+                  type: number
+                  format: double
+                start_longitude:
+                  type: number
+                  format: double
+                odometer_start:
+                  type: number
+      responses:
+        '200':
+          description: Route started successfully
+
+  /api/rt/checkin:
+    post:
+      tags:
+        - Real-time
+      summary: Real-time location check-in
+      description: Update vehicle/worker location in real-time
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - user_id
+                - latitude
+                - longitude
+              properties:
+                user_id:
+                  type: integer
+                latitude:
+                  type: number
+                  format: double
+                longitude:
+                  type: number
+                  format: double
+                speed:
+                  type: number
+                  format: float
+                heading:
+                  type: number
+                  format: float
+                accuracy:
+                  type: number
+                  format: float
+      responses:
+        '200':
+          description: Check-in recorded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      checkin_id:
+                        type: integer
+                      timestamp:
+                        type: string
+                        format: date-time
+
+  /api/analytics/summary:
+    get:
+      tags:
+        - Analytics
+      summary: Get analytics summary
+      parameters:
+        - name: from_date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to_date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: district
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Analytics summary retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/AnalyticsSummary'
+
+  /api/gamification/leaderboard:
+    get:
+      tags:
+        - Gamification
+      summary: Get leaderboard
+      parameters:
+        - name: timeframe
+          in: query
+          schema:
+            type: string
+            enum: [daily, weekly, monthly, all_time]
+            default: all_time
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Leaderboard retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LeaderboardEntry'
+
+  /api/vrp/optimize:
+    post:
+      tags:
+        - VRP
+      summary: Optimize vehicle routes
+      description: Run VRP algorithm to optimize collection routes
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VRPRequest'
+      responses:
+        '200':
+          description: Routes optimized successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/VRPResponse'
+
+  /api/upload:
+    post:
+      tags:
+        - Upload
+      summary: Upload single image
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                image:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Image uploaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      filename:
+                        type: string
+                      url:
+                        type: string
+                      size:
+                        type: integer
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Manager:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        full_name:
+          type: string
+        role:
+          type: string
+          enum: [manager, admin]
+        email:
+          type: string
+          format: email
+
+    Worker:
+      type: object
+      properties:
+        id:
+          type: integer
+        full_name:
+          type: string
+        phone:
+          type: string
+        role:
+          type: string
+          enum: [worker, driver]
+        group_id:
+          type: integer
+        status:
+          type: string
+          enum: [active, inactive]
+
+    Vehicle:
+      type: object
+      properties:
+        id:
+          type: integer
+        vehicle_number:
+          type: string
+        type:
+          type: string
+          enum: [compactor, flatbed, tipper]
+        capacity:
+          type: number
+          format: float
+        status:
+          type: string
+          enum: [active, inactive, maintenance]
+        depot_id:
+          type: integer
+        depot_name:
+          type: string
+
+    VehicleInput:
+      type: object
+      required:
+        - vehicle_number
+        - type
+        - capacity
+      properties:
+        vehicle_number:
+          type: string
+        type:
+          type: string
+        capacity:
+          type: number
+        fuel_consumption:
+          type: number
+        status:
+          type: string
+        depot_id:
+          type: integer
+
+    Schedule:
+      type: object
+      properties:
+        id:
+          type: integer
+        route_name:
+          type: string
+        district:
+          type: string
+        scheduled_date:
+          type: string
+          format: date
+        scheduled_time:
+          type: string
+          format: time
+        status:
+          type: string
+          enum: [pending, in_progress, completed, cancelled]
+        assigned_group_id:
+          type: integer
+        vehicle_id:
+          type: integer
+        total_stops:
+          type: integer
+        completed_stops:
+          type: integer
+
+    ScheduleInput:
+      type: object
+      required:
+        - route_name
+        - district
+        - scheduled_date
+        - scheduled_time
+      properties:
+        route_name:
+          type: string
+        district:
+          type: string
+        scheduled_date:
+          type: string
+          format: date
+        scheduled_time:
+          type: string
+          format: time
+        assigned_group_id:
+          type: integer
+        vehicle_id:
+          type: integer
+        stops:
+          type: array
+          items:
+            type: object
+            properties:
+              point_id:
+                type: integer
+              sequence_order:
+                type: integer
+              estimated_time:
+                type: string
+                format: time
+
+    WorkerRoute:
+      type: object
+      properties:
+        id:
+          type: integer
+        route_name:
+          type: string
+        scheduled_date:
+          type: string
+          format: date
+        status:
+          type: string
+        progress:
+          type: number
+          format: float
+        total_stops:
+          type: integer
+        completed_stops:
+          type: integer
+        vehicle_number:
+          type: string
+
+    AnalyticsSummary:
+      type: object
+      properties:
+        total_waste_collected:
+          type: number
+          format: float
+        total_routes_completed:
+          type: integer
+        total_stops_completed:
+          type: integer
+        avg_completion_time:
+          type: integer
+        efficiency_rate:
+          type: number
+          format: float
+        by_district:
+          type: array
+          items:
+            type: object
+            properties:
+              district:
+                type: string
+              waste_collected:
+                type: number
+              routes_completed:
+                type: integer
+
+    LeaderboardEntry:
+      type: object
+      properties:
+        rank:
+          type: integer
+        user_id:
+          type: integer
+        full_name:
+          type: string
+        total_points:
+          type: integer
+        level:
+          type: integer
+        badges_count:
+          type: integer
+
+    VRPRequest:
+      type: object
+      required:
+        - district
+        - date
+        - vehicles
+      properties:
+        district:
+          type: string
+        date:
+          type: string
+          format: date
+        vehicles:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              capacity:
+                type: number
+              start_depot_id:
+                type: integer
+        algorithm:
+          type: string
+          enum: [hybrid_ci_sa, greedy, genetic]
+          default: hybrid_ci_sa
+        max_routes:
+          type: integer
+
+    VRPResponse:
+      type: object
+      properties:
+        routes:
+          type: array
+          items:
+            type: object
+            properties:
+              vehicle_id:
+                type: integer
+              stops:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    point_id:
+                      type: integer
+                    sequence:
+                      type: integer
+                    estimated_arrival:
+                      type: string
+                      format: time
+              total_distance:
+                type: number
+              total_waste:
+                type: number
+              estimated_duration:
+                type: integer
+        optimization_stats:
+          type: object
+          properties:
+            total_distance:
+              type: number
+            total_duration:
+              type: integer
+            efficiency_score:
+              type: number
+
+    Error:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+
+  responses:
+    UnauthorizedError:
+      description: Authentication token is missing or invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            success: false
+            error:
+              code: UNAUTHORIZED
+              message: Invalid or missing authentication token
+
+    NotFoundError:
+      description: The specified resource was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    ValidationError:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

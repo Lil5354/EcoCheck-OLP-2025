@@ -100,6 +100,90 @@ static String get devBaseUrl {
 - **MongoDB**: `localhost:27017`
 - **Redis**: `localhost:6379`
 
+### API Documentation
+- **Swagger UI**: `http://localhost:3000/api-docs` - Interactive API documentation
+- **API Reference**: See [docs/API.md](docs/API.md) for complete API documentation
+- **Code Examples**: See [docs/API_EXAMPLES.md](docs/API_EXAMPLES.md) for integration examples
+- **OpenAPI Spec**: [docs/openapi.yaml](docs/openapi.yaml) - OpenAPI 3.0 specification
+
+## 📚 API Documentation
+
+EcoCheck provides comprehensive REST API documentation for developers who want to integrate with the platform.
+
+### Available Documentation
+
+1. **📖 [API Reference](docs/API.md)** - Complete API documentation with all endpoints, parameters, and responses
+2. **💡 [Code Examples](docs/API_EXAMPLES.md)** - Integration examples in JavaScript, Python, Flutter/Dart, and cURL
+3. **🔧 [OpenAPI Specification](docs/openapi.yaml)** - Machine-readable API spec for code generation
+4. **🌐 [Swagger UI](http://localhost:3000/api-docs)** - Interactive API testing interface (when backend is running)
+
+### Quick API Access
+
+```bash
+# Get system health
+curl http://localhost:3000/health
+
+# Login as manager
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"manager1","password":"password123"}'
+
+# Get schedules (requires auth token)
+curl http://localhost:3000/api/schedules \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+### API Features
+
+- ✅ **Authentication & Authorization** - JWT-based auth for managers and workers
+- ✅ **Real-time Updates** - Socket.IO for live vehicle tracking and notifications
+- ✅ **Route Optimization** - VRP (Vehicle Routing Problem) solver with multiple algorithms
+- ✅ **Analytics & Reporting** - Comprehensive waste collection analytics
+- ✅ **Gamification** - Points, badges, and leaderboard system
+- ✅ **Master Data Management** - Fleet, depots, dump sites, and collection points
+- ✅ **File Upload** - Image upload with AI waste analysis
+- ✅ **FIWARE Integration** - NGSI-LD context broker support
+
+### For Developers
+
+Integrate EcoCheck API into your application:
+
+**JavaScript/Node.js:**
+```javascript
+const axios = require('axios');
+
+const api = axios.create({
+  baseURL: 'http://localhost:3000',
+  headers: { 'Authorization': `Bearer ${token}` }
+});
+
+const schedules = await api.get('/api/schedules');
+```
+
+**Python:**
+```python
+import requests
+
+response = requests.get(
+  'http://localhost:3000/api/schedules',
+  headers={'Authorization': f'Bearer {token}'}
+)
+schedules = response.json()['data']
+```
+
+**Flutter/Dart:**
+```dart
+final response = await dio.get(
+  '/api/schedules',
+  options: Options(
+    headers: {'Authorization': 'Bearer $token'}
+  )
+);
+final schedules = response.data['data'];
+```
+
+See [docs/API_EXAMPLES.md](docs/API_EXAMPLES.md) for complete integration guides.
+
 ## 🧪 Test Cả 2 Nền Tảng Cùng Lúc
 
 Để test liên kết dữ liệu giữa Web và Mobile:
