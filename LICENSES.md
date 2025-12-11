@@ -72,9 +72,8 @@ Dự án chọn MIT License vì:
 | dio | ^5.4.0 | MIT | ✅ | HTTP client |
 | socket_io_client | ^2.0.3+1 | MIT | ✅ | WebSocket client |
 | geolocator | ^11.0.0 | MIT | ✅ | Location services |
-| flutter_map | ^8.0.0 | BSD 3-Clause | ✅ | OpenStreetMap rendering |
+| flutter_map | ^8.0.0 | BSD 3-Clause | ✅ | OpenStreetMap rendering (bao gồm LatLng) |
 | flutter_map_tile_caching | ^10.0.2 | BSD 3-Clause | ✅ | Offline map caching |
-| latlong2 | ^0.9.1 | Apache 2.0 | ✅ | Geographic calculations |
 | image_picker | ^1.0.7 | MIT | ✅ | Image picker |
 | shared_preferences | ^2.2.2 | BSD 3-Clause | ✅ | Local storage |
 | flutter_secure_storage | ^9.0.0 | MIT | ✅ | Secure storage |
@@ -87,17 +86,16 @@ Dự án chọn MIT License vì:
 | dio | ^5.3.3 | MIT | ✅ | HTTP client |
 | socket_io_client | ^2.0.3+1 | MIT | ✅ | WebSocket client |
 | geolocator | ^10.1.0 | MIT | ✅ | Location services |
-| flutter_map | ^8.0.0 | BSD 3-Clause | ✅ | OpenStreetMap rendering |
+| flutter_map | ^8.0.0 | BSD 3-Clause | ✅ | OpenStreetMap rendering (bao gồm LatLng) |
 | flutter_map_tile_caching | ^10.0.2 | BSD 3-Clause | ✅ | Offline map caching |
-| latlong2 | ^0.9.1 | Apache 2.0 | ✅ | Geographic calculations |
 | shared_preferences | ^2.2.2 | BSD 3-Clause | ✅ | Local storage |
-| google_generative_ai | ^0.2.2 | Apache-2.0 | ✅ | Google Gemini AI SDK |
+
 
 **Tổng kết Frontend Mobile**: ✅ Tất cả dependencies đều tương thích với MIT License
 
-**Lưu ý về Apache 2.0 và BSD 3-Clause**:
-- Apache 2.0 và BSD 3-Clause đều tương thích với MIT License
-- Có thể sử dụng trong dự án MIT mà không có xung đột
+**Lưu ý về BSD 3-Clause**:
+- BSD 3-Clause tương thích 100% với MIT License
+- flutter_map cung cấp class LatLng tích hợp sẵn, không cần thư viện riêng
 
 ---
 
@@ -135,7 +133,7 @@ Sau khi kiểm tra toàn bộ dependencies:
 
 1. ✅ **Tất cả thư viện JavaScript/Node.js**: MIT hoặc ISC (tương thích)
 2. ✅ **Tất cả thư viện React**: MIT (tương thích)
-3. ✅ **Tất cả thư viện Flutter**: MIT, Apache 2.0, hoặc BSD 3-Clause (tương thích)
+3. ✅ **Tất cả thư viện Flutter**: MIT, hoặc BSD 3-Clause (tương thích)
 4. ✅ **Infrastructure tools**: Không bundle vào mã nguồn, chỉ sử dụng runtime
 
 ### Các Giấy Phép Tương Thích với MIT
@@ -144,7 +142,6 @@ Các giấy phép sau đây **tương thích hoàn toàn** với MIT License:
 
 - ✅ **MIT License**: Tương thích 100%
 - ✅ **ISC License**: Tương thích 100% (tương đương MIT)
-- ✅ **Apache 2.0**: Tương thích 100%
 - ✅ **BSD 2-Clause**: Tương thích 100%
 - ✅ **BSD 3-Clause**: Tương thích 100%
 - ✅ **PostgreSQL License**: Tương thích 100% (tương đương BSD)

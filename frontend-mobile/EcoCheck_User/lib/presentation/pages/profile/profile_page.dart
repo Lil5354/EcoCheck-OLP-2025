@@ -17,7 +17,6 @@ import 'package:eco_check/presentation/blocs/auth/auth_event.dart';
 import 'package:eco_check/presentation/blocs/auth/auth_state.dart';
 import 'package:eco_check/presentation/blocs/gamification/gamification_bloc.dart';
 import 'package:eco_check/presentation/blocs/gamification/gamification_event.dart';
-import 'package:eco_check/presentation/blocs/gamification/gamification_state.dart';
 import 'package:eco_check/presentation/blocs/statistics/statistics_bloc.dart';
 import 'package:eco_check/presentation/blocs/statistics/statistics_event.dart';
 import 'package:eco_check/presentation/blocs/statistics/statistics_state.dart';

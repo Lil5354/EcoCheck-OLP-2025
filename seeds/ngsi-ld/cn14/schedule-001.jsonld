@@ -1,0 +1,27 @@
+{
+  "@context": [
+    "https://uri.etsi.org/ngsi-ld/v1/ngsi-ld-core-context.jsonld",
+    "http://localhost:3000/contexts/ecocheck.jsonld"
+  ],
+  "id": "urn:ngsi-ld:Schedule:schedule-001",
+  "type": "Schedule",
+  "name": { "type": "Property", "value": "District 1 Weekly Schedule" },
+  "frequency": { "type": "Property", "value": "weekly" },
+  "daysOfWeek": { 
+    "type": "Property", 
+    "value": ["Monday", "Wednesday", "Friday"] 
+  },
+  "startTime": { 
+    "type": "Property", 
+    "value": { "@type": "DateTime", "@value": "06:00:00" }
+  },
+  "status": { "type": "Property", "value": "active" },
+  "assignedVehicle": { 
+    "type": "Relationship", 
+    "object": "urn:ngsi-ld:Vehicle:veh-001" 
+  },
+  "sourceDepot": { 
+    "type": "Relationship", 
+    "object": "urn:ngsi-ld:Depot:depot-001" 
+  }
+}

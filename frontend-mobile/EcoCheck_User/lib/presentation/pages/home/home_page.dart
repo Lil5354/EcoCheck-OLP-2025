@@ -136,8 +136,8 @@ class _HomeTabPageState extends State<HomeTabPage> {
 
       // Fetch AQI data
       final aqiData = await _airQualityService.getAirQuality(
-        lat: lat!,
-        lon: lon!,
+        lat: lat,
+        lon: lon,
       );
 
       // Debug: Check if healthRecommendation exists

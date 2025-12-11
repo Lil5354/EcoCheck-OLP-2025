@@ -195,7 +195,7 @@ class _CreateSchedulePageState extends State<CreateSchedulePage> {
         });
 
         // Update address and current location from photo
-        if (photoLat != null && photoLon != null) {
+        if (photoLat != null) {
           setState(() {
             _currentLat = photoLat;
             _currentLon = photoLon;

@@ -1,0 +1,21 @@
+{
+  "@context": [
+    "https://uri.etsi.org/ngsi-ld/v1/ngsi-ld-core-context.jsonld",
+    "http://localhost:3000/contexts/ecocheck.jsonld"
+  ],
+  "id": "urn:ngsi-ld:CheckIn:checkin-001",
+  "type": "CheckIn",
+  "wasteType": { "type": "Property", "value": "household" },
+  "fillingLevel": { "type": "Property", "value": 0.8 },
+  "photoUrl": { "type": "Property", "value": "https://example.com/images/checkin-001.jpg" },
+  "source": { "type": "Property", "value": "mobile_app" },
+  "targetPoint": { 
+    "type": "Relationship", 
+    "object": "urn:ngsi-ld:WastePoint:point-001" 
+  },
+  "location": {
+    "type": "GeoProperty",
+    "value": { "type": "Point", "coordinates": [106.7007, 10.7756] }
+  },
+  "createdAt": "2025-01-14T10:30:00Z"
+}

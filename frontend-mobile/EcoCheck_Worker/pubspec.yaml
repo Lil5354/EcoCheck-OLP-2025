@@ -44,13 +44,13 @@ dependencies:
   
   # HTTP & API
   http: ^1.1.2
+  http_parser: ^4.0.2
   dio: ^5.4.0
   socket_io_client: ^2.0.3+1
   
   # Location & Maps (100% Open Source - OpenStreetMap)
   geolocator: ^11.0.0
   geocoding: ^2.1.1
-  latlong2: ^0.9.1
   flutter_map: ^8.0.0
   flutter_map_tile_caching: ^10.0.2
   

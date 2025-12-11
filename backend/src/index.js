@@ -359,6 +359,13 @@ try {
   console.warn("⚠️  Could not load OpenAPI spec:", error.message);
 }
 
+// ============================================================================
+// NGSI-LD API Routes
+// ============================================================================
+const ngsiLdRoutes = require('./routes/ngsi-ld')(db);
+app.use('/ngsi-ld/v1', ngsiLdRoutes);
+console.log("🔗 NGSI-LD API v1.6.1 available at /ngsi-ld/v1");
+
 // FIWARE notification endpoint (Orion-LD Subscriptions)
 app.post("/fiware/notify", (req, res) => {
   try {

@@ -1,0 +1,30 @@
+{
+  "@context": [
+    "https://uri.etsi.org/ngsi-ld/v1/ngsi-ld-core-context.jsonld",
+    "http://localhost:3000/contexts/ecocheck.jsonld"
+  ],
+  "id": "urn:ngsi-ld:Route:route-001",
+  "type": "Route",
+  "name": { "type": "Property", "value": "Route District 1 Morning" },
+  "status": { "type": "Property", "value": "planned" },
+  "startTime": { 
+    "type": "Property", 
+    "value": { "@type": "DateTime", "@value": "2025-01-15T06:00:00Z" }
+  },
+  "endTime": { 
+    "type": "Property", 
+    "value": { "@type": "DateTime", "@value": "2025-01-15T12:00:00Z" }
+  },
+  "assignedVehicle": { 
+    "type": "Relationship", 
+    "object": "urn:ngsi-ld:Vehicle:veh-001" 
+  },
+  "sourceDepot": { 
+    "type": "Relationship", 
+    "object": "urn:ngsi-ld:Depot:depot-001" 
+  },
+  "destinationDump": { 
+    "type": "Relationship", 
+    "object": "urn:ngsi-ld:Dump:dump-001" 
+  }
+}

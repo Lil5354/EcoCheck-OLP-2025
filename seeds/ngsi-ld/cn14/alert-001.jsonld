@@ -1,0 +1,24 @@
+{
+  "@context": [
+    "https://uri.etsi.org/ngsi-ld/v1/ngsi-ld-core-context.jsonld",
+    "http://localhost:3000/contexts/ecocheck.jsonld"
+  ],
+  "id": "urn:ngsi-ld:Alert:alert-001",
+  "type": "Alert",
+  "alertType": { "type": "Property", "value": "missed_collection" },
+  "severity": { "type": "Property", "value": "medium" },
+  "status": { "type": "Property", "value": "open" },
+  "description": { "type": "Property", "value": "Waste collection point missed during scheduled route" },
+  "dateIssued": { 
+    "type": "Property", 
+    "value": { "@type": "DateTime", "@value": "2025-01-14T08:30:00Z" }
+  },
+  "targetPoint": { 
+    "type": "Relationship", 
+    "object": "urn:ngsi-ld:WastePoint:point-001" 
+  },
+  "location": {
+    "type": "GeoProperty",
+    "value": { "type": "Point", "coordinates": [106.7007, 10.7756] }
+  }
+}

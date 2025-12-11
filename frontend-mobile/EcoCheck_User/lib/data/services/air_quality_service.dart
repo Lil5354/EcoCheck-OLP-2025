@@ -5,7 +5,6 @@
  * Air Quality Service - Fetches AQI data from backend
  */
 
-import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import '../../core/constants/api_constants.dart';
 import '../../core/network/api_client.dart';

@@ -1,0 +1,17 @@
+{
+  "@context": [
+    "https://uri.etsi.org/ngsi-ld/v1/ngsi-ld-core-context.jsonld",
+    "http://localhost:3000/contexts/ecocheck.jsonld"
+  ],
+  "id": "urn:ngsi-ld:WastePoint:point-001",
+  "type": "WastePoint",
+  "address": { "type": "Property", "value": "123 Nguyen Hue St, District 1, HCMC" },
+  "wasteType": { "type": "Property", "value": "household" },
+  "fillingLevel": { "type": "Property", "value": 0.75 },
+  "status": { "type": "Property", "value": "active" },
+  "location": {
+    "type": "GeoProperty",
+    "value": { "type": "Point", "coordinates": [106.7007, 10.7756] },
+    "observedAt": "2025-01-14T10:30:00Z"
+  }
+}
